@@ -495,10 +495,10 @@ Reglas:
 
 ### Tarea 0.5 — Renombrar el paquete y organizar los contratos visuales
 
-**Modificar:** `Cargo.toml`
-**Mover:** `docs/Inventario_v6_Continente_Inacabado.md` → `docs/design/`
-**Mover:** `docs/Plan_Tecnico_v2_Expedition33_Continente_Inacabado.md` → `docs/design/`
-**Incorporar:** `docs/design/Expedition33_Blueprint_v2_2.svg`
+**Modificar:** `Cargo.toml`  
+**Mover:** `docs/Inventario_v6_Continente_Inacabado.md` → `docs/design/`  
+**Mover:** `docs/Plan_Tecnico_v2_Expedition33_Continente_Inacabado.md` → `docs/design/`  
+**Incorporar:** `docs/design/Expedition33_Blueprint_v2_2.svg`  
 **Incorporar:** `docs/design/Decisiones_Blueprint_v2_Expedition33.md`
 
 Cambiar el paquete a:
