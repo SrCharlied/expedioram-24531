@@ -11,14 +11,9 @@ use crate::hit::Hit;
 use crate::ray::Ray;
 use crate::scene::Scene;
 use nalgebra_glm::{normalize, Vec3};
-use std::f32::consts::PI;
 
 /// Color que devuelve un rayo que no toca nada.
 pub const BACKGROUND_COLOR: u32 = 0x040C24;
-
-/// Campo de visión vertical. Las etapas anteriores lo tenían implícito en
-/// 90 grados por poner el plano de proyección a una unidad de distancia.
-pub const FOV: f32 = PI / 3.0;
 
 /// Cómo se resuelve el color de un impacto.
 ///
@@ -71,8 +66,9 @@ pub fn render(framebuffer: &mut Framebuffer, scene: &Scene, camera: &Camera, sha
     let aspect_ratio = width / height;
 
     // Media altura del plano de proyección, que está a una unidad de la
-    // cámara. Abrir el campo de visión ensancha el plano.
-    let perspective_scale = (FOV / 2.0).tan();
+    // cámara. Abrir el campo de visión ensancha el plano. El FOV lo aporta
+    // la cámara: es una propiedad suya, no una constante del renderer.
+    let perspective_scale = (camera.vertical_fov / 2.0).tan();
 
     for y in 0..framebuffer.height {
         for x in 0..framebuffer.width {

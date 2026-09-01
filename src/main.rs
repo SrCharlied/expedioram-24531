@@ -9,7 +9,7 @@ use nalgebra_glm::Vec3;
 use std::f32::consts::PI;
 use std::time::Duration;
 
-use expedition33_continente_inacabado::camera::Camera;
+use expedition33_continente_inacabado::camera::{Camera, DEFAULT_VERTICAL_FOV};
 use expedition33_continente_inacabado::color::Color;
 use expedition33_continente_inacabado::cuboid::Cuboid;
 use expedition33_continente_inacabado::framebuffer::Framebuffer;
@@ -58,10 +58,15 @@ fn main() {
     // seis caras miran hacia donde deben.
     let shading = Shading::Normals;
 
+    // El eje de órbita y el punto de encuadre ya son independientes. En la
+    // escena de prueba todavía coinciden en el origen; el Blockout 1 los
+    // separa de verdad, con el encuadre por encima de la base del Monolito.
     let mut camera = Camera::new(
         Vec3::new(0.0, 0.0, 5.0),
-        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::zeros(),
+        Vec3::zeros(),
         Vec3::new(0.0, 1.0, 0.0),
+        DEFAULT_VERTICAL_FOV,
     );
 
     // Renderizar cuesta 480 000 rayos. Mientras la cámara esté quieta la

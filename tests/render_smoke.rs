@@ -4,7 +4,7 @@
 //! comprueba que el resultado sea una imagen y no basura. El PNG llega en
 //! la Tarea 2.3, cuando entre la dependencia `image`.
 
-use expedition33_continente_inacabado::camera::Camera;
+use expedition33_continente_inacabado::camera::{Camera, DEFAULT_VERTICAL_FOV};
 use expedition33_continente_inacabado::color::Color;
 use expedition33_continente_inacabado::cuboid::Cuboid;
 use expedition33_continente_inacabado::framebuffer::Framebuffer;
@@ -38,7 +38,9 @@ fn camara_hero() -> Camera {
     Camera::new(
         Vec3::new(0.0, 0.0, 5.0),
         Vec3::zeros(),
+        Vec3::zeros(),
         Vec3::new(0.0, 1.0, 0.0),
+        DEFAULT_VERTICAL_FOV,
     )
 }
 
