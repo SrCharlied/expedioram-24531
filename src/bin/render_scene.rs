@@ -21,27 +21,31 @@ use expedition33_continente_inacabado::camera::{Camera, DEFAULT_VERTICAL_FOV};
 use expedition33_continente_inacabado::framebuffer::Framebuffer;
 use expedition33_continente_inacabado::renderer::{render, Shading};
 use expedition33_continente_inacabado::scene::{cubo_de_prueba, Scene};
+use expedition33_continente_inacabado::scene_builder::SceneScale;
+use expedition33_continente_inacabado::scenes::continent::blockout;
 
 const USO: &str = "\
 Render sin ventana del Continente Inacabado.
 
-  --preset <nombre>   escena a renderizar (por defecto: cubo)
+  --preset <nombre>   escena a renderizar (por defecto: blockout)
   --width <n>         ancho en pixeles (por defecto: 800)
   --height <n>        alto en pixeles (por defecto: 600)
-  --shading <modo>    material | normals (por defecto: normals)
+  --yaw <grados>      angulo de orbita; por defecto el de la toma hero
+  --shading <modo>    material | normals (por defecto: material)
   --output <ruta>     PNG de salida (por defecto: evidence/renders/hero.png)
   --help              esta ayuda
 
 Presets disponibles:
-  cubo       un cuboide centrado, para verificar geometria y camara
-
-Presets que todavia no existen:
-  blockout   llega con la Tarea 2.4, cuando existan las anclas de escena";
+  blockout   composicion global del Blockout 1, en cuboides grises
+  cubo       un cuboide centrado, para verificar geometria y camara";
 
 struct Opciones {
     preset: String,
     width: usize,
     height: usize,
+    /// `None` significa "el yaw propio del preset", que para el blockout es
+    /// la toma hero.
+    yaw: Option<f32>,
     shading: Shading,
     output: PathBuf,
 }
@@ -49,10 +53,11 @@ struct Opciones {
 impl Default for Opciones {
     fn default() -> Self {
         Opciones {
-            preset: "cubo".to_string(),
+            preset: "blockout".to_string(),
             width: 800,
             height: 600,
-            shading: Shading::Normals,
+            yaw: None,
+            shading: Shading::Material,
             output: PathBuf::from("evidence/renders/hero.png"),
         }
     }
@@ -80,6 +85,13 @@ fn parsear(args: &[String]) -> Result<Option<Opciones>, String> {
             "--width" => opciones.width = numero(bandera, valor)?,
             "--height" => opciones.height = numero(bandera, valor)?,
             "--output" => opciones.output = PathBuf::from(valor),
+            "--yaw" => {
+                opciones.yaw = Some(
+                    valor
+                        .parse()
+                        .map_err(|_| format!("--yaw espera grados, no {valor:?}"))?,
+                )
+            }
             "--shading" => {
                 opciones.shading = match valor.as_str() {
                     "material" => Shading::Material,
@@ -106,33 +118,48 @@ fn numero(bandera: &str, valor: &str) -> Result<usize, String> {
         .map_err(|_| format!("{bandera} espera un entero, no {valor:?}"))
 }
 
-/// Devuelve la escena y la camara de un preset.
+/// Devuelve la escena, la camara y --si el preset la tiene-- su escala
+/// medida.
 ///
-/// Por ahora solo existe el cuboide de verificacion. Cuando la Tarea 2.4
-/// construya las anclas y el blockout, esta funcion delega en el
-/// `scene_builder` en vez de armar la escena aqui.
-fn preset(nombre: &str) -> Result<(Scene, Camera), String> {
+/// El yaw explicito manda sobre el propio del preset: es lo que permite
+/// producir los cuatro angulos que valida la Tarea 2.5 sin recompilar.
+fn preset(nombre: &str, yaw: Option<f32>) -> Result<(Scene, Camera, Option<SceneScale>), String> {
     match nombre {
+        "blockout" => {
+            let blockout = blockout();
+            let camera = match yaw {
+                Some(grados) => blockout.camera_at_yaw(grados),
+                None => blockout.hero_camera(),
+            };
+            let escala = blockout.scale;
+
+            Ok((blockout.scene, camera, Some(escala)))
+        }
         "cubo" => {
+            let eye = match yaw {
+                Some(grados) => {
+                    let theta = grados.to_radians();
+                    Vec3::new(5.0 * theta.cos(), 0.0, 5.0 * theta.sin())
+                }
+                None => Vec3::new(0.0, 0.0, 5.0),
+            };
+
             let camera = Camera::new(
-                Vec3::new(0.0, 0.0, 5.0),
+                eye,
                 Vec3::zeros(),
                 Vec3::zeros(),
                 Vec3::new(0.0, 1.0, 0.0),
                 DEFAULT_VERTICAL_FOV,
             );
 
-            Ok((cubo_de_prueba(), camera))
-        }
-        "blockout" => {
-            Err("el preset 'blockout' todavia no existe; llega con la Tarea 2.4".to_string())
+            Ok((cubo_de_prueba(), camera, None))
         }
         otro => Err(format!("preset desconocido: {otro}")),
     }
 }
 
 fn ejecutar(opciones: Opciones) -> Result<(), String> {
-    let (scene, camera) = preset(&opciones.preset)?;
+    let (scene, camera, escala) = preset(&opciones.preset, opciones.yaw)?;
 
     let mut framebuffer = Framebuffer::new(opciones.width, opciones.height);
 
@@ -148,6 +175,31 @@ fn ejecutar(opciones: Opciones) -> Result<(), String> {
     println!("tamano    {} x {}", opciones.width, opciones.height);
     println!("shading   {:?}", opciones.shading);
     println!("objetos   {}", scene.objects.len());
+
+    // Los parametros de escala son medidos, no elegidos. Imprimirlos aqui
+    // es lo que permite copiarlos a docs/evidence.md sin transcribir a mano.
+    if let Some(escala) = escala {
+        println!("scene_radius     {:.4}", escala.scene_radius);
+        println!("monolith_height  {:.4}", escala.monolith_height);
+        println!("water_surface_y  {:.4}", escala.water_surface_y);
+        println!(
+            "orbit_radius     {:.4}  ({:.3} x scene_radius, derivado)",
+            escala.orbit_radius,
+            escala.orbit_radius / escala.scene_radius
+        );
+        println!(
+            "view_pitch       {:.2} grados",
+            camera.view_pitch().to_degrees()
+        );
+    }
+
+    println!(
+        "yaw       {}",
+        match opciones.yaw {
+            Some(grados) => format!("{grados} grados"),
+            None => "el del preset".to_string(),
+        }
+    );
     // Informativo, no una medicion: un solo render, sin repeticiones y sin
     // registrar el hardware. Las mediciones formales llegan en el Hito 3.
     println!(

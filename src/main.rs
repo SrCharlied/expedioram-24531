@@ -5,14 +5,12 @@
 //! en la librería del paquete.
 
 use minifb::{Key, Window, WindowOptions};
-use nalgebra_glm::Vec3;
 use std::f32::consts::PI;
 use std::time::Duration;
 
-use expedition33_continente_inacabado::camera::{Camera, DEFAULT_VERTICAL_FOV};
 use expedition33_continente_inacabado::framebuffer::Framebuffer;
 use expedition33_continente_inacabado::renderer::{render, Shading};
-use expedition33_continente_inacabado::scene::cubo_de_prueba;
+use expedition33_continente_inacabado::scenes::continent::blockout;
 
 const WIDTH: usize = 800;
 const HEIGHT: usize = 600;
@@ -39,23 +37,20 @@ fn main() {
 
     let mut window = Window::new("Lakitu", WIDTH, HEIGHT, WindowOptions::default()).unwrap();
 
-    let scene = cubo_de_prueba();
+    let diorama = blockout();
 
-    // Hasta que existan luces, en el Hito 3, un color plano solo daría una
-    // silueta. La vista por normales es lo que permite verificar que las
-    // seis caras miran hacia donde deben.
-    let shading = Shading::Normals;
+    // Los grises del blockout se distinguen por región, así que el
+    // sombreado por material dice más que las normales para juzgar la
+    // composición. Las normales siguen disponibles en el binario headless.
+    let shading = Shading::Material;
 
-    // El eje de órbita y el punto de encuadre ya son independientes. En la
-    // escena de prueba todavía coinciden en el origen; el Blockout 1 los
-    // separa de verdad, con el encuadre por encima de la base del Monolito.
-    let mut camera = Camera::new(
-        Vec3::new(0.0, 0.0, 5.0),
-        Vec3::zeros(),
-        Vec3::zeros(),
-        Vec3::new(0.0, 1.0, 0.0),
-        DEFAULT_VERTICAL_FOV,
-    );
+    // El encuadre queda por encima del eje de órbita, y el radio sale de la
+    // escala medida: ni la altura ni la distancia se eligieron a mano.
+    let mut camera = diorama.hero_camera();
+
+    // La cámara se construye antes de consumir el blockout: `hero_camera`
+    // necesita las anclas y la escala, que viven junto a la escena.
+    let scene = diorama.scene;
 
     // Renderizar cuesta 480 000 rayos. Mientras la cámara esté quieta la
     // imagen es la misma, así que solo se vuelve a calcular cuando algo

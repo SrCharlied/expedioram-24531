@@ -17,6 +17,8 @@ pub mod ray;
 pub mod ray_intersect;
 pub mod renderer;
 pub mod scene;
+pub mod scene_builder;
+pub mod scenes;
 
 /// Margen para despegar un rayo secundario de la superficie que lo originó.
 ///
