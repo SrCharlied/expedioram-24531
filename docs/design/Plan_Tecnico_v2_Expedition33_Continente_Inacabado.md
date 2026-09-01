@@ -98,9 +98,11 @@ Tres nombres distintos que no deben mezclarse. Cada uno tiene su lugar:
 
 ### Limitación de esta planificación
 
-El host donde se escribió este documento no tiene `rustc` ni `cargo`. Por tanto, **no se afirma que ningún comando de Rust haya pasado aquí**: los comandos de compilación y tests deben ejecutarse en la máquina del equipo.
+El plan se redactó sin toolchain disponible, así que sus tiempos, presupuestos y gates **siguen sin estar medidos**: ningún benchmark de este documento es un dato, todos son objetivos por comprobar.
 
-Lo que sí quedó verificado por comparación real de contenido, no por inspección visual:
+Lo que sí se ejecutó, sobre `cargo 1.97.0` / `rustc 1.97.0` en Windows 11, es la Tarea `0.4`: el paquete renombrado compila limpio con `cargo check`. Nada más del plan ha corrido todavía.
+
+Lo que quedó verificado por comparación real de contenido, no por inspección visual:
 
 - El remoto académico responde y su rama `15-RT-03-ORBIT-CAMERA` apunta a `f3e5539…`.
 - Los seis archivos de `src/`, más `Cargo.toml`, `Cargo.lock`, `README.md` y `.gitignore`, son byte-idénticos entre el repositorio de trabajo y esa rama.
@@ -406,7 +408,7 @@ El repositorio académico **no** es el remoto de entrega. Se registra aparte, co
 | `0.1` Clonar el repositorio de trabajo | Completada | `git remote get-url origin` devuelve `SrCharlied/expedioram-24531` |
 | `0.2` Registrar `upstream` | Completada | `git remote -v` lista `upstream` |
 | `0.3` Verificar contra `f3e5539` | Completada | `src/` es `d77aad46c439f43ed5f06c2fd393bc25fa5bdf11` en ambos lados |
-| `0.4` Renombrar paquete y organizar contratos | **Pendiente** | `Cargo.toml` sigue en `rt_03_orbit_camera`; no existe `docs/design/` |
+| `0.4` Renombrar paquete y organizar contratos | Completada, con salvedad | `Cargo.toml` y `Cargo.lock` dicen `expedition33_continente_inacabado`; `docs/design/` existe pero le faltan el SVG y la bitácora (registrado en `docs/evidence.md`) |
 
 `0.2` depende del clon: el remoto `upstream` es configuración local, no viaja con el repositorio. Cada integrante y cada copia de trabajo nueva tiene que registrarlo por su cuenta antes de poder correr `0.3`.
 
