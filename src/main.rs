@@ -68,8 +68,7 @@ pub fn render(framebuffer: &mut Framebuffer, objects: &[Sphere], camera: &Camera
             let ray_direction = normalize(&Vec3::new(screen_x, screen_y, -1.0));
             let ray_direction = camera.basis_change(&ray_direction);
 
-            framebuffer
-                .set_current_color(cast_ray(&camera.eye, &ray_direction, objects).to_hex());
+            framebuffer.set_current_color(cast_ray(&camera.eye, &ray_direction, objects).to_hex());
             framebuffer.point(x, y);
         }
     }
