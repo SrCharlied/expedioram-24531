@@ -1,3 +1,8 @@
+use image::{ImageFormat, RgbImage};
+use std::error::Error;
+use std::fs;
+use std::path::Path;
+
 pub struct Framebuffer {
     pub width: usize,
     pub height: usize,
@@ -35,5 +40,32 @@ impl Framebuffer {
 
     pub fn set_current_color(&mut self, color: u32) {
         self.current_color = color;
+    }
+
+    /// Escribe el framebuffer como PNG, creando los directorios que falten.
+    ///
+    /// El buffer guarda `0x00RRGGBB` empaquetado, asi que hay que
+    /// desempacarlo a tres bytes por pixel. El canal alfa se descarta: el
+    /// diorama es opaco y un PNG RGB pesa un cuarto menos.
+    pub fn save_png(&self, path: &Path) -> Result<(), Box<dyn Error>> {
+        if let Some(directorio) = path.parent() {
+            if !directorio.as_os_str().is_empty() {
+                fs::create_dir_all(directorio)?;
+            }
+        }
+
+        let mut rgb = Vec::with_capacity(self.width * self.height * 3);
+        for pixel in &self.buffer {
+            rgb.push(((pixel >> 16) & 0xFF) as u8);
+            rgb.push(((pixel >> 8) & 0xFF) as u8);
+            rgb.push((pixel & 0xFF) as u8);
+        }
+
+        let imagen = RgbImage::from_raw(self.width as u32, self.height as u32, rgb)
+            .ok_or("el buffer no coincide con las dimensiones declaradas")?;
+
+        imagen.save_with_format(path, ImageFormat::Png)?;
+
+        Ok(())
     }
 }

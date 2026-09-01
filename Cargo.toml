@@ -8,6 +8,13 @@ edition = "2021"
 [dependencies]
 nalgebra-glm = "0.18.0"
 minifb = "0.26.0"
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+# El mismo crate como dev-dependency: los tests de integracion solo ven la
+# API publica del paquete mas sus dev-dependencies, y necesitan decodificar
+# el PNG que produce save_png para comprobar que es valido.
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [profile.dev]
 opt-level = 3

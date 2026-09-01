@@ -1,8 +1,7 @@
 //! Render headless del gate del Hito 1.
 //!
-//! No abre ventana ni escribe archivos: renderiza un framebuffer diminuto y
-//! comprueba que el resultado sea una imagen y no basura. El PNG llega en
-//! la Tarea 2.3, cuando entre la dependencia `image`.
+//! No abre ventana: renderiza un framebuffer diminuto y comprueba que el
+//! resultado sea una imagen y no basura, incluido el PNG en disco.
 
 use expedition33_continente_inacabado::camera::{Camera, DEFAULT_VERTICAL_FOV};
 use expedition33_continente_inacabado::color::Color;
@@ -123,4 +122,43 @@ fn el_fondo_se_devuelve_cuando_el_rayo_no_toca_nada() {
     let color = cast_ray(&ray, &scene, Shading::Material);
 
     assert_eq!(color.to_hex(), BACKGROUND_COLOR);
+}
+
+#[test]
+fn guarda_un_png_valido_y_decodificable() {
+    let (scene, _) = escena_de_un_cubo();
+    let mut framebuffer = Framebuffer::new(ANCHO, ALTO);
+
+    render(&mut framebuffer, &scene, &camara_hero(), Shading::Normals);
+
+    // Directorio propio por ejecucion: los tests corren en paralelo y dos
+    // que escriban el mismo archivo se pisarian.
+    let destino = std::env::temp_dir()
+        .join(format!("continente-smoke-{}", std::process::id()))
+        .join("anidado")
+        .join("hero.png");
+
+    framebuffer
+        .save_png(&destino)
+        .expect("save_png deberia crear los directorios que falten");
+
+    let bytes = std::fs::read(&destino).expect("el archivo deberia existir");
+    // Firma PNG por valor numerico, sin depender de escapes.
+    const FIRMA_PNG: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
+    assert_eq!(&bytes[..8], &FIRMA_PNG, "la firma no es la de un PNG");
+
+    // Decodificarlo de verdad: la firma sola no prueba que el resto sirva.
+    let imagen = image::open(&destino).expect("el PNG deberia decodificar");
+    assert_eq!(imagen.width(), ANCHO as u32);
+    assert_eq!(imagen.height(), ALTO as u32);
+
+    // Y el contenido debe coincidir con el framebuffer, no ser una imagen
+    // en blanco que casualmente tiene el tamano correcto.
+    let rgb = imagen.to_rgb8();
+    let esperado = framebuffer.buffer[0];
+    let pixel = rgb.get_pixel(0, 0);
+    let obtenido = ((pixel[0] as u32) << 16) | ((pixel[1] as u32) << 8) | pixel[2] as u32;
+    assert_eq!(obtenido, esperado, "el primer pixel no sobrevivio al PNG");
+
+    let _ = std::fs::remove_file(&destino);
 }

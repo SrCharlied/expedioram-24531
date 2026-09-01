@@ -1,4 +1,6 @@
 use crate::bounds::Aabb;
+use crate::color::Color;
+use crate::cuboid::Cuboid;
 use crate::hit::Hit;
 use crate::primitive::Primitive;
 use crate::ray::Ray;
@@ -138,11 +140,31 @@ impl Scene {
     }
 }
 
+/// Escena de verificacion: un cuboide centrado en el origen.
+///
+/// No es todavia el diorama. Existe para que los dos binarios --el de
+/// ventana y el headless-- rendericen exactamente lo mismo, y para que el
+/// gate del Hito 1 siga siendo comprobable. La Tarea 2.4 la reemplaza por
+/// el blockout real.
+pub fn cubo_de_prueba() -> Scene {
+    let mut scene = Scene::new();
+
+    let piedra = scene.add_material(Material::new(Color::new(0.62, 0.60, 0.55)));
+
+    scene.add_object(SceneObject {
+        primitive: Cuboid::centrado(Vec3::zeros(), Vec3::new(2.0, 2.0, 2.0)).into(),
+        initial_material: piedra,
+        final_material: piedra,
+        spatial_group: SpatialGroupId::Monolith,
+        reveal_group: RevealGroup::Finale,
+    });
+
+    scene
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color::Color;
-    use crate::cuboid::Cuboid;
 
     fn escena_con(centros_z: &[f32]) -> Scene {
         let mut scene = Scene::new();
