@@ -50,6 +50,38 @@ fn ordenar_por_t_enter(candidatos: &mut [(f32, usize)]) {
     }
 }
 
+/// Partición en clusters declarada por los generadores.
+///
+/// La jerarquía no adivina cómo repartir un generador: el inventario fija
+/// cuántos clusters produce cada entrada y por qué criterio. Este plan es
+/// el canal por el que un generador se lo comunica a `build_with`.
+///
+/// Los objetos sin asignación explícita caen en el cluster `0`, que es el
+/// caso correcto para las entradas hero compactas.
+#[derive(Debug, Clone, Default)]
+pub struct ClusterPlan {
+    asignaciones: Vec<u16>,
+}
+
+impl ClusterPlan {
+    pub fn new() -> Self {
+        ClusterPlan::default()
+    }
+
+    /// Asigna un objeto a un cluster dentro de su grupo espacial.
+    pub fn asignar(&mut self, object_index: usize, cluster: u16) {
+        if self.asignaciones.len() <= object_index {
+            self.asignaciones.resize(object_index + 1, 0);
+        }
+
+        self.asignaciones[object_index] = cluster;
+    }
+
+    pub fn cluster_of(&self, object_index: usize) -> u16 {
+        self.asignaciones.get(object_index).copied().unwrap_or(0)
+    }
+}
+
 /// Contadores del recorrido.
 ///
 /// Existen para que las mediciones del Hito 3 sean comprobables y no
@@ -98,6 +130,12 @@ impl SceneAccel {
     /// generadores que necesiten partirse usan `build_with`.
     pub fn build(scene: &Scene) -> Option<SceneAccel> {
         SceneAccel::build_with(scene, |_, _| 0)
+    }
+
+    /// Construye la jerarquía siguiendo la partición que declararon los
+    /// generadores.
+    pub fn build_from_plan(scene: &Scene, plan: &ClusterPlan) -> Option<SceneAccel> {
+        SceneAccel::build_with(scene, |index, _| plan.cluster_of(index))
     }
 
     /// Construye la jerarquía dejando que quien llama decida en qué
