@@ -11,9 +11,10 @@
 //! `RevealState`, y la geometría no se mueve. Esa es la razón de que
 //! `SceneObject` sea inmutable.
 //!
-//! Este módulo cubre la construcción y el recorrido con poda por bounds.
-//! El orden por `t_enter` y la poda con el impacto más cercano llegan en la
-//! Tarea 3.2.
+//! El recorrido ordena los candidatos por `t_enter` y corta en cuanto el
+//! impacto más cercano conocido queda por delante del siguiente candidato.
+//! Sin ese orden la poda apenas sirve: probar primero un grupo lejano
+//! obliga a probar igual todos los demás.
 
 use crate::bounds::Aabb;
 use crate::hit::Hit;
@@ -21,6 +22,33 @@ use crate::ray::Ray;
 use crate::ray_intersect::RayIntersect;
 use crate::scene::{Scene, SceneObject, SpatialGroupId};
 use crate::EPSILON;
+
+/// Tope de clusters por grupo.
+///
+/// Las listas de candidatos del recorrido viven en la pila, sin asignar
+/// memoria: hay medio millón de rayos por cuadro y reservar dos vectores en
+/// cada uno costaría más que la poda que se ahorra. `build_with` rechaza
+/// una jerarquía que lo exceda en vez de degradarse en silencio. El máximo
+/// que pide el inventario son los cuatro tramos de Rompeolas.
+pub const MAX_CLUSTERS_PER_GROUP: usize = 16;
+
+/// Tope de grupos. Son los siete de `SpatialGroupId::ALL`.
+const MAX_GROUPS: usize = SpatialGroupId::ALL.len();
+
+/// Ordena candidatos por `t_enter` ascendente, in situ.
+///
+/// Ordenamiento por inserción a propósito: los arreglos son de a lo sumo
+/// dieciséis elementos y casi siempre de uno o dos, y ahí la inserción gana
+/// a cualquier algoritmo con mejor complejidad asintótica.
+fn ordenar_por_t_enter(candidatos: &mut [(f32, usize)]) {
+    for i in 1..candidatos.len() {
+        let mut j = i;
+        while j > 0 && candidatos[j - 1].0 > candidatos[j].0 {
+            candidatos.swap(j - 1, j);
+            j -= 1;
+        }
+    }
+}
 
 /// Contadores del recorrido.
 ///
@@ -81,8 +109,11 @@ impl SceneAccel {
     /// distribución en vez del contrato.
     ///
     /// Los bounds se calculan de abajo hacia arriba, después de que toda la
-    /// geometría existe. Devuelve `None` si la escena está vacía: una
-    /// jerarquía sin caja envolvente no tiene nada que podar.
+    /// geometría existe.
+    ///
+    /// Devuelve `None` si la escena está vacía —una jerarquía sin caja
+    /// envolvente no tiene nada que podar— o si algún grupo supera
+    /// `MAX_CLUSTERS_PER_GROUP`.
     pub fn build_with<F>(scene: &Scene, cluster_of: F) -> Option<SceneAccel>
     where
         F: Fn(usize, &SceneObject) -> u16,
@@ -120,6 +151,10 @@ impl SceneAccel {
                 continue;
             }
 
+            if clusters.len() > MAX_CLUSTERS_PER_GROUP {
+                return None;
+            }
+
             clusters.sort_by_key(|cluster| cluster.id);
 
             let bounds = clusters
@@ -152,11 +187,21 @@ impl SceneAccel {
             .sum()
     }
 
-    /// Impacto más cercano, probando bounds antes que primitivas.
+    /// Impacto más cercano contra la escena.
     ///
-    /// Todavía sin ordenar por `t_enter`: recorre los candidatos en el orden
-    /// del árbol y solo descarta los que el rayo ni siquiera alcanza. El
-    /// orden y la poda por distancia llegan en la Tarea 3.2.
+    /// El recorrido sigue el orden que fija el inventario:
+    ///
+    /// 1. Probar la envolvente de la escena.
+    /// 2. Calcular `t_enter` de cada grupo alcanzado.
+    /// 3. Ordenarlos por `t_enter` ascendente.
+    /// 4. Cortar cuando el impacto más cercano conocido esté por delante
+    ///    del `t_enter` del siguiente grupo.
+    /// 5. Repetir el orden y la poda con los clusters de cada grupo.
+    /// 6. Solo entonces probar primitivas.
+    ///
+    /// El paso 4 es el que hace útil al 3: sin ordenar, un grupo lejano
+    /// visitado primero deja el impacto conocido tan atrás que ya no poda
+    /// nada, y el recorrido degenera en probarlos todos.
     pub fn intersect(&self, scene: &Scene, ray: &Ray, stats: &mut TraversalStats) -> Option<Hit> {
         let lejos = f32::INFINITY;
 
@@ -164,34 +209,125 @@ impl SceneAccel {
         // recorrer: es la primera y mas barata de las podas.
         self.bounds.hit(ray, EPSILON, lejos)?;
 
+        let mut candidatos = [(0.0_f32, 0_usize); MAX_GROUPS];
+        let mut cuantos = 0;
+
+        for (indice, grupo) in self.groups.iter().enumerate() {
+            stats.group_bounds_tests += 1;
+
+            if let Some(intervalo) = grupo.bounds.hit(ray, EPSILON, lejos) {
+                candidatos[cuantos] = (intervalo.t_enter, indice);
+                cuantos += 1;
+            }
+        }
+
+        ordenar_por_t_enter(&mut candidatos[..cuantos]);
+
         let mut closest: Option<Hit> = None;
+
+        for &(t_enter, indice) in &candidatos[..cuantos] {
+            // Todo lo que queda empieza más lejos de lo que ya se impactó.
+            if closest.is_some_and(|previo| previo.distance <= t_enter) {
+                break;
+            }
+
+            self.recorrer_grupo(scene, ray, &self.groups[indice], &mut closest, stats);
+        }
+
+        closest
+    }
+
+    fn recorrer_grupo(
+        &self,
+        scene: &Scene,
+        ray: &Ray,
+        grupo: &SpatialGroup,
+        closest: &mut Option<Hit>,
+        stats: &mut TraversalStats,
+    ) {
+        let lejos = f32::INFINITY;
+
+        let mut candidatos = [(0.0_f32, 0_usize); MAX_CLUSTERS_PER_GROUP];
+        let mut cuantos = 0;
+
+        for (indice, cluster) in grupo.clusters.iter().enumerate() {
+            stats.cluster_bounds_tests += 1;
+
+            if let Some(intervalo) = cluster.bounds.hit(ray, EPSILON, lejos) {
+                candidatos[cuantos] = (intervalo.t_enter, indice);
+                cuantos += 1;
+            }
+        }
+
+        ordenar_por_t_enter(&mut candidatos[..cuantos]);
+
+        for &(t_enter, indice) in &candidatos[..cuantos] {
+            if closest.is_some_and(|previo| previo.distance <= t_enter) {
+                break;
+            }
+
+            for &objeto in &grupo.clusters[indice].object_indices {
+                stats.primitive_tests += 1;
+
+                if let Some(mut hit) = scene.objects[objeto].primitive.ray_intersect(ray) {
+                    if closest.is_none_or(|previo| hit.distance < previo.distance) {
+                        hit.object_index = objeto;
+                        *closest = Some(hit);
+                    }
+                }
+            }
+        }
+    }
+
+    /// ¿Hay algo entre el origen del rayo y `t_max`?
+    ///
+    /// Es la consulta de los rayos de sombra, y es mucho más barata que
+    /// `intersect`: no necesita el impacto más cercano, solo saber si existe
+    /// alguno, así que **termina en el primero que encuentra**. Tampoco
+    /// ordena: para responder «sí» cualquier bloqueador sirve igual.
+    ///
+    /// `t_max` es la distancia a la luz menos un epsilon. Sin ese tope, un
+    /// objeto situado *detrás* de la luz bloquearía una sombra que no le
+    /// corresponde.
+    ///
+    /// A partir de la Tarea 3.6 el filtro de `shadow_mode` decide qué
+    /// cuenta como bloqueador; hoy todo lo es.
+    pub fn occluded(
+        &self,
+        scene: &Scene,
+        ray: &Ray,
+        t_max: f32,
+        stats: &mut TraversalStats,
+    ) -> bool {
+        if self.bounds.hit(ray, EPSILON, t_max).is_none() {
+            return false;
+        }
 
         for grupo in &self.groups {
             stats.group_bounds_tests += 1;
-            if grupo.bounds.hit(ray, EPSILON, lejos).is_none() {
+            if grupo.bounds.hit(ray, EPSILON, t_max).is_none() {
                 continue;
             }
 
             for cluster in &grupo.clusters {
                 stats.cluster_bounds_tests += 1;
-                if cluster.bounds.hit(ray, EPSILON, lejos).is_none() {
+                if cluster.bounds.hit(ray, EPSILON, t_max).is_none() {
                     continue;
                 }
 
-                for &index in &cluster.object_indices {
+                for &objeto in &cluster.object_indices {
                     stats.primitive_tests += 1;
 
-                    if let Some(mut hit) = scene.objects[index].primitive.ray_intersect(ray) {
-                        if closest.is_none_or(|previo| hit.distance < previo.distance) {
-                            hit.object_index = index;
-                            closest = Some(hit);
+                    if let Some(hit) = scene.objects[objeto].primitive.ray_intersect(ray) {
+                        if hit.distance < t_max {
+                            return true;
                         }
                     }
                 }
             }
         }
 
-        closest
+        false
     }
 }
 
@@ -374,6 +510,252 @@ mod tests {
                 ),
             }
         }
+    }
+
+    /// Recorrido lineal independiente, solo para los tests.
+    ///
+    /// No usa `Scene::intersect` a propósito: el oráculo contra el que se
+    /// compara la jerarquía tiene que ser código que la jerarquía no toca.
+    fn fuerza_bruta(scene: &Scene, ray: &Ray) -> Option<Hit> {
+        let mut closest: Option<Hit> = None;
+
+        for (index, object) in scene.objects.iter().enumerate() {
+            if let Some(mut hit) = object.primitive.ray_intersect(ray) {
+                if closest.is_none_or(|previo| hit.distance < previo.distance) {
+                    hit.object_index = index;
+                    closest = Some(hit);
+                }
+            }
+        }
+
+        closest
+    }
+
+    /// Dos objetos alineados con el eje -Z, en grupos elegidos para que el
+    /// **lejano** aparezca antes en el orden de `SpatialGroupId::ALL`.
+    ///
+    /// Es la escena que distingue un recorrido ordenado de uno secuencial:
+    /// sin ordenar, el grupo lejano se visita primero y el cercano no puede
+    /// podarlo.
+    fn escena_lejano_primero() -> Scene {
+        let mut scene = Scene::new();
+        let material = scene.add_material(Material::new(Color::new(0.5, 0.5, 0.5)));
+
+        // Global es el indice 0 de ALL; Monolith el 5.
+        let piezas = [
+            (Vec3::new(0.0, 0.0, -40.0), SpatialGroupId::Global),
+            (Vec3::new(0.0, 0.0, 0.0), SpatialGroupId::Monolith),
+        ];
+
+        for (centro, grupo) in piezas {
+            scene.add_object(SceneObject {
+                primitive: Cuboid::centrado(centro, Vec3::new(2.0, 2.0, 2.0)).into(),
+                initial_material: material,
+                final_material: material,
+                spatial_group: grupo,
+                reveal_group: RevealGroup::Finale,
+            });
+        }
+
+        scene
+    }
+
+    #[test]
+    fn el_grupo_cercano_se_visita_antes_que_el_lejano() {
+        let scene = escena_lejano_primero();
+        let accel = SceneAccel::build(&scene).expect("hay geometria");
+
+        let ray = Ray::new(Vec3::new(0.0, 0.0, 10.0), Vec3::new(0.0, 0.0, -1.0));
+        let mut stats = TraversalStats::default();
+
+        let hit = accel
+            .intersect(&scene, &ray, &mut stats)
+            .expect("debe impactar");
+
+        // Gana el cercano, que es el objeto 1 aunque su grupo vaya despues.
+        assert_eq!(hit.object_index, 1);
+        assert!((hit.distance - 9.0).abs() < 1e-5, "{}", hit.distance);
+    }
+
+    #[test]
+    fn closest_t_menor_que_el_siguiente_t_enter_poda_el_grupo_lejano() {
+        let scene = escena_lejano_primero();
+        let accel = SceneAccel::build(&scene).expect("hay geometria");
+
+        let ray = Ray::new(Vec3::new(0.0, 0.0, 10.0), Vec3::new(0.0, 0.0, -1.0));
+        let mut stats = TraversalStats::default();
+
+        accel.intersect(&scene, &ray, &mut stats).expect("impacta");
+
+        // Los dos grupos son candidatos: el rayo atraviesa ambas cajas.
+        assert_eq!(stats.group_bounds_tests, 2);
+        // Pero solo se prueba la primitiva del cercano. Sin orden se
+        // probarian las dos.
+        assert_eq!(
+            stats.primitive_tests, 1,
+            "el grupo lejano no debio probarse: {stats:?}"
+        );
+    }
+
+    #[test]
+    fn sin_impacto_no_se_poda_nada() {
+        // Control del test anterior: si el rayo pasa de largo por el
+        // cercano, el lejano si tiene que probarse.
+        let scene = escena_lejano_primero();
+        let accel = SceneAccel::build(&scene).expect("hay geometria");
+
+        // Desplazado en Y para fallar el cubo cercano pero no el lejano,
+        // que es del mismo tamano: se apunta ligeramente hacia abajo.
+        let ray = Ray::new(
+            Vec3::new(0.0, 3.0, 10.0),
+            Vec3::new(0.0, -0.06, -1.0).normalize(),
+        );
+        let mut stats = TraversalStats::default();
+
+        let acelerado = accel.intersect(&scene, &ray, &mut stats);
+
+        assert_eq!(
+            acelerado.map(|h| h.object_index),
+            fuerza_bruta(&scene, &ray).map(|h| h.object_index)
+        );
+        assert!(stats.primitive_tests >= 1, "algo debio probarse: {stats:?}");
+    }
+
+    #[test]
+    fn el_resultado_coincide_con_fuerza_bruta_en_un_barrido() {
+        let scene = escena();
+        let accel = SceneAccel::build(&scene).expect("hay geometria");
+
+        // Barrido determinista de direcciones desde varios origenes.
+        let mut comprobados = 0;
+        for ox in [-25.0_f32, -10.0, 0.0, 10.0, 25.0] {
+            for oy in [-5.0_f32, 0.0, 5.0] {
+                for dx in [-0.6_f32, -0.2, 0.0, 0.2, 0.6] {
+                    for dy in [-0.4_f32, 0.0, 0.4] {
+                        let ray =
+                            Ray::new(Vec3::new(ox, oy, 30.0), Vec3::new(dx, dy, -1.0).normalize());
+
+                        let mut stats = TraversalStats::default();
+                        let a = accel.intersect(&scene, &ray, &mut stats);
+                        let b = fuerza_bruta(&scene, &ray);
+
+                        match (a, b) {
+                            (None, None) => {}
+                            (Some(a), Some(b)) => {
+                                assert_eq!(
+                                    a.object_index, b.object_index,
+                                    "origen ({ox},{oy}) dir ({dx},{dy})"
+                                );
+                                assert!((a.distance - b.distance).abs() < 1e-4);
+                                assert_eq!(a.normal, b.normal);
+                            }
+                            (a, b) => panic!(
+                                "discrepancia en ({ox},{oy}) dir ({dx},{dy}): {} contra {}",
+                                a.is_some(),
+                                b.is_some()
+                            ),
+                        }
+
+                        comprobados += 1;
+                    }
+                }
+            }
+        }
+
+        assert_eq!(comprobados, 225);
+    }
+
+    #[test]
+    fn el_any_hit_termina_en_el_primer_bloqueador() {
+        let scene = escena();
+        let accel = SceneAccel::build(&scene).expect("hay geometria");
+
+        let ray = Ray::new(Vec3::new(0.0, 0.0, 10.0), Vec3::new(0.0, 0.0, -1.0));
+        let mut stats = TraversalStats::default();
+
+        assert!(accel.occluded(&scene, &ray, 100.0, &mut stats));
+        // Corta en cuanto encuentra uno; no recorre las cinco primitivas.
+        assert!(
+            stats.primitive_tests < scene.objects.len(),
+            "recorrio de mas: {stats:?}"
+        );
+    }
+
+    #[test]
+    fn un_bloqueador_detras_de_la_luz_no_cuenta() {
+        let scene = escena();
+        let accel = SceneAccel::build(&scene).expect("hay geometria");
+
+        // El cubo del origen esta a distancia 9.5 del origen del rayo.
+        let ray = Ray::new(Vec3::new(0.0, 0.0, 10.0), Vec3::new(0.0, 0.0, -1.0));
+        let mut stats = TraversalStats::default();
+
+        assert!(
+            !accel.occluded(&scene, &ray, 5.0, &mut stats),
+            "un objeto mas alla de t_max no debe bloquear"
+        );
+        assert!(accel.occluded(&scene, &ray, 20.0, &mut TraversalStats::default()));
+    }
+
+    #[test]
+    fn el_any_hit_coincide_con_fuerza_bruta() {
+        let scene = escena();
+        let accel = SceneAccel::build(&scene).expect("hay geometria");
+
+        for ox in [-22.0_f32, -20.0, 0.0, 20.0, 8.0] {
+            for t_max in [1.0_f32, 5.0, 9.6, 50.0] {
+                let ray = Ray::new(Vec3::new(ox, 0.0, 10.0), Vec3::new(0.0, 0.0, -1.0));
+
+                let esperado = fuerza_bruta(&scene, &ray).is_some_and(|h| h.distance < t_max);
+                let obtenido = accel.occluded(&scene, &ray, t_max, &mut TraversalStats::default());
+
+                assert_eq!(obtenido, esperado, "origen x={ox}, t_max={t_max}");
+            }
+        }
+    }
+
+    #[test]
+    fn la_ordenacion_por_insercion_ordena() {
+        let mut candidatos = [(3.0, 30), (1.0, 10), (2.0, 20), (0.5, 5)];
+        ordenar_por_t_enter(&mut candidatos);
+
+        assert_eq!(candidatos, [(0.5, 5), (1.0, 10), (2.0, 20), (3.0, 30)]);
+
+        // Estable e idempotente sobre una lista ya ordenada.
+        ordenar_por_t_enter(&mut candidatos);
+        assert_eq!(candidatos[0], (0.5, 5));
+
+        // Y no se cae con listas vacias o de un elemento.
+        ordenar_por_t_enter(&mut []);
+        ordenar_por_t_enter(&mut [(1.0, 1)]);
+    }
+
+    #[test]
+    fn se_rechaza_un_grupo_con_demasiados_clusters() {
+        let mut scene = Scene::new();
+        let material = scene.add_material(Material::new(Color::new(0.5, 0.5, 0.5)));
+
+        for i in 0..(MAX_CLUSTERS_PER_GROUP + 1) {
+            scene.add_object(SceneObject {
+                primitive: Cuboid::centrado(
+                    Vec3::new(i as f32 * 3.0, 0.0, 0.0),
+                    Vec3::new(1.0, 1.0, 1.0),
+                )
+                .into(),
+                initial_material: material,
+                final_material: material,
+                spatial_group: SpatialGroupId::Breakwater,
+                reveal_group: RevealGroup::Breakwater,
+            });
+        }
+
+        // Un cluster por objeto excede el tope y la construccion falla en
+        // vez de degradarse en silencio.
+        assert!(SceneAccel::build_with(&scene, |i, _| i as u16).is_none());
+        // Con el tope justo, se acepta.
+        assert!(
+            SceneAccel::build_with(&scene, |i, _| (i % MAX_CLUSTERS_PER_GROUP) as u16).is_some()
+        );
     }
 
     #[test]
