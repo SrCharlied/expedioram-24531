@@ -6,6 +6,7 @@
 //! teclado y presentar el framebuffer—, así que la lógica del raytracer
 //! queda accesible desde `cargo test` y desde un render sin ventana.
 
+pub mod bounds;
 pub mod camera;
 pub mod color;
 pub mod framebuffer;
