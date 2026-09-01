@@ -13,7 +13,7 @@
 **Ventana disponible:** 31 días calendario  
 **Revisión:** v2.2 — cierra el audit completo: `RevealState` como fuente única, Hito 7 como reserva técnica, duración por frames medidos, `orbit_radius` derivado del encuadre, caps de agua `0.9/0.9`, `max_depth = 3` con terminal en skybox y `shadow_mode` como único campo de sombras  
 **Base verificada:** `upstream/15-RT-03-ORBIT-CAMERA` @ `f3e553917077deba3529d9a97f39ea2b58341e84`  
-**Verificación realizada:** el árbol `src/` del repositorio de trabajo y el de `f3e5539` comparten hash `d77aad46c439f43ed5f06c2fd393bc25fa5bdf11`; los diez archivos de la base son byte-idénticos
+**Verificación realizada:** el árbol `src/` del repositorio de trabajo y el de `f3e5539` comparten hash `d77aad46c439f43ed5f06c2fd393bc25fa5bdf11`. Los diez archivos de la base eran byte-idénticos **al momento de verificar**, antes de la Tarea `0.4`; ver el registro fechado en `docs/evidence.md`
 
 ---
 
@@ -105,8 +105,9 @@ Lo que sí se ejecutó, sobre `cargo 1.97.0` / `rustc 1.97.0` en Windows 11, es 
 Lo que quedó verificado por comparación real de contenido, no por inspección visual:
 
 - El remoto académico responde y su rama `15-RT-03-ORBIT-CAMERA` apunta a `f3e5539…`.
-- Los seis archivos de `src/`, más `Cargo.toml`, `Cargo.lock`, `README.md` y `.gitignore`, son byte-idénticos entre el repositorio de trabajo y esa rama.
+- Los seis archivos de `src/`, más `Cargo.toml`, `Cargo.lock`, `README.md` y `.gitignore`, eran byte-idénticos entre el repositorio de trabajo y esa rama **antes de la Tarea `0.4`**.
 - El árbol `src/` comparte hash en ambos lados, así que la base no fue modificada antes de empezar.
+- Desde la Tarea `0.4`, `Cargo.toml` y `Cargo.lock` divergen a propósito por el renombre del paquete. `src/` sigue intacto hasta el Hito 1.
 
 ---
 
@@ -500,7 +501,9 @@ git diff --stat upstream/15-RT-03-ORBIT-CAMERA HEAD -- \
   src Cargo.toml Cargo.lock README.md .gitignore
 ```
 
-Esperado: salida vacía. Cualquier línea aquí es una modificación involuntaria de la base y hay que resolverla antes de seguir.
+Esperado **mientras el Hito 0 no haya llegado a la Tarea `0.4`**: salida vacía. Cualquier línea aquí es una modificación involuntaria de la base y hay que resolverla antes de seguir.
+
+Después de la Tarea `0.4` esta comprobación deja de salir vacía por diseño: `Cargo.toml` y `Cargo.lock` divergen por el renombre del paquete. A partir de ahí la comprobación válida es solo la fuerte, sobre `src/`.
 
 La raíz completa **sí** difiere, y debe hacerlo: el repositorio de trabajo agrega `docs/`, que no existe en la rama académica. Comparar `HEAD^{tree}` contra el árbol de `f3e5539` no es una verificación válida.
 

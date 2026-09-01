@@ -1,0 +1,273 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1540" viewBox="0 0 2400 1540" font-family="Helvetica Neue, Helvetica, Arial, sans-serif">
+<defs>
+<pattern id="lienzo" width="9" height="9" patternUnits="userSpaceOnUse">
+  <rect width="9" height="9" fill="#F4F0E6"/>
+  <path d="M0 0 L0 9" stroke="#E9E2D2" stroke-width="1" fill="none"/>
+  <path d="M0 0 L9 0" stroke="#E9E2D2" stroke-width="1" fill="none"/>
+</pattern>
+<pattern id="niebla" width="14" height="14" patternUnits="userSpaceOnUse">
+  <path d="M0 12 L14 12" stroke="#D6CFBE" stroke-width="1.4" fill="none"/>
+</pattern>
+<marker id="pta" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+  <path d="M2 1 L8 5 L2 9" fill="none" stroke="context-stroke" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+
+<rect width="2400" height="1540" fill="url(#lienzo)"/>
+
+<text x="60" y="92" font-size="44" font-weight="700" fill="#2E2C28" letter-spacing="1.5">EXPEDITION 33 — EL CONTINENTE INACABADO</text>
+<text x="60" y="130" font-size="21" fill="#6E6A60">Blueprint espacial v2 · arco costero · Monolito en el centro exacto · Aguas Voladoras como bahía de borde roto</text>
+<line x1="60" y1="158" x2="2340" y2="158" stroke="#C9C2B2" stroke-width="1.5"/>
+
+<rect x="60" y="190" width="1500" height="760" rx="6" fill="#FBF8F1" stroke="#C9C2B2" stroke-width="1.5"/>
+<text x="90" y="234" font-size="23" font-weight="700" fill="#2E2C28" letter-spacing="1">1 · VISTA SUPERIOR EN TRES CUARTOS</text>
+
+<path d="M210 305 C420 286, 900 284, 1290 304 C1412 316, 1462 386, 1454 524 C1444 702, 1372 852, 1244 882 C996 910, 520 904, 332 874 C204 852, 156 722, 162 542 C166 402, 180 322, 210 305 Z" fill="url(#lienzo)" stroke="#B9B1A0" stroke-width="2.5" stroke-dasharray="11 8"/>
+<text x="192" y="336" font-size="14" fill="#A79E8B">base de la maqueta · lienzo sin pintar</text>
+
+<circle cx="810" cy="590" r="330" fill="none" stroke="#C2BAA8" stroke-width="1.4" stroke-dasharray="6 9"/>
+<text x="864" y="274" font-size="14" fill="#A79E8B">órbita de cámara (yaw)</text>
+
+<path d="M330 372 C520 322, 860 316, 1090 348 C1230 368, 1312 442, 1320 562 C1328 702, 1250 802, 1090 830 C940 856, 760 852, 640 822 C700 762, 722 692, 662 622 C602 554, 470 522, 400 472 C352 438, 330 400, 330 372 Z" fill="#E7E1D0" stroke="#9A9384" stroke-width="2.5"/>
+
+<path d="M930 380 C1060 366, 1190 392, 1252 452 C1300 500, 1300 606, 1256 686 C1206 774, 1100 806, 1004 796 C940 788, 906 742, 916 672 C926 596, 900 496, 930 380 Z" fill="url(#niebla)" opacity="0.75"/>
+<path d="M960 430 C1060 420, 1160 448, 1200 500" fill="none" stroke="#B7AF9C" stroke-width="2" stroke-dasharray="7 6"/>
+<path d="M980 620 C1080 604, 1180 630, 1214 682" fill="none" stroke="#B7AF9C" stroke-width="2" stroke-dasharray="7 6"/>
+<text x="1000" y="546" font-size="17" font-weight="700" fill="#8C8474" letter-spacing="0.6">CONTINENTE SIMPLIFICADO</text>
+<text x="1000" y="570" font-size="14" fill="#9A9384">masas grandes · costas · niebla · siluetas</text>
+<text x="1000" y="590" font-size="14" fill="#9A9384">sin detalle, sin materiales propios</text>
+
+<path d="M430 410 C442 352, 545 332, 645 344 C735 354, 765 400, 748 448 C728 496, 625 512, 535 496 C458 482, 422 458, 430 410 Z" fill="#B7CE93" stroke="#5F8340" stroke-width="2.5"/>
+<circle cx="500" cy="392" r="4" fill="#D98BA8"/><circle cx="546" cy="376" r="4" fill="#D98BA8"/><circle cx="600" cy="392" r="4" fill="#E8C86A"/><circle cx="652" cy="404" r="4" fill="#D98BA8"/><circle cx="560" cy="440" r="4" fill="#E8C86A"/><circle cx="620" cy="452" r="4" fill="#D98BA8"/>
+<circle cx="470" cy="440" r="13" fill="#6E8F4A"/><circle cx="700" cy="418" r="16" fill="#6E8F4A"/>
+<text x="486" y="418" font-size="17" font-weight="700" fill="#33501F" letter-spacing="0.6">PRADERAS PRIMAVERALES</text>
+
+<path d="M400 472 C470 522, 602 554, 662 622 C700 664, 706 720, 690 762 C730 720, 748 660, 730 610 C700 552, 580 500, 470 468 C440 462, 414 462, 400 472 Z" fill="#9AA0A6" stroke="#454B51" stroke-width="2.5"/>
+<path d="M452 494 l13 -7 l13 7 l0 15 l-13 7 l-13 -7 Z" fill="#6E757C"/>
+<path d="M508 518 l13 -7 l13 7 l0 15 l-13 7 l-13 -7 Z" fill="#6E757C"/>
+<path d="M566 542 l13 -7 l13 7 l0 15 l-13 7 l-13 -7 Z" fill="#6E757C"/>
+<path d="M620 574 l13 -7 l13 7 l0 15 l-13 7 l-13 -7 Z" fill="#6E757C"/>
+<path d="M662 618 l13 -7 l13 7 l0 15 l-13 7 l-13 -7 Z" fill="#6E757C"/>
+<path d="M684 676 l13 -7 l13 7 l0 15 l-13 7 l-13 -7 Z" fill="#6E757C"/>
+<path d="M436 486 C520 542, 640 592, 692 700" fill="none" stroke="#D8D2C4" stroke-width="4" stroke-linecap="round"/>
+<line x1="700" y1="700" x2="878" y2="742" stroke="#8C8474" stroke-width="1.2" stroke-dasharray="4 4"/>
+<circle cx="700" cy="700" r="3.5" fill="#454B51"/>
+<text x="888" y="738" font-size="17" font-weight="700" fill="#2E3438" letter-spacing="0.6">ACANTILADO ROMPEOLAS</text>
+<text x="888" y="760" font-size="14" fill="#6E6A60">muro de contención de la meseta</text>
+<text x="888" y="780" font-size="14" fill="#6E6A60">sendero húmedo (specular alto)</text>
+
+<path d="M400 472 C470 522, 602 554, 662 622 C722 692, 700 762, 640 822 C560 812, 470 796, 412 764 C348 728, 318 660, 336 600 C354 534, 372 492, 400 472 Z" fill="#A9CCE3" stroke="#33749E" stroke-width="2.5"/>
+<path d="M370 596 C420 632, 470 664, 520 706" fill="none" stroke="#7FB0D2" stroke-width="2"/>
+<path d="M352 660 C404 692, 456 720, 512 752" fill="none" stroke="#7FB0D2" stroke-width="2"/>
+<path d="M456 668 l52 0 l-11 24 l-30 0 Z" fill="#6B5B45" stroke="#3E3428" stroke-width="1.5"/>
+<line x1="482" y1="692" x2="482" y2="742" stroke="#4E5A64" stroke-width="1.6" stroke-dasharray="3 3"/>
+<path d="M474 742 l16 0 l-8 10 Z" fill="#4E5A64"/>
+<text x="356" y="642" font-size="17" font-weight="700" fill="#0F4A6B" letter-spacing="0.6">AGUAS VOLADORAS</text>
+<text x="356" y="664" font-size="13" fill="#2C6A8E">superficie refractiva</text>
+<text x="520" y="686" font-size="13" fill="#2C6A8E">barco suspendido + cadena al ancla</text>
+
+<path d="M640 822 l-24 -12 l-22 12 l-26 -14 l-24 10 l-26 -12 l-24 8 l-26 -12 l-22 8 l-24 -12 l-14 6" fill="none" stroke="#8C8474" stroke-width="4" stroke-linejoin="round"/>
+<line x1="560" y1="826" x2="470" y2="884" stroke="#8C8474" stroke-width="1.2" stroke-dasharray="4 4"/>
+<text x="300" y="902" font-size="15" font-weight="700" fill="#5F5A50">BORDE ROTO · pared de corte refractiva</text>
+
+<path d="M512 500 C516 526, 508 552, 496 574" fill="none" stroke="#8FC3DE" stroke-width="5" stroke-linecap="round"/>
+<path d="M534 506 C538 530, 530 554, 520 574" fill="none" stroke="#B4D8EC" stroke-width="3.5" stroke-linecap="round"/>
+<text x="546" y="546" font-size="13" fill="#2C6A8E">cascada</text>
+
+<path d="M782 546 L826 534 L854 566 L848 618 L812 642 L774 614 L770 572 Z" fill="#3A3A44" stroke="#1E1E26" stroke-width="2.5"/>
+<path d="M796 566 L824 560 L830 596 L806 610 L792 588 Z" fill="#5B5B6B"/>
+<path d="M810 590 L640 456" fill="none" stroke="#7FC4D9" stroke-width="2" stroke-dasharray="5 6"/>
+<path d="M810 590 L666 644" fill="none" stroke="#7FC4D9" stroke-width="2" stroke-dasharray="5 6"/>
+<path d="M810 590 L560 700" fill="none" stroke="#7FC4D9" stroke-width="2" stroke-dasharray="5 6"/>
+<text x="742" y="518" font-size="19" font-weight="700" fill="#1E1E26" letter-spacing="1">MONOLITO</text>
+<text x="700" y="674" font-size="13" fill="#5F5A50">centro exacto del plinto · eje de la órbita</text>
+<text x="700" y="694" font-size="13" fill="#5F5A50">altura ≈ 45 % del encuadre</text>
+
+<rect x="742" y="392" width="15" height="15" fill="#CFC8B6" stroke="#9A9384" stroke-width="1.5" transform="rotate(18 749 399)"/>
+<rect x="876" y="352" width="12" height="12" fill="#CFC8B6" stroke="#9A9384" stroke-width="1.5" transform="rotate(-24 882 358)"/>
+<rect x="900" y="470" width="17" height="17" fill="#CFC8B6" stroke="#9A9384" stroke-width="1.5" transform="rotate(32 908 478)"/>
+<rect x="700" y="330" width="11" height="11" fill="#CFC8B6" stroke="#9A9384" stroke-width="1.5" transform="rotate(-12 705 335)"/>
+<rect x="866" y="620" width="13" height="13" fill="#CFC8B6" stroke="#9A9384" stroke-width="1.5" transform="rotate(26 872 626)"/>
+<rect x="612" y="298" width="14" height="14" fill="#CFC8B6" stroke="#9A9384" stroke-width="1.5" transform="rotate(40 619 305)"/>
+<text x="920" y="352" font-size="13" fill="#9A9384">fragmentos suspendidos (máx. 20)</text>
+
+<ellipse cx="240" cy="700" rx="64" ry="47" fill="#EFE7D5" stroke="#8C8474" stroke-width="2.5"/>
+<circle cx="212" cy="686" r="13" fill="#B7CE93" stroke="#5F8340" stroke-width="1.5"/>
+<circle cx="252" cy="676" r="13" fill="#9AA0A6" stroke="#454B51" stroke-width="1.5"/>
+<circle cx="240" cy="716" r="13" fill="#A9CCE3" stroke="#33749E" stroke-width="1.5"/>
+<line x1="286" y1="742" x2="330" y2="790" stroke="#8C8474" stroke-width="5" stroke-linecap="round"/>
+<line x1="278" y1="732" x2="290" y2="746" stroke="#3A3A44" stroke-width="7" stroke-linecap="round"/>
+<text x="176" y="626" font-size="16" font-weight="700" fill="#5F5A50" letter-spacing="0.6">PALETA Y PINCEL</text>
+<text x="176" y="646" font-size="13" fill="#8C8474">fuera del continente, sobre el plinto</text>
+
+<path d="M298 664 C348 596, 400 520, 452 472" fill="none" stroke="#5F8340" stroke-width="2" stroke-dasharray="6 6" marker-end="url(#pta)"/>
+<path d="M304 682 C360 646, 410 610, 452 588" fill="none" stroke="#454B51" stroke-width="2" stroke-dasharray="6 6" marker-end="url(#pta)"/>
+<path d="M300 726 C330 748, 356 762, 388 772" fill="none" stroke="#33749E" stroke-width="2" stroke-dasharray="6 6" marker-end="url(#pta)"/>
+<text x="176" y="770" font-size="13" fill="#8C8474">propagación del pigmento</text>
+
+<path d="M400 770 L700 330" fill="none" stroke="#B0554A" stroke-width="2" stroke-dasharray="14 7"/>
+<circle cx="400" cy="770" r="13" fill="#FBF8F1" stroke="#B0554A" stroke-width="2"/>
+<text x="400" y="775" font-size="14" font-weight="700" fill="#B0554A" text-anchor="middle">A</text>
+<circle cx="700" cy="330" r="13" fill="#FBF8F1" stroke="#B0554A" stroke-width="2"/>
+<text x="700" y="335" font-size="14" font-weight="700" fill="#B0554A" text-anchor="middle">A′</text>
+
+<path d="M640 873 l-30 22 l0 -44 Z" fill="#2E2C28"/>
+<circle cx="640" cy="873" r="9" fill="#2E2C28"/>
+<path d="M640 873 L742 640" fill="none" stroke="#2E2C28" stroke-width="1.2" stroke-dasharray="5 5"/>
+<path d="M640 873 L830 704" fill="none" stroke="#2E2C28" stroke-width="1.2" stroke-dasharray="5 5"/>
+<text x="480" y="866" font-size="15" font-weight="700" fill="#2E2C28">CÁMARA INICIAL</text>
+<text x="480" y="886" font-size="13" fill="#6E6A60">3/4 · elevación ≈ 35°</text>
+
+<rect x="1620" y="190" width="720" height="760" rx="6" fill="#FBF8F1" stroke="#C9C2B2" stroke-width="1.5"/>
+<text x="1650" y="234" font-size="23" font-weight="700" fill="#2E2C28" letter-spacing="1">2 · LEYENDA Y ALCANCE</text>
+
+<text x="1650" y="278" font-size="15" font-weight="700" fill="#8C8474" letter-spacing="1.5">REGIONES CON DETALLE ALTO</text>
+<rect x="1650" y="292" width="26" height="26" fill="#B7CE93" stroke="#5F8340" stroke-width="1.5"/>
+<text x="1690" y="304" font-size="16" font-weight="700" fill="#2E2C28">Praderas Primaverales</text>
+<text x="1690" y="326" font-size="14" fill="#6E6A60">pigmento verde + rosa · césped, flores, cascada, árboles</text>
+<rect x="1650" y="348" width="26" height="26" fill="#9AA0A6" stroke="#454B51" stroke-width="1.5"/>
+<text x="1690" y="360" font-size="16" font-weight="700" fill="#2E2C28">Acantilado Rompeolas</text>
+<text x="1690" y="382" font-size="14" fill="#6E6A60">pigmento gris + dorado · pilares, sendero húmedo, costa</text>
+<rect x="1650" y="404" width="26" height="26" fill="#A9CCE3" stroke="#33749E" stroke-width="1.5"/>
+<text x="1690" y="416" font-size="16" font-weight="700" fill="#2E2C28">Aguas Voladoras</text>
+<text x="1690" y="438" font-size="14" fill="#6E6A60">pigmento azul · agua, barco suspendido, kelp, ancla</text>
+
+<line x1="1650" y1="464" x2="2310" y2="464" stroke="#DCD5C4" stroke-width="1.5"/>
+<text x="1650" y="496" font-size="15" font-weight="700" fill="#8C8474" letter-spacing="1.5">CINCO MATERIALES PUNTUABLES</text>
+<text x="1650" y="524" font-size="14" fill="#2E2C28">1 · Agua</text>
+<text x="1870" y="524" font-size="14" fill="#6E6A60">transparencia + reflexión + refracción</text>
+<text x="1650" y="550" font-size="14" fill="#2E2C28">2 · Roca húmeda</text>
+<text x="1870" y="550" font-size="14" fill="#6E6A60">specular alto, reflectividad moderada</text>
+<text x="1650" y="576" font-size="14" fill="#2E2C28">3 · Madera envejecida</text>
+<text x="1870" y="576" font-size="14" fill="#6E6A60">mate, oscura, casi sin reflejo</text>
+<text x="1650" y="602" font-size="14" fill="#2E2C28">4 · Césped y flores</text>
+<text x="1870" y="602" font-size="14" fill="#6E6A60">albedo colorido, specular bajo</text>
+<text x="1650" y="628" font-size="14" fill="#2E2C28">5 · Cristal pictórico</text>
+<text x="1870" y="628" font-size="14" fill="#6E6A60">Monolito y fragmentos · transparencia parcial</text>
+
+<line x1="1650" y1="656" x2="2310" y2="656" stroke="#DCD5C4" stroke-width="1.5"/>
+<text x="1650" y="688" font-size="15" font-weight="700" fill="#8C8474" letter-spacing="1.5">PRIMITIVAS TRAZABLES · SEGURO 160 / OBJETIVO 275</text>
+<rect x="1650" y="704" width="101" height="22" fill="#CFC8B6"/>
+<rect x="1751" y="704" width="139" height="22" fill="#B7CE93"/>
+<rect x="1890" y="704" width="143" height="22" fill="#9AA0A6"/>
+<rect x="2033" y="704" width="217" height="22" fill="#A9CCE3"/>
+<text x="1650" y="748" font-size="14" fill="#6E6A60">Seguro: Global 27 · Praderas 37 · Rompeolas 38 · Aguas 58 = 160</text>
+<text x="1650" y="772" font-size="14" fill="#6E6A60">Objetivo máximo 275 · aceleración obligatoria · el inventario v3 manda</text>
+
+<line x1="1650" y1="798" x2="2310" y2="798" stroke="#DCD5C4" stroke-width="1.5"/>
+<text x="1650" y="830" font-size="15" font-weight="700" fill="#8C8474" letter-spacing="1.5">BASALTO · DOS RUTAS</text>
+<text x="1650" y="858" font-size="14" fill="#2E2C28">Ruta A</text>
+<text x="1740" y="858" font-size="14" fill="#6E6A60">prisma hexagonal como primitiva propia (pendiente del profesor)</text>
+<text x="1650" y="884" font-size="14" fill="#2E2C28">Ruta B</text>
+<text x="1740" y="884" font-size="14" fill="#6E6A60">cuboides verticales de alturas variables + textura hexagonal</text>
+<text x="1650" y="916" font-size="14" fill="#8C8474">La silueta del blueprint es idéntica en ambas rutas.</text>
+
+<rect x="60" y="990" width="940" height="490" rx="6" fill="#FBF8F1" stroke="#C9C2B2" stroke-width="1.5"/>
+<text x="90" y="1034" font-size="23" font-weight="700" fill="#2E2C28" letter-spacing="1">3 · CORTE ESQUEMÁTICO A–A′</text>
+
+<circle cx="118" cy="1062" r="12" fill="#FBF8F1" stroke="#B0554A" stroke-width="2"/>
+<text x="118" y="1067" font-size="13" font-weight="700" fill="#B0554A" text-anchor="middle">A</text>
+<circle cx="940" cy="1062" r="12" fill="#FBF8F1" stroke="#B0554A" stroke-width="2"/>
+<text x="940" y="1067" font-size="13" font-weight="700" fill="#B0554A" text-anchor="middle">A′</text>
+
+<rect x="110" y="1382" width="820" height="56" fill="url(#lienzo)" stroke="#B9B1A0" stroke-width="2" stroke-dasharray="9 7"/>
+<text x="120" y="1418" font-size="13" fill="#A79E8B">plinto · lienzo</text>
+
+<path d="M150 1382 L150 1330 L430 1330 L430 1382 Z" fill="#A9CCE3" stroke="#33749E" stroke-width="2"/>
+<line x1="150" y1="1330" x2="430" y2="1330" stroke="#1E6A96" stroke-width="4"/>
+<path d="M150 1330 l0 14 l-9 12 l9 14 l-7 12" fill="none" stroke="#8C8474" stroke-width="5" stroke-linejoin="round"/>
+<path d="M258 1348 l44 0 l-9 20 l-26 0 Z" fill="#6B5B45"/>
+<line x1="280" y1="1368" x2="280" y2="1380" stroke="#4E5A64" stroke-width="1.6" stroke-dasharray="3 3"/>
+<text x="196" y="1310" font-size="14" font-weight="700" fill="#0F4A6B">nivel 1 · Aguas Voladoras</text>
+
+<path d="M430 1382 L430 1240 L620 1240 L620 1382 Z" fill="#E7E1D0" stroke="#9A9384" stroke-width="2"/>
+<rect x="436" y="1240" width="22" height="142" fill="#9AA0A6" stroke="#454B51" stroke-width="1.5"/>
+<rect x="464" y="1268" width="22" height="114" fill="#8A9199" stroke="#454B51" stroke-width="1.5"/>
+<rect x="492" y="1226" width="22" height="156" fill="#9AA0A6" stroke="#454B51" stroke-width="1.5"/>
+<rect x="520" y="1256" width="22" height="126" fill="#8A9199" stroke="#454B51" stroke-width="1.5"/>
+<rect x="548" y="1214" width="22" height="168" fill="#9AA0A6" stroke="#454B51" stroke-width="1.5"/>
+<rect x="576" y="1248" width="22" height="134" fill="#8A9199" stroke="#454B51" stroke-width="1.5"/>
+<rect x="604" y="1230" width="22" height="152" fill="#9AA0A6" stroke="#454B51" stroke-width="1.5"/>
+<text x="430" y="1198" font-size="14" font-weight="700" fill="#2E3438">nivel 2 · Rompeolas</text>
+
+<path d="M626 1382 L626 1150 L900 1150 L900 1382 Z" fill="#E7E1D0" stroke="#9A9384" stroke-width="2"/>
+<rect x="626" y="1138" width="274" height="14" fill="#B7CE93" stroke="#5F8340" stroke-width="1.5"/>
+<circle cx="700" cy="1122" r="14" fill="#6E8F4A"/>
+<circle cx="828" cy="1126" r="11" fill="#6E8F4A"/>
+<path d="M626 1152 C620 1180, 622 1210, 628 1238" fill="none" stroke="#8FC3DE" stroke-width="5" stroke-linecap="round"/>
+<text x="700" y="1096" font-size="14" font-weight="700" fill="#33501F">nivel 3 · Praderas</text>
+
+<path d="M786 1138 L786 1044 L836 1030 L862 1062 L856 1138 Z" fill="none" stroke="#5B5B6B" stroke-width="2.5" stroke-dasharray="8 6"/>
+<text x="878" y="1076" font-size="14" font-weight="700" fill="#5B5B6B">Monolito</text>
+<text x="878" y="1096" font-size="13" fill="#8C8474">detrás del plano de corte</text>
+
+<circle cx="112" cy="1218" r="9" fill="#2E2C28"/>
+<path d="M120 1222 L296 1330" fill="none" stroke="#B0554A" stroke-width="2" marker-end="url(#pta)"/>
+<path d="M296 1330 L392 1256" fill="none" stroke="#B0554A" stroke-width="2" stroke-dasharray="5 5" marker-end="url(#pta)"/>
+<path d="M120 1234 L146 1348" fill="none" stroke="#1E6A96" stroke-width="2" marker-end="url(#pta)"/>
+<path d="M150 1350 L252 1360" fill="none" stroke="#1E6A96" stroke-width="2" stroke-dasharray="5 5" marker-end="url(#pta)"/>
+<text x="300" y="1246" font-size="13" font-weight="700" fill="#B0554A">reflexión en la superficie</text>
+<text x="196" y="1394" font-size="13" font-weight="700" fill="#1E6A96">refracción por el borde roto</text>
+<text x="92" y="1200" font-size="13" font-weight="700" fill="#2E2C28">cámara</text>
+
+<text x="90" y="1462" font-size="14" fill="#6E6A60">La cámara recibe los dos efectos a la vez: la superficie le devuelve cielo, la pared rota le deja ver el barco.</text>
+
+<rect x="1060" y="990" width="600" height="490" rx="6" fill="#FBF8F1" stroke="#C9C2B2" stroke-width="1.5"/>
+<text x="1090" y="1034" font-size="23" font-weight="700" fill="#2E2C28" letter-spacing="1">4 · ENCUADRE HERO · 800 × 600</text>
+
+<rect x="1100" y="1060" width="520" height="390" fill="#E4E7EA" stroke="#2E2C28" stroke-width="2.5"/>
+<line x1="1273" y1="1060" x2="1273" y2="1450" stroke="#FFFFFF" stroke-width="1.2" stroke-dasharray="6 6" opacity="0.8"/>
+<line x1="1446" y1="1060" x2="1446" y2="1450" stroke="#FFFFFF" stroke-width="1.2" stroke-dasharray="6 6" opacity="0.8"/>
+<line x1="1100" y1="1190" x2="1620" y2="1190" stroke="#FFFFFF" stroke-width="1.2" stroke-dasharray="6 6" opacity="0.8"/>
+<line x1="1100" y1="1320" x2="1620" y2="1320" stroke="#FFFFFF" stroke-width="1.2" stroke-dasharray="6 6" opacity="0.8"/>
+
+<path d="M1100 1330 C1200 1300, 1330 1292, 1450 1306 C1540 1316, 1596 1338, 1620 1360 L1620 1450 L1100 1450 Z" fill="#E7E1D0" stroke="#9A9384" stroke-width="2"/>
+<path d="M1100 1352 C1180 1336, 1260 1338, 1310 1360 C1250 1400, 1170 1424, 1100 1432 Z" fill="#A9CCE3" stroke="#33749E" stroke-width="2"/>
+<path d="M1100 1432 l26 -6 l22 -12 l26 -6 l24 -12 l26 -6 l22 -12" fill="none" stroke="#8C8474" stroke-width="4"/>
+<path d="M1148 1330 C1210 1316, 1280 1314, 1330 1322 L1330 1348 C1270 1336, 1200 1338, 1148 1350 Z" fill="#B7CE93" stroke="#5F8340" stroke-width="1.5"/>
+<rect x="1472" y="1310" width="16" height="72" fill="#9AA0A6" stroke="#454B51" stroke-width="1.5"/>
+<rect x="1494" y="1296" width="16" height="86" fill="#8A9199" stroke="#454B51" stroke-width="1.5"/>
+<rect x="1516" y="1318" width="16" height="64" fill="#9AA0A6" stroke="#454B51" stroke-width="1.5"/>
+<rect x="1538" y="1300" width="16" height="82" fill="#8A9199" stroke="#454B51" stroke-width="1.5"/>
+<rect x="1560" y="1322" width="16" height="60" fill="#9AA0A6" stroke="#454B51" stroke-width="1.5"/>
+<path d="M1330 1310 L1330 1128 L1372 1108 L1402 1146 L1396 1310 Z" fill="#3A3A44" stroke="#1E1E26" stroke-width="2"/>
+<path d="M1348 1160 L1378 1150 L1384 1210 L1356 1226 Z" fill="#5B5B6B"/>
+<rect x="1266" y="1146" width="13" height="13" fill="#CFC8B6" stroke="#9A9384" stroke-width="1.2" transform="rotate(22 1272 1152)"/>
+<rect x="1436" y="1180" width="11" height="11" fill="#CFC8B6" stroke="#9A9384" stroke-width="1.2" transform="rotate(-18 1441 1185)"/>
+<rect x="1206" y="1216" width="14" height="14" fill="#CFC8B6" stroke="#9A9384" stroke-width="1.2" transform="rotate(34 1213 1223)"/>
+
+<text x="1090" y="1476" font-size="14" fill="#6E6A60">Monolito sobre la vertical central · agua en primer plano izquierdo · basalto cerrando a la derecha</text>
+
+<rect x="1720" y="990" width="620" height="490" rx="6" fill="#FBF8F1" stroke="#C9C2B2" stroke-width="1.5"/>
+<text x="1750" y="1034" font-size="23" font-weight="700" fill="#2E2C28" letter-spacing="1">5 · ESTADO INICIAL / ESTADO FINAL</text>
+
+<rect x="1750" y="1060" width="280" height="210" fill="#F4F0E6" stroke="#2E2C28" stroke-width="2"/>
+<path d="M1750 1198 C1810 1180, 1890 1176, 1960 1186 C2000 1192, 2020 1204, 2030 1214 L2030 1270 L1750 1270 Z" fill="none" stroke="#B9B1A0" stroke-width="2" stroke-dasharray="7 6"/>
+<path d="M1750 1214 C1800 1204, 1846 1206, 1874 1218" fill="none" stroke="#C9C2B2" stroke-width="2" stroke-dasharray="5 5"/>
+<path d="M1898 1190 L1898 1096 L1922 1086 L1938 1108 L1934 1190 Z" fill="none" stroke="#B9B1A0" stroke-width="2" stroke-dasharray="7 6"/>
+<rect x="1806" y="1108" width="12" height="12" fill="none" stroke="#C9C2B2" stroke-width="1.5" transform="rotate(20 1812 1114)"/>
+<rect x="1976" y="1132" width="12" height="12" fill="none" stroke="#C9C2B2" stroke-width="1.5" transform="rotate(-26 1982 1138)"/>
+<text x="1890" y="1300" font-size="16" font-weight="700" fill="#8C8474" text-anchor="middle">SIN PINTAR</text>
+
+<rect x="2050" y="1060" width="280" height="210" fill="#E4E7EA" stroke="#2E2C28" stroke-width="2"/>
+<path d="M2050 1198 C2110 1180, 2190 1176, 2260 1186 C2300 1192, 2320 1204, 2330 1214 L2330 1270 L2050 1270 Z" fill="#E7E1D0" stroke="#9A9384" stroke-width="2"/>
+<path d="M2050 1214 C2098 1204, 2144 1206, 2172 1218 C2136 1242, 2094 1256, 2050 1262 Z" fill="#A9CCE3" stroke="#33749E" stroke-width="1.5"/>
+<path d="M2076 1194 C2114 1186, 2154 1186, 2182 1190 L2182 1204 C2148 1198, 2110 1198, 2076 1206 Z" fill="#B7CE93" stroke="#5F8340" stroke-width="1.2"/>
+<rect x="2256" y="1188" width="11" height="44" fill="#9AA0A6" stroke="#454B51" stroke-width="1.2"/>
+<rect x="2272" y="1180" width="11" height="52" fill="#8A9199" stroke="#454B51" stroke-width="1.2"/>
+<rect x="2288" y="1192" width="11" height="40" fill="#9AA0A6" stroke="#454B51" stroke-width="1.2"/>
+<path d="M2198 1190 L2198 1096 L2222 1086 L2238 1108 L2234 1190 Z" fill="#3A3A44" stroke="#1E1E26" stroke-width="2"/>
+<path d="M2208 1116 L2226 1110 L2229 1148 L2212 1158 Z" fill="#7FC4D9"/>
+<rect x="2106" y="1108" width="12" height="12" fill="#CFC8B6" stroke="#9A9384" stroke-width="1.5" transform="rotate(20 2112 1114)"/>
+<rect x="2276" y="1132" width="12" height="12" fill="#CFC8B6" stroke="#9A9384" stroke-width="1.5" transform="rotate(-26 2282 1138)"/>
+<text x="2190" y="1300" font-size="16" font-weight="700" fill="#2E2C28" text-anchor="middle">PINTADO</text>
+
+<text x="1750" y="1344" font-size="15" font-weight="700" fill="#8C8474" letter-spacing="1.5">QUÉ CAMBIA AL PINTAR</text>
+<text x="1750" y="1374" font-size="14" fill="#6E6A60">Material: lienzo mate → material propio con textura y specular</text>
+<text x="1750" y="1400" font-size="14" fill="#6E6A60">Geometría: masas planas → terrazas, pilares, cascada, vegetación</text>
+<text x="1750" y="1426" font-size="14" fill="#6E6A60">Fragmentos: dispersos → alineados en su posición</text>
+<text x="1750" y="1452" font-size="14" fill="#6E6A60">Luz y skybox: pálido y vacío → color, niebla y pigmento nacarado</text>
+
+<line x1="60" y1="1500" x2="2340" y2="1500" stroke="#C9C2B2" stroke-width="1.5"/>
+<text x="60" y="1524" font-size="14" fill="#8C8474">Decisiones fijadas en v2: arco costero · Monolito en el centro exacto como eje de la órbita · bahía de borde roto. Pendiente externo: respuesta del profesor sobre el prisma hexagonal.</text>
+</svg>

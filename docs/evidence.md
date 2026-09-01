@@ -19,7 +19,19 @@ Registro de verificaciones y mediciones del proyecto. Cada entrada dice **qué**
 
 **Método.** Comparación de contenido, no de hashes de commit: el historial local fue aplanado en `06a2b43 Init`, así que los commits no coinciden con los del curso y compararlos no diría nada.
 
-Resultado: los diez archivos de la base son byte-idénticos entre el repositorio de trabajo y `f3e5539` — los seis de `src/`, más `Cargo.toml`, `Cargo.lock`, `README.md` y `.gitignore`. El árbol `src/` comparte hash en ambos lados.
+**Resultado, medido antes de ejecutar la Tarea `0.4`:** los diez archivos de la base eran byte-idénticos entre el repositorio de trabajo y `f3e5539` — los seis de `src/`, más `Cargo.toml`, `Cargo.lock`, `README.md` y `.gitignore`. El árbol `src/` compartía hash en ambos lados.
+
+Ese resultado es un **registro histórico con fecha**, no una propiedad permanente del repositorio. La Tarea `0.4` lo alteró deliberadamente:
+
+| Archivo | ¿Sigue idéntico a `f3e5539`? | Por qué |
+|---|---|---|
+| `src/` (seis archivos) | Sí, hasta que empiece el Hito 1 | intacto |
+| `README.md` | Sí, hasta la Tarea `8.4` | intacto |
+| `.gitignore` | Sí | intacto |
+| `Cargo.toml` | **No** | renombre del paquete en la Tarea `0.4` |
+| `Cargo.lock` | **No** | regenerado por `cargo check` tras el renombre |
+
+Por eso la *verificación extendida* de la Tarea `0.3` ya no sale vacía, y no debe interpretarse como una regresión. La comprobación que sigue siendo válida es la del árbol `src/`.
 
 **Re-verificación posterior al Hito 1.** El Hito 1 modifica `src/`, así que la comprobación sobre `HEAD` dejará de dar `IDENTICO`. Eso es esperado. Como `src/` no cambió en ningún commit del Hito 0, el árbol `d77aad46…` identifica la base sin depender de ninguna rama ni commit concreto:
 
