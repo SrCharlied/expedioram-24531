@@ -12,7 +12,8 @@
 **Entrega:** 1 de octubre de 2026  
 **Ventana disponible:** 31 días calendario  
 **Revisión:** v2.2 — cierra el audit completo: `RevealState` como fuente única, Hito 7 como reserva técnica, duración por frames medidos, `orbit_radius` derivado del encuadre, caps de agua `0.9/0.9`, `max_depth = 3` con terminal en skybox y `shadow_mode` como único campo de sombras  
-**Base verificada:** `origin/15-RT-03-ORBIT-CAMERA` @ `f3e553917077deba3529d9a97f39ea2b58341e84`
+**Base verificada:** `upstream/15-RT-03-ORBIT-CAMERA` @ `f3e553917077deba3529d9a97f39ea2b58341e84`  
+**Verificación realizada:** el árbol `src/` del repositorio de trabajo y el de `f3e5539` comparten hash `d77aad46c439f43ed5f06c2fd393bc25fa5bdf11`; los diez archivos de la base son byte-idénticos
 
 ---
 
@@ -34,6 +35,8 @@ docs/design/Inventario_v6_Continente_Inacabado.md
 docs/design/Expedition33_Blueprint_v2_2.svg
 docs/design/Decisiones_Blueprint_v2_Expedition33.md
 ```
+
+**Estado actual:** el inventario ya está en el repositorio, junto con este plan, bajo `docs/`. El SVG del blueprint y la bitácora de decisiones **todavía no existen en el repositorio**; son las fuentes de verdad `4` y `5` y hay que incorporarlas en la Tarea `0.5`. Hasta entonces, cualquier discrepancia de composición se resuelve contra el inventario.
 
 La v6 manda sobre los presupuestos y políticas ópticas. El SVG manda sobre composición, no sobre implementación.
 
@@ -79,7 +82,13 @@ La v6 manda sobre los presupuestos y políticas ópticas. El SVG manda sobre com
 
 ### Limitación de esta planificación
 
-El host donde se escribió este documento no tiene `rustc` ni `cargo`. Por tanto, no se afirma que ningún comando de Rust haya pasado aquí. La rama fue inspeccionada estáticamente; los comandos de compilación y tests deben ejecutarse en la máquina del equipo.
+El host donde se escribió este documento no tiene `rustc` ni `cargo`. Por tanto, **no se afirma que ningún comando de Rust haya pasado aquí**: los comandos de compilación y tests deben ejecutarse en la máquina del equipo.
+
+Lo que sí quedó verificado por comparación real de contenido, no por inspección visual:
+
+- El remoto académico responde y su rama `15-RT-03-ORBIT-CAMERA` apunta a `f3e5539…`.
+- Los seis archivos de `src/`, más `Cargo.toml`, `Cargo.lock`, `README.md` y `.gitignore`, son byte-idénticos entre el repositorio de trabajo y esa rama.
+- El árbol `src/` comparte hash en ambos lados, así que la base no fue modificada antes de empezar.
 
 ---
 
@@ -372,68 +381,125 @@ Si un gate falla, se arregla antes de continuar. No compensar un renderer roto c
 
 ## Hito 0 — Preparar repositorio final
 
-### Tarea 0.1 — Crear rama de proyecto desde la base exacta
+**Estado al escribir esta revisión.** El repositorio de trabajo ya existe y no hay que fabricarlo: `origin` apunta a `SrCharlied/expedioram-24531`, la rama es `master`, el árbol está limpio y el código de `src/` coincide con la base académica. Las tareas `0.1` a `0.4` documentan cómo se llegó ahí y cómo lo reproduce otro integrante; solo `0.5` queda pendiente de ejecutar.
 
-**Objetivo:** preservar el clon académico y trabajar desde el commit orbital verificado.
+El repositorio académico **no** es el remoto de entrega. Se registra aparte, como `upstream`, para poder consultar la base y verificar contra ella — nunca para hacer push.
 
-**Archivos:** ninguno todavía.
+### Tarea 0.1 — Clonar el repositorio de trabajo
 
-**Pasos:**
+**Objetivo:** partir del repositorio del equipo, que ya es el entregable.
 
 ```bash
-git clone https://github.com/menene/cc2018-2026-02-10.git expedition33-continente-inacabado
-cd expedition33-continente-inacabado
-git switch --detach f3e553917077deba3529d9a97f39ea2b58341e84
+git clone https://github.com/SrCharlied/expedioram-24531.git
+cd expedioram-24531
+```
+
+**Verificación:**
+
+```bash
+git remote get-url origin      # https://github.com/SrCharlied/expedioram-24531.git
+git status --short --branch    # working tree limpio, master...origin/master
+```
+
+Reglas:
+
+- `origin` es el remoto de entrega desde el primer momento.
+- No incluir tokens en URLs, archivos ni historial.
+- Confirmar que otro integrante puede abrir el remoto.
+
+**Commit:** ninguno; clonar no produce commit.
+
+### Tarea 0.2 — Registrar el repositorio académico como `upstream`
+
+**Objetivo:** poder consultar y verificar contra la base del curso sin mezclar remotos.
+
+```bash
+git remote add upstream https://github.com/menene/cc2018-2026-02-10.git
+git fetch upstream 15-RT-03-ORBIT-CAMERA
+```
+
+**Verificación:**
+
+```bash
+git remote -v
+git rev-parse upstream/15-RT-03-ORBIT-CAMERA
+```
+
+Esperado:
+
+```text
+origin    https://github.com/SrCharlied/expedioram-24531.git (fetch)
+origin    https://github.com/SrCharlied/expedioram-24531.git (push)
+upstream  https://github.com/menene/cc2018-2026-02-10.git (fetch)
+upstream  https://github.com/menene/cc2018-2026-02-10.git (push)
+
+f3e553917077deba3529d9a97f39ea2b58341e84
+```
+
+Reglas:
+
+- **Nunca** hacer push a `upstream`. Es solo lectura.
+- No fusionar `upstream` dentro del proyecto: la base ya está en el historial local.
+
+### Tarea 0.3 — Verificar que el código coincide con `f3e5539`
+
+**Objetivo:** probar por contenido —no por confianza— que la base no fue alterada antes de empezar.
+
+El historial local fue aplanado (`06a2b43 Init`), así que los hashes de commit no coinciden con los del curso y compararlos no diría nada. Lo que sí es comparable es el **contenido**.
+
+Verificación fuerte, un solo comando:
+
+```bash
+test "$(git rev-parse HEAD:src)" = "$(git rev-parse upstream/15-RT-03-ORBIT-CAMERA:src)" \
+  && echo "src/ IDENTICO a f3e5539" || echo "src/ DIFIERE"
+```
+
+Esperado: `src/ IDENTICO a f3e5539`, con hash de árbol `d77aad46c439f43ed5f06c2fd393bc25fa5bdf11`.
+
+Verificación extendida, incluyendo los archivos de configuración:
+
+```bash
+git diff --stat upstream/15-RT-03-ORBIT-CAMERA HEAD -- \
+  src Cargo.toml Cargo.lock README.md .gitignore
+```
+
+Esperado: salida vacía. Cualquier línea aquí es una modificación involuntaria de la base y hay que resolverla antes de seguir.
+
+La raíz completa **sí** difiere, y debe hacerlo: el repositorio de trabajo agrega `docs/`, que no existe en la rama académica. Comparar `HEAD^{tree}` contra el árbol de `f3e5539` no es una verificación válida.
+
+**Gate:** `src/` idéntico y diff de configuración vacío antes de escribir la primera línea de código nuevo.
+
+### Tarea 0.4 — Crear `proyecto2/continente-inacabado` desde el `master` verificado
+
+**Objetivo:** aislar el trabajo del proyecto sin perder el `master` que quedó verificado contra la base.
+
+```bash
 git switch -c proyecto2/continente-inacabado
+git push -u origin proyecto2/continente-inacabado
 ```
 
 **Verificación:**
 
 ```bash
 git status --short --branch
-git rev-parse HEAD
-```
-
-Esperado: working tree limpio y base `f3e5539...`.
-
-**Commit:** no crear commit solo por cambiar de rama.
-
-### Tarea 0.2 — Crear y conectar el repositorio remoto final
-
-**Objetivo:** asegurar la ruta de entrega antes de modificar código.
-
-Crear en GitHub/GitLab el repositorio vacío del equipo, sin README ni licencia autogenerados. Después:
-
-```bash
-git remote rename origin upstream
-git remote add origin <url-final-del-equipo>
-git remote -v
-git push -u origin proyecto2/continente-inacabado
+git ls-remote --heads origin proyecto2/continente-inacabado
 ```
 
 Reglas:
 
-- `upstream` conserva la fuente académica para consulta/fetch.
-- `origin` apunta desde este momento al repositorio entregable.
-- No incluir tokens en URLs, archivos o historial.
-- Confirmar que otro integrante puede abrir el remoto.
+- `master` queda como referencia de la base verificada; no se le hace commit de proyecto.
+- Todo el trabajo de los Hitos 1–8 vive en `proyecto2/continente-inacabado`.
+- El primer push existe en el remoto antes de escribir código.
 
-**Verificación:**
+**Commit:** no crear commit solo por cambiar de rama.
 
-```bash
-git remote get-url upstream
-git remote get-url origin
-git ls-remote --heads origin proyecto2/continente-inacabado
-```
+### Tarea 0.5 — Renombrar el paquete y organizar los contratos visuales
 
-**Gate:** el primer push existe en el remoto final antes de escribir código.
-
-### Tarea 0.3 — Renombrar paquete y copiar contratos visuales
-
-**Modificar:** `Cargo.toml`  
-**Crear:** `docs/design/Inventario_v6_Continente_Inacabado.md`  
-**Crear:** `docs/design/Expedition33_Blueprint_v2_2.svg`  
-**Crear:** `docs/design/Decisiones_Blueprint_v2_Expedition33.md`
+**Modificar:** `Cargo.toml`
+**Mover:** `docs/Inventario_v6_Continente_Inacabado.md` → `docs/design/`
+**Mover:** `docs/Plan_Tecnico_v2_Expedition33_Continente_Inacabado.md` → `docs/design/`
+**Incorporar:** `docs/design/Expedition33_Blueprint_v2_2.svg`
+**Incorporar:** `docs/design/Decisiones_Blueprint_v2_Expedition33.md`
 
 Cambiar el paquete a:
 
@@ -453,10 +519,23 @@ minifb = "0.26.0"
 
 Agregar después `image`, no antes de necesitar texturas.
 
+Organizar los contratos visuales con `git mv`, para que el historial siga los archivos:
+
+```bash
+mkdir -p docs/design
+git mv docs/Inventario_v6_Continente_Inacabado.md docs/design/
+git mv docs/Plan_Tecnico_v2_Expedition33_Continente_Inacabado.md docs/design/
+```
+
+**Pendiente real:** el SVG del blueprint y la bitácora de decisiones no están en el repositorio. Son fuentes de verdad `4` y `5` de la sección `0`. Copiarlos a `docs/design/` en esta tarea; si todavía no existen en forma de archivo, anotarlo explícitamente en `docs/evidence.md` en lugar de dejar la carpeta incompleta en silencio.
+
+Sobre `[profile.dev] opt-level = 3`, que viene de la base: **conservarlo** —hace usable el loop interactivo durante el desarrollo— pero documentar en el README que aquí el perfil debug está optimizado. De lo contrario, un tiempo medido en debug parecerá comparable a release y no lo es. Todos los benchmarks del plan se ejecutan en release, sin excepción.
+
 **Verificación:**
 
 ```bash
 cargo check
+git status --short
 ```
 
 **Commit sugerido:**
