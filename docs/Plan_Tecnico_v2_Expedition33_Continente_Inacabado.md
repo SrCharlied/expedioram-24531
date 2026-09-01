@@ -36,9 +36,25 @@ docs/design/Expedition33_Blueprint_v2_2.svg
 docs/design/Decisiones_Blueprint_v2_Expedition33.md
 ```
 
-**Estado actual:** el inventario ya está en el repositorio, junto con este plan, bajo `docs/`. El SVG del blueprint y la bitácora de decisiones **todavía no existen en el repositorio**; son las fuentes de verdad `4` y `5` y hay que incorporarlas en la Tarea `0.5`. Hasta entonces, cualquier discrepancia de composición se resuelve contra el inventario.
+**Estado actual:** el inventario ya está en el repositorio, junto con este plan, bajo `docs/`. El SVG del blueprint y la bitácora de decisiones **todavía no existen en el repositorio**; son las fuentes de verdad `4` y `5` y hay que incorporarlas en la Tarea `0.4`. Hasta entonces, cualquier discrepancia de composición se resuelve contra el inventario.
 
 La v6 manda sobre los presupuestos y políticas ópticas. El SVG manda sobre composición, no sobre implementación.
+
+---
+
+## Nomenclatura del proyecto
+
+Tres nombres distintos que no deben mezclarse. Cada uno tiene su lugar:
+
+| Rol | Nombre | Dónde se usa |
+|---|---|---|
+| **Nombre de presentación** | **El Continente Inacabado** (o *Continente Inacabado* a secas) | Título del README, portada y narración del video, entrega, cualquier material que vea una persona |
+| Identidad técnica del repositorio | `expedioram-24531` | URL del remoto, `git clone`, nombre de la carpeta local |
+| Paquete Cargo | `expedition33_continente_inacabado` | `Cargo.toml`, y los `use` de la librería desde `main.rs` |
+
+**El Continente Inacabado es el nombre de la obra**, no del repositorio. Es lo que se muestra y lo que se nombra al presentar. El repositorio se llama `expedioram-24531` y así queda: es un identificador de curso, no un título, y no hace falta que coincidan.
+
+*Clair Obscur: Expedition 33* es la **referencia** que inspira la obra, no parte de su nombre. Se cita como influencia en el README y en los documentos de diseño; no se usa como título ni como marca propia.
 
 ---
 
@@ -381,9 +397,28 @@ Si un gate falla, se arregla antes de continuar. No compensar un renderer roto c
 
 ## Hito 0 — Preparar repositorio final
 
-**Estado al escribir esta revisión.** El repositorio de trabajo ya existe y no hay que fabricarlo: `origin` apunta a `SrCharlied/expedioram-24531`, la rama es `master`, el árbol está limpio y el código de `src/` coincide con la base académica. Las tareas `0.1` a `0.4` documentan cómo se llegó ahí y cómo lo reproduce otro integrante; solo `0.5` queda pendiente de ejecutar.
-
 El repositorio académico **no** es el remoto de entrega. Se registra aparte, como `upstream`, para poder consultar la base y verificar contra ella — nunca para hacer push.
+
+### Estado del hito
+
+| Tarea | Estado | Cómo se comprueba |
+|---|---|---|
+| `0.1` Clonar el repositorio de trabajo | Completada | `git remote get-url origin` devuelve `SrCharlied/expedioram-24531` |
+| `0.2` Registrar `upstream` | Completada | `git remote -v` lista `upstream` |
+| `0.3` Verificar contra `f3e5539` | Completada | `src/` es `d77aad46c439f43ed5f06c2fd393bc25fa5bdf11` en ambos lados |
+| `0.4` Renombrar paquete y organizar contratos | **Pendiente** | `Cargo.toml` sigue en `rt_03_orbit_camera`; no existe `docs/design/` |
+
+`0.2` depende del clon: el remoto `upstream` es configuración local, no viaja con el repositorio. Cada integrante y cada copia de trabajo nueva tiene que registrarlo por su cuenta antes de poder correr `0.3`.
+
+**No hay rama de proyecto.** Todo el trabajo de los Hitos 1–8 vive en `master`, la rama por defecto del repositorio. El repositorio entero *es* el proyecto, así que aislar el trabajo en una rama aparte no compraría nada y solo agregaría un merge al final.
+
+**No empezar el Hito 1 sin cerrar `0.4`.** El Hito 1 modifica `src/`, y desde ese momento la verificación fuerte de `0.3` deja de dar `IDENTICO` sobre `HEAD`. Eso es esperado y no se pierde nada: la base sigue siendo `upstream/15-RT-03-ORBIT-CAMERA`, que es un ref remoto permanente, y el estado verificado sigue en el historial. Para re-verificar más adelante se compara **el último commit anterior al Hito 1**, no `HEAD`:
+
+```bash
+git diff --stat upstream/15-RT-03-ORBIT-CAMERA <commit-previo-al-hito-1> -- src
+```
+
+Conviene anotar ese hash en `docs/evidence.md` cuando se cierre el Hito 0.
 
 ### Tarea 0.1 — Clonar el repositorio de trabajo
 
@@ -469,31 +504,7 @@ La raíz completa **sí** difiere, y debe hacerlo: el repositorio de trabajo agr
 
 **Gate:** `src/` idéntico y diff de configuración vacío antes de escribir la primera línea de código nuevo.
 
-### Tarea 0.4 — Crear `proyecto2/continente-inacabado` desde el `master` verificado
-
-**Objetivo:** aislar el trabajo del proyecto sin perder el `master` que quedó verificado contra la base.
-
-```bash
-git switch -c proyecto2/continente-inacabado
-git push -u origin proyecto2/continente-inacabado
-```
-
-**Verificación:**
-
-```bash
-git status --short --branch
-git ls-remote --heads origin proyecto2/continente-inacabado
-```
-
-Reglas:
-
-- `master` queda como referencia de la base verificada; no se le hace commit de proyecto.
-- Todo el trabajo de los Hitos 1–8 vive en `proyecto2/continente-inacabado`.
-- El primer push existe en el remoto antes de escribir código.
-
-**Commit:** no crear commit solo por cambiar de rama.
-
-### Tarea 0.5 — Renombrar el paquete y organizar los contratos visuales
+### Tarea 0.4 — Renombrar el paquete y organizar los contratos visuales
 
 **Modificar:** `Cargo.toml`  
 **Mover:** `docs/Inventario_v6_Continente_Inacabado.md` → `docs/design/`  
@@ -508,6 +519,12 @@ Cambiar el paquete a:
 name = "expedition33_continente_inacabado"
 version = "0.1.0"
 edition = "2021"
+```
+
+El nombre del paquete **no** sigue al del repositorio: `expedioram-24531` es el identificador del curso y `expedition33_continente_inacabado` describe lo que el paquete construye. Ver *Nomenclatura del proyecto*. Desde el Hito 1.1, `main.rs` importa la librería con ese nombre:
+
+```rust
+use expedition33_continente_inacabado::renderer;
 ```
 
 Conservar inicialmente:
@@ -531,12 +548,20 @@ git mv docs/Plan_Tecnico_v2_Expedition33_Continente_Inacabado.md docs/design/
 
 Sobre `[profile.dev] opt-level = 3`, que viene de la base: **conservarlo** —hace usable el loop interactivo durante el desarrollo— pero documentar en el README que aquí el perfil debug está optimizado. De lo contrario, un tiempo medido en debug parecerá comparable a release y no lo es. Todos los benchmarks del plan se ejecutan en release, sin excepción.
 
+**Efecto sobre la verificación de `0.3`.** A partir de esta tarea, la *verificación extendida* deja de salir vacía a propósito: `Cargo.toml` y `Cargo.lock` difieren de la base por el renombre del paquete. Es el resultado esperado, no una regresión. La *verificación fuerte* sobre `src/` sigue dando `IDENTICO` hasta que empiece el Hito 1.
+
+Renombrar el paquete cambia también `Cargo.lock`, que hoy registra `rt_03_orbit_camera`. `cargo check` lo regenera; commitear el `Cargo.lock` actualizado junto con el `Cargo.toml`, no por separado.
+
 **Verificación:**
 
 ```bash
 cargo check
+grep '^name' Cargo.toml Cargo.lock | head
 git status --short
+ls docs/design/
 ```
+
+Esperado: `cargo check` compila, ambos archivos dicen `expedition33_continente_inacabado`, y `docs/design/` contiene al menos el inventario y este plan.
 
 **Commit sugerido:**
 
@@ -1498,9 +1523,12 @@ Registrar hardware, preset, primitivas, luces, profundidad y tiempo.
 
 **Modificar:** `README.md`
 
+El README se titula con el **nombre de presentación**: *El Continente Inacabado*. No con el nombre del repositorio ni con el del paquete. Ver *Nomenclatura del proyecto*.
+
 Contenido obligatorio:
 
-- Concepto y vínculo con Expedition 33.
+- Título con el nombre de presentación.
+- Concepto, y *Clair Obscur: Expedition 33* citado como referencia que inspira la obra, no como parte del título.
 - Captura hero.
 - Controles.
 - Arquitectura del raytracer.
@@ -1516,6 +1544,8 @@ Contenido obligatorio:
 - Limitaciones conocidas.
 
 ### Tarea 8.5 — Grabar video
+
+Abrir y cerrar nombrando la obra como *El Continente Inacabado*. Ver *Nomenclatura del proyecto*.
 
 Guion recomendado:
 
