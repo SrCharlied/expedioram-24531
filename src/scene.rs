@@ -54,6 +54,22 @@ impl SpatialGroupId {
     ];
 }
 
+impl SpatialGroupId {
+    /// Posición del grupo dentro de `ALL`. Es el bit que le corresponde en
+    /// las máscaras de light linking.
+    pub fn index(self) -> usize {
+        match self {
+            SpatialGroupId::Global => 0,
+            SpatialGroupId::ContinentBackground => 1,
+            SpatialGroupId::Meadows => 2,
+            SpatialGroupId::Breakwater => 3,
+            SpatialGroupId::FlyingWaters => 4,
+            SpatialGroupId::Monolith => 5,
+            SpatialGroupId::InteractionProps => 6,
+        }
+    }
+}
+
 impl RevealGroup {
     /// Cantidad de grupos: el tamaño del arreglo `[f32; 4]` que guardará el
     /// progreso.
