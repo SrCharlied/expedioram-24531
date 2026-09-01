@@ -11,7 +11,7 @@
 **Fecha del plan:** 31 de agosto de 2026  
 **Entrega:** 1 de octubre de 2026  
 **Ventana disponible:** 31 días calendario  
-**Revisión:** v2.1 — cierra tres decisiones de implementación: `RevealState` como fuente única de progreso, Hito 7 como reserva técnica del calendario y duración de revelación derivada de frames medidos  
+**Revisión:** v2.2 — cierra el audit completo: `RevealState` como fuente única, Hito 7 como reserva técnica, duración por frames medidos, `orbit_radius` derivado del encuadre, caps de agua `0.9/0.9`, `max_depth = 3` con terminal en skybox y `shadow_mode` como único campo de sombras  
 **Base verificada:** `origin/15-RT-03-ORBIT-CAMERA` @ `f3e553917077deba3529d9a97f39ea2b58341e84`
 
 ---
@@ -230,7 +230,7 @@ Los cuatro grupos son exactamente:
 | 0 | `Meadows` | Praderas Primaverales |
 | 1 | `Breakwater` | Acantilado Rompeolas |
 | 2 | `FlyingWaters` | Aguas Voladoras |
-| 3 | `Finale` | Monolito y activación final |
+| 3 | `Finale` | Monolito, fragmentos, continente simplificado, plinto y paleta |
 
 El renderer resuelve el material en el punto de sombreado:
 
@@ -244,6 +244,8 @@ Consecuencias que esta decisión garantiza:
 - Un clic modifica un solo `f32`, no un recorrido sobre la escena.
 - Los objetos permanecen completamente estáticos; la aceleración nunca se reconstruye ni se invalida.
 - El test de clic repetido tiene una única fuente que observar.
+
+Las cinco entradas globales (`G-01` … `G-05`) van a `Finale`. Dos son **inertes**: `G-01` (plinto) nace y muere en `canvas_unpainted`, y `G-04` (paleta y pincel) nace ya en `pictorial_crystal` — la herramienta con la que se pinta no puede estar sin pintar. Ambas necesitan grupo por tipado, no por comportamiento.
 
 **Consecuencia aceptada:** la revelación es *uniforme dentro del grupo*. No hay escalonamiento por objeto (`reveal_order` queda fuera del MVP). El Monolito se pinta de una sola vez al entrar en `Finale`, y el orden interno de Aguas descrito en el inventario es una lectura artística, no un comportamiento implementado.
 
@@ -260,6 +262,12 @@ kl = max(0, 1 - kr - kt)
 
 Sumar un specular directo moderado después del reparto Fresnel y clamp/tone-mapear el resultado.
 
+**Decisión cerrada — caps del agua `0.9 / 0.9`.** Con `1.0 / 1.0` el reparto da `kl = 0` y el albedo del agua nunca contribuye: la textura y su `uv_scale` quedarían muertos. Con `0.9 / 0.9`, `kl = 0.1` constante, independiente del ángulo, y es lo que porta el color propio del agua.
+
+**Decisión cerrada — `max_depth = 3` inicial.** No `2`. Un rayo primario que entra al volumen cerrado de Aguas gasta un nivel al refractar en la cara frontal; si no impacta el barco, gasta el segundo en la cara interna trasera y necesita el tercero para salir hacia el lecho, las rocas o el skybox. Con `max_depth = 2` todo lo que está *detrás* del volumen se pierde. Bajar a `2` solo si la medición lo exige, y registrando qué se pierde.
+
+**Decisión cerrada — recursión agotada devuelve skybox.** Nunca negro. Un rayo que llega al límite de profundidad se resuelve muestreando el skybox en su dirección actual, igual que un miss. Con `kl = 0.1` no hay color local suficiente para disimular un terminal negro: se vería como manchas oscuras dentro del agua.
+
 ### 3.6 Sombras
 
 ```rust
@@ -274,6 +282,10 @@ pub enum ShadowMode {
 - Monolito/paleta/concha: `Opaque`.
 - Fragmentos pequeños: `Ignore`.
 - Limitar rayos a `distance_to_light - epsilon`.
+
+**Decisión cerrada — `casts_shadow` no existe.** `ShadowMode` es el único campo de sombras del objeto; el antiguo `casts_shadow` en falso es hoy `ShadowMode::Ignore`. Tener dos banderas para la misma responsabilidad garantizaba que el renderer eligiera mal. El campo `casts_shadows` de las **luces** es distinto y se conserva: dice si la luz genera shadow rays.
+
+**Decisión cerrada — `shadow_mode` no se interpola.** El modo del `final_material` rige durante **toda** la revelación, incluido `progress = 0.0`. El agua no bloquea sombras ni siquiera mientras se ve como lienzo. Si se interpolara, el barco parpadearía entre iluminado y negro justo durante la transición estrella.
 
 ### 3.7 Aceleración
 
@@ -305,6 +317,25 @@ up
 ```
 
 `eye_elevation_degrees = 35`; el pitch visual es derivado. Zoom modifica radio orbital con clamps.
+
+**Decisión cerrada — `orbit_radius` se deriva del encuadre.** No es la constante `2.2 × scene_radius`. Como `look_at` está por encima de `orbit_center`, el eje de vista no pasa por el centro de la esfera envolvente, y ese desvío crece con `monolith_height`:
+
+```text
+h     = look_at.y - orbit_center.y
+alpha = asin(scene_radius / R)
+beta  = φ - atan2(R·sin φ - h, R·cos φ)          φ = 35°
+
+orbit_radius = min R  tal que  alpha(R) + beta(R) ≤ 30° - 2°
+```
+
+Ambos términos decrecen monótonamente con `R`; una bisección sobre `[1.01, 8.0] × scene_radius` basta. Valores de referencia:
+
+| `monolith_height` | `orbit_radius` | Con el antiguo `2.2 × S` |
+|---|---:|:--|
+| `0.5 × scene_radius` | `2.25 × S` | `28.67°` — cabe, margen `1.33°` |
+| `1.0 × scene_radius` | `2.38 × S` | `30.36°` — **recorta la escena** |
+
+`min_radius` y `max_radius` del zoom se anclan a este valor derivado, no a una constante. Ver el inventario, sección *Derivación de `orbit_radius`*.
 
 ### 3.9 L-02
 
@@ -621,6 +652,8 @@ Tests:
 - Esquinas respetan FOV/aspecto.
 - Zoom conserva dirección y cambia radio.
 - Clamps impiden entrar al diorama o alejarse demasiado.
+- `orbit_radius` derivado contiene la esfera envolvente: `alpha + beta ≤ 28°`.
+- Con `monolith_height = 1.0 × scene_radius` el radio derivado supera `2.2 × scene_radius`.
 
 Controles previstos:
 
@@ -679,7 +712,10 @@ broken_edge_anchor
 scene_radius
 monolith_height
 water_surface_y
+orbit_radius = derivado por bisección, no constante
 ```
+
+`orbit_radius` se calcula al terminar el blockout, cuando `scene_radius` y `monolith_height` ya están medidos. Registrar el valor resultante junto con las dos medidas de entrada.
 
 No fijar detalle todavía. Construir únicamente plinto, masas del arco, bahía, tres regiones y Monolito con cuboides grises.
 
@@ -975,6 +1011,8 @@ Tests:
 - Progress 1 produce material final.
 - Progress intermedio mezcla de forma estable.
 - Cambiar progress no modifica bounds ni conteo de objetos.
+- `shadow_mode` NO se interpola: el agua reporta `Ignore` también en `progress = 0.0`.
+- `G-01` y `G-04` producen el mismo material en todo el rango de progress.
 
 ### Tarea 4.5 — Implementar skybox equirectangular
 
@@ -1024,13 +1062,16 @@ Tests:
 - Fresnel normal coincide aproximadamente con `R0`.
 - Fresnel aumenta hacia grazing.
 - `kr + kt + kl = 1` dentro de tolerancia.
-- Caps `1/1` no generan 200% de energía.
+- Ningún par de caps genera más de 100% de energía.
+- Caps `0.9/0.9` producen `kl = 0.1` exacto en todo el rango de ángulos.
 
 ### Tarea 5.3 — Agregar cast_ray recursivo limitado
 
 **Modificar:** `src/renderer.rs`
 
-Comenzar con profundidad máxima 2. Subir a 3 únicamente si la medición lo permite.
+**Profundidad máxima inicial: `3`.** Cruzar el volumen cerrado de Aguas cuesta dos niveles (entrada y salida); el tercero es el que permite ver el lecho y las rocas detrás del agua. Bajar a `2` solo si la medición lo exige, documentando qué se pierde.
+
+**Recursión agotada devuelve skybox**, nunca negro ni un color fijo.
 
 Orden:
 
@@ -1047,6 +1088,9 @@ Tests:
 - Mirror simple refleja skybox.
 - Agua deja ver objeto interior.
 - Resultado permanece finito.
+- Rayo que agota `max_depth` devuelve la muestra de skybox de su dirección, no negro.
+- Con `max_depth = 3`, un rayo que atraviesa el volumen alcanza el lecho al otro lado.
+- Con `max_depth = 2`, ese mismo rayo termina en skybox y no en negro.
 
 ### Tarea 5.4 — Construir volumen cerrado y borde roto
 
@@ -1166,13 +1210,23 @@ El mouse es la interacción principal; teclado garantiza presentación fiable.
 
 **Modificar:** `src/reveal.rs`
 
-Estados:
+**Decisión cerrada — `RevealState` almacena únicamente `[f32; 4]`.** La fase no se guarda: se **deriva** del escalar, para no reintroducir el estado duplicado que esta decisión eliminó.
 
-```text
-Unpainted
-Revealing(progress)
-Painted
+```rust
+pub enum RevealPhase { Unpainted, Revealing, Painted }
+
+impl RevealState {
+    pub fn phase(&self, g: RevealGroup) -> RevealPhase {
+        match self.progress(g) {
+            p if p <= 0.0 => RevealPhase::Unpainted,
+            p if p >= 1.0 => RevealPhase::Painted,
+            _             => RevealPhase::Revealing,
+        }
+    }
+}
 ```
+
+`RevealPhase` es una vista de solo lectura. Nada la escribe ni la persiste.
 
 #### Duración derivada de frames medidos
 
@@ -1237,7 +1291,7 @@ Renderizar cuando:
 - Reveal progress avanza.
 - Región seleccionada cambia.
 
-Todo frame con cámara o `RevealState::Revealing` usa el perfil de resolución interactiva definido/medido en Hito 3; al terminar el movimiento o la transición se renderiza un frame final `800 × 600`. Cuando nada cambia, reutilizar framebuffer como la rama del profesor.
+Todo frame con cámara en movimiento o con algún grupo en `RevealPhase::Revealing` (derivada, ver `6.3`) usa el perfil de resolución interactiva definido/medido en Hito 3; al terminar el movimiento o la transición se renderiza un frame final `800 × 600`. Cuando nada cambia, reutilizar framebuffer como la rama del profesor.
 
 ### Tarea 6.5 — Añadir cámara hero/reset
 
@@ -1441,6 +1495,7 @@ Confirmar:
 - Píxel central.
 - FOV/aspecto.
 - Zoom clamped.
+- `orbit_radius` derivado contiene la esfera envolvente con margen de `2°`.
 
 ## Aceleración
 
@@ -1457,6 +1512,7 @@ Confirmar:
 - Agua ignore.
 - Monolito opaque.
 - Linking de receptores y oclusores.
+- `shadow_mode` del material final rige en todo el rango de revelación.
 
 ## Óptica
 
@@ -1464,8 +1520,9 @@ Confirmar:
 - Refract.
 - TIR.
 - Schlick.
-- Energía.
-- Recursión limitada.
+- Energía, con `kl = 0.1` para caps `0.9/0.9`.
+- Recursión limitada a `max_depth = 3`.
+- Terminal de profundidad agotada es skybox.
 
 ## Revelación
 
@@ -1549,6 +1606,10 @@ Nunca recortar primero:
 | Monolito flota | Sin sombra de contacto | `shadow_mode: Opaque` |
 | Rompeolas acelera mal | AABB largo lleno de aire | Cuatro clusters contiguos |
 | Cámara encuadra cielo | Anchor usado como centro alto | Base/orbit/look_at separados |
+| Escena recortada en la órbita | `orbit_radius` constante con Monolito alto | Radio derivado por bisección con margen de `2°` |
+| Manchas negras dentro del agua | Rayo agota `max_depth` y no hay color local | `max_depth = 3` y terminal en skybox |
+| Textura del agua invisible | Caps `1.0/1.0` dejan `kl = 0` | Caps `0.9/0.9` ⇒ `kl = 0.1` |
+| Sombras incoherentes al pintar | `shadow_mode` interpolado | Modo del material final durante toda la revelación |
 | Profesor niega hexágonos | Ruta A bloqueada | Ruta B con cuboides/textura |
 | Assets faltan o consumen demasiado tiempo | Archivos manuales/paths absolutos | Generador determinista + PNG versionados + clean clone |
 | Scope crece | Fauna/personajes/región nueva | Freeze y lista explícita de no objetivos |
@@ -1568,6 +1629,11 @@ El proyecto está terminado cuando:
 - [ ] Tiene iluminación diffuse/specular y sombras.
 - [ ] Tiene reflexión y refracción visibles.
 - [ ] Agua no bloquea iluminación submarina.
+- [ ] Los caps del agua son `0.9 / 0.9` y el albedo contribuye con `kl = 0.1`.
+- [ ] `max_depth = 3` y la recursión agotada devuelve skybox, nunca negro.
+- [ ] `orbit_radius` se derivó del encuadre y quedó registrado con sus dos medidas de entrada.
+- [ ] `ShadowMode` es el único campo de sombras del objeto; `casts_shadow` no existe.
+- [ ] `RevealPhase` se deriva del `f32`; no se almacena.
 - [ ] Monolito proyecta sombra.
 - [ ] Skybox funciona.
 - [ ] Cámara orbita y hace zoom.

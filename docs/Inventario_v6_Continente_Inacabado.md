@@ -127,9 +127,43 @@ Anclas requeridas:
 | `scene_radius` | Radio de la esfera que contiene la geometría visible del blockout, excluyendo skybox |
 | `monolith_height` | Distancia vertical desde `monolith_base_anchor` hasta la parte superior del Monolito |
 | `water_surface_y` | Altura mundial del plano horizontal de la superficie de Aguas Voladoras |
-| `orbit_radius` | `2.2 × scene_radius` |
+| `orbit_radius` | Derivado del encuadre; ver *Derivación de `orbit_radius`* |
 
 `scene_radius` reemplaza los nombres anteriores `S`, `visible_scene_radius` y “bounding sphere del blockout”. Existe un solo valor canónico. `monolith_height` se mide en el blockout y se almacena como parámetro de escena explícito.
+
+### Derivación de `orbit_radius`
+
+**Decisión cerrada.** `orbit_radius` no es una constante: se deriva del encuadre. Un valor fijo falla porque `look_at` está por encima de `orbit_center`, así que el eje de vista no pasa por el centro de la esfera envolvente y el desvío crece con `monolith_height`.
+
+Con la esfera envolvente centrada en `orbit_center` y radio `scene_radius`, un ojo a elevación `φ = 35°` y radio `R`:
+
+```text
+h     = look_at.y - orbit_center.y        = 0.15 × monolith_height
+alpha = asin(scene_radius / R)              radio angular de la esfera desde el ojo
+beta  = φ - atan2(R·sin φ - h, R·cos φ)     desvío entre el eje de vista y el centro
+```
+
+`orbit_radius` es el menor `R` que cumple:
+
+```text
+alpha(R) + beta(R) ≤ half_vertical_fov - framing_margin
+
+half_vertical_fov = 30°
+framing_margin    = 2°
+```
+
+Ambos términos decrecen monótonamente con `R`, así que una bisección sobre `R ∈ [1.01, 8.0] × scene_radius` converge sin casos especiales. Redondear hacia arriba a dos decimales y registrar el valor obtenido.
+
+Valores de referencia con `framing_margin = 2°`:
+
+| `monolith_height` | `orbit_radius` derivado | Pitch derivado | Con el antiguo `2.2 × S` |
+|---|---:|---:|:--|
+| `0.5 × scene_radius` | `2.25 × scene_radius` | `33.40°` | `28.67°` — cabe, margen `1.33°` |
+| `1.0 × scene_radius` | `2.38 × scene_radius` | `31.92°` | `30.36°` — **recorta la escena** |
+
+El antiguo `2.2 × scene_radius` era correcto solo para el Monolito bajo. `zoom` sigue modificando `R`, con `min_radius` y `max_radius` anclados a este valor derivado.
+
+---
 
 Todo objeto de una región se expresa respecto de su ancla. Esto permite mover una región completa sin recalcular manualmente todas sus piezas.
 
@@ -141,7 +175,9 @@ Todo objeto de una región se expresa respecto de su ancla. Esto permite mover u
 
 | ID | Uso | Características |
 |---|---|---|
-| `canvas_unpainted` | Estado inicial de toda la escena | Textura de lienzo, marfil, mate, opaco, no reflectivo |
+| `canvas_unpainted` | Estado inicial de la escena, salvo `G-04` | Textura de lienzo, marfil, mate, opaco, no reflectivo |
+
+Única excepción: `G-04` (paleta y pincel) nace ya en `pictorial_crystal`. Es la herramienta con la que se pinta, no parte del cuadro por pintar.
 
 ### Cinco materiales finales puntuables
 
@@ -163,7 +199,6 @@ Cada entrada debe poder declarar:
 
 ```text
 required              obligatorio en nivel seguro
-casts_shadow          si el objeto participa en sombras opacas
 receives_shadow       recibe iluminación y sombras
 shadow_mode           opaque | ignore | attenuate
 specular_strength     intensidad del brillo local, rango 0.0–1.0
@@ -185,13 +220,21 @@ uv_scale               repetición de textura
 | 0 | `meadows` | `P-01` … `P-08` |
 | 1 | `breakwater` | `R-01` … `R-05` |
 | 2 | `flying_waters` | `A-01` … `A-11` |
-| 3 | `finale` | `G-01`, `G-03`, `G-05` |
+| 3 | `finale` | `G-01` … `G-05` |
 
 Regla de derivación: salvo declaración explícita, `reveal_group` es el homónimo del `spatial_group` de la entrada. Las entradas globales se asignan a mano porque sus grupos de aceleración (`global`, `monolith`, `continent_background`, `interaction_props`) no son grupos de revelación.
 
-- `G-01` (plinto) queda en `finale`, pero la asignación es inerte: su material inicial y final son ambos `canvas_unpainted`, así que nunca cambia de apariencia.
-- `G-03` (Monolito) y `G-05` (fragmentos) se pintan juntos al entrar en `finale`.
-- **Pendiente de decisión:** `G-02` (continente simplificado, final `meadow`) y `G-04` (paleta y pincel, final `pictorial_crystal`) todavía no tienen grupo asignado.
+Las cinco entradas globales van a `finale`, pero dos de ellas son **asignaciones inertes**: su material inicial y final coinciden, así que el progreso del grupo no cambia su apariencia.
+
+| Entrada | Inicial → final | Efecto al entrar en `finale` |
+|---|---|---|
+| `G-01` plinto | `canvas_unpainted` → `canvas_unpainted` | inerte; el lienzo sostiene el diorama y nunca se pinta |
+| `G-02` continente simplificado | `canvas_unpainted` → `meadow` | se pinta |
+| `G-03` Monolito | `canvas_unpainted` → `pictorial_crystal` | se pinta |
+| `G-04` paleta y pincel | `pictorial_crystal` → `pictorial_crystal` | inerte; ya está pintada desde el arranque |
+| `G-05` fragmentos | `canvas_unpainted` → `pictorial_crystal` | se pinta |
+
+`G-02` en `finale` es una decisión de lectura: el continente **es** el lienzo inacabado y solo se completa cuando las tres regiones están listas. `G-04` en `finale` es una formalidad de tipado: la paleta necesita un grupo, pero es la herramienta, no el cuadro.
 
 ### Conservación de energía y Fresnel
 
@@ -228,6 +271,10 @@ shadow_mode: ignore   → el rayo continúa hasta la luz
 
 `water` usa `shadow_mode: ignore`; no ocluye el barco ni los objetos submarinos. `pictorial_crystal` no fija un modo global: cada objeto decide si necesita sombra de contacto. El rayo de sombra siempre limita su búsqueda a `distance_to_light - epsilon`.
 
+**Decisión cerrada — `shadow_mode` no se interpola.** El modo del **material final** rige durante toda la revelación, incluido `reveal_progress = 0.0`. El agua no bloquea sombras ni siquiera cuando todavía se ve como lienzo. Interpolar el modo haría que el barco parpadeara entre iluminado y negro justo durante la transición estrella.
+
+**Decisión cerrada — `casts_shadow` no existe.** Había dos campos compitiendo por la misma responsabilidad. `shadow_mode` es el único: `Ignore` sustituye exactamente al antiguo `casts_shadow` puesto en falso. El campo `casts_shadows` de las luces (`L-01` … `L-03`) es distinto y sí se conserva: dice si la luz genera shadow rays.
+
 Una versión posterior puede añadir `shadow_mode: attenuate`. En ese caso, si `transmission_cap` representa transmisión, la visibilidad se multiplica por `transmission_cap` —posiblemente teñida por el albedo—, **no por `1 - transmission_cap`**. La atenuación requiere continuar buscando intersecciones y no se considera igual de barata que un any-hit opaco.
 
 Por defecto:
@@ -235,7 +282,7 @@ Por defecto:
 - Objetos opacos comunes: `reflection_cap = 0.0`, `transmission_cap = 0.0`, `shadow_mode = opaque`.
 - Solo agua y cristal pictórico tienen caps mayores que cero y generan rayos secundarios.
 - `wet_basalt` usa brillo specular local, pero no genera rebotes.
-- Detalles pequeños opcionales no proyectan sombras salvo que mejoren claramente la imagen.
+- Detalles pequeños opcionales usan `shadow_mode: ignore` salvo que la sombra mejore claramente la imagen.
 
 ---
 
@@ -263,6 +310,7 @@ required: true
 count_safe: 1
 initial_material: canvas_unpainted
 final_material: canvas_unpainted
+reveal_group: finale
 spatial_group: global
 ```
 
@@ -279,6 +327,7 @@ count_safe: 10
 count_target_max: 14
 initial_material: canvas_unpainted
 final_material: meadow
+reveal_group: finale
 spatial_group: continent_background
 ```
 
@@ -295,7 +344,6 @@ count_safe: 10
 count_target_max: 12
 initial_material: canvas_unpainted
 final_material: pictorial_crystal
-casts_shadow: true
 shadow_mode: opaque
 reveal_group: finale
 spatial_group: monolith
@@ -316,14 +364,16 @@ primitive: cuboid_composition
 required: true
 count_safe: 6
 count_target_max: 6
-initial_material: canvas_unpainted
+initial_material: pictorial_crystal
 final_material: pictorial_crystal
-casts_shadow: true
 shadow_mode: opaque
+reveal_group: finale
 spatial_group: interaction_props
 ```
 
 **Nota:** la paleta permanece sobre el plinto, fuera del terreno. Su geometría final dependerá del método de interacción.
+
+**Revelación:** es la única entrada que nace pintada. `initial_material` y `final_material` son ambos `pictorial_crystal`, así que su pertenencia a `finale` es inerte: nunca cambia de apariencia. La herramienta con la que se pinta no puede estar sin pintar.
 
 ## G-05 · Fragmentos pictóricos globales
 
@@ -336,8 +386,8 @@ count_safe: 0
 count_target_max: 8
 initial_material: canvas_unpainted
 final_material: pictorial_crystal
-casts_shadow: false
 shadow_mode: ignore
+reveal_group: finale
 seed: fixed
 spatial_group: monolith
 ```
@@ -418,7 +468,7 @@ count_safe: 6
 count_target_max: 9
 initial_material: canvas_unpainted
 final_material: meadow
-casts_shadow: true
+shadow_mode: opaque
 spatial_group: meadows
 ```
 
@@ -469,7 +519,7 @@ count_safe: 12
 count_target_max: 18
 initial_material: canvas_unpainted
 final_material: meadow
-casts_shadow: false
+shadow_mode: ignore
 seed: fixed
 spatial_group: meadows
 ```
@@ -485,7 +535,6 @@ count_safe: 0
 count_target_max: 7
 initial_material: canvas_unpainted
 final_material: pictorial_crystal
-casts_shadow: false
 shadow_mode: ignore
 seed: fixed
 spatial_group: meadows
@@ -587,7 +636,7 @@ count_safe: 0
 count_target_max: 4
 initial_material: canvas_unpainted
 final_material: meadow
-casts_shadow: false
+shadow_mode: ignore
 spatial_group: breakwater
 ```
 
@@ -604,7 +653,6 @@ count_safe: 0
 count_target_max: 5
 initial_material: canvas_unpainted
 final_material: pictorial_crystal
-casts_shadow: false
 shadow_mode: ignore
 seed: fixed
 spatial_group: breakwater
@@ -642,8 +690,8 @@ required: true
 count_safe: 1
 initial_material: canvas_unpainted
 final_material: water
-reflection_cap: 1.0
-transmission_cap: 1.0
+reflection_cap: 0.9
+transmission_cap: 0.9
 ior: 1.333
 specular_strength: 0.18
 shininess: 128
@@ -652,6 +700,16 @@ spatial_group: flying_waters
 ```
 
 **Requisitos:** volumen cerrado, normales orientadas correctamente, frontera aire–agua y control explícito del índice de refracción.
+
+**Decisión cerrada — caps `0.9 / 0.9`, no `1.0 / 1.0`.** Con caps unitarios el reparto de energía da `kl = 1 - F - (1 - F) = 0`, y el albedo del agua nunca contribuye: la textura `water.png`, su `uv_scale` y su tinte quedarían muertos. Con `0.9 / 0.9`:
+
+```text
+kr = 0.9 × F
+kt = 0.9 × (1 - F)
+kl = 1 - 0.9 = 0.1        constante, independiente del ángulo
+```
+
+Ese `10%` fijo es el que porta el color propio del agua y evita que el volumen se vuelva un espejo puro. El specular directo se sigue sumando después del reparto.
 
 ## A-02 · Masas del lecho
 
@@ -678,7 +736,7 @@ count_safe: 12
 count_target_max: 20
 initial_material: canvas_unpainted
 final_material: aged_wood
-casts_shadow: true
+shadow_mode: opaque
 spatial_group: flying_waters
 ```
 
@@ -741,7 +799,7 @@ count_safe: 12
 count_target_max: 20
 initial_material: canvas_unpainted
 final_material: meadow
-casts_shadow: false
+shadow_mode: ignore
 seed: fixed
 spatial_group: flying_waters
 ```
@@ -774,7 +832,6 @@ count_safe: 0
 count_target_max: 6
 initial_material: canvas_unpainted
 final_material: pictorial_crystal
-casts_shadow: true
 shadow_mode: opaque
 spatial_group: flying_waters
 ```
@@ -792,7 +849,6 @@ count_safe: 0
 count_target_max: 6
 initial_material: canvas_unpainted
 final_material: pictorial_crystal
-casts_shadow: false
 shadow_mode: ignore
 seed: fixed
 spatial_group: flying_waters
@@ -851,7 +907,7 @@ up: [0, 1, 0]
 eye_elevation_degrees: 35
 view_pitch_degrees: derived_from_eye_and_look_at
 hero_yaw: faces_broken_edge
-orbit_radius: 2.2 * scene_radius
+orbit_radius: derived_from_framing_bounds
 zoom: modifies_orbit_radius
 ```
 
@@ -866,7 +922,7 @@ eye.z             = orbit_center.z + horizontal_radius × sin(θ)
 view_direction     = normalize(look_at - eye)
 ```
 
-El valor absoluto de `scene_radius` se mide después de construir el blockout; de allí sale `R = orbit_radius`. `eye_elevation_degrees` describe la posición del ojo sobre la esfera orbital, **no** el pitch final de la vista. Como `look_at` está por encima de `orbit_center`, el pitch se deriva. Por ejemplo, si `monolith_height = 0.5 × scene_radius`, el pitch resulta aproximadamente `33.37°`, aunque la elevación orbital sea `35°`.
+El valor absoluto de `scene_radius` se mide después de construir el blockout; de ahí se **deriva** `R = orbit_radius` mediante la bisección de la sección *Derivación de `orbit_radius`*. `eye_elevation_degrees` describe la posición del ojo sobre la esfera orbital, **no** el pitch final de la vista. Como `look_at` está por encima de `orbit_center`, el pitch se deriva. Con `monolith_height = 0.5 × scene_radius` y el `R` resultante de `2.25 × scene_radius`, el pitch queda en `33.40°` aunque la elevación orbital sea `35°`.
 
 La cámara inicial heredada `(0, 0, 5)` sirve solo como referencia didáctica y no como posición final del diorama.
 
@@ -915,7 +971,7 @@ purpose: mantener legible el barco y permanecer confinada a Aguas Voladoras
 
 `affected_groups` implementa *light linking*: antes de evaluar iluminación o lanzar el shadow ray, se comprueba que el receptor pertenezca a un grupo afectado. `occluder_groups` aplica el mismo filtro durante la sombra: L-02 solo puede ser bloqueada por geometría de `flying_waters`, por lo que Praderas no proyecta sombras de una luz que no la ilumina y el shadow ray no recorre los otros grupos.
 
-Es una decisión artística intencional. Bajo distancias provisionales de `0.15 × scene_radius` al barco y `0.45 × scene_radius` a Praderas, la atenuación sin linking bajaría la contribución relativa de Praderas de `84.16%` a `25.77%`; el filtro de grupo la lleva efectivamente a cero fuera de Aguas.
+Es una decisión artística intencional. Con distancias provisionales de `0.15 × scene_radius` al barco y `0.45 × scene_radius` a Praderas, y `range = 0.20 × scene_radius`, la atenuación por sí sola deja a Praderas todavía en el `25.77%` de lo que recibe el barco — tinte azul claramente visible fuera de la bahía. El filtro de grupo la lleva a cero exacto. La atenuación controla la caída *dentro* de Aguas; el linking define el *borde* de Aguas.
 
 ### Calibración obligatoria de L-02 en Blockout 4
 
@@ -1122,7 +1178,6 @@ Agregar comportamiento óptico del agua y verificar el barco a través del volum
 
 | Pendiente | Ruta provisional |
 |---|---|
-| `reveal_group` de `G-02` y `G-04` | Decidir antes del Hito 6; no bloquea el blockout |
 | Permiso para prisma hexagonal | Usar cuboides verticales hasta recibir respuesta |
 | Coordenadas y escalas finales | Resolver mediante blockout |
 | Valores numéricos restantes de materiales | Resolver en plan técnico y pruebas visuales |
@@ -1147,6 +1202,10 @@ El inventario queda listo para convertirse en plan técnico cuando:
 - [x] Los conteos representan primitivas trazables y las composiciones tienen techo.
 - [x] Las propiedades ópticas usan escalares definidos, no `limited`.
 - [x] Fresnel produce pesos efectivos con conservación de energía.
+- [x] Los caps del agua son `0.9 / 0.9`, de modo que `kl = 0.1` y el albedo contribuye.
+- [x] `orbit_radius` se deriva del encuadre y no es una constante.
+- [x] `casts_shadow` no existe; `shadow_mode` es el único campo de sombras.
+- [x] El `shadow_mode` del material final rige durante toda la revelación.
 - [x] El agua ignora sombras; el cristal decide `shadow_mode` por objeto.
 - [x] El Monolito proyecta sombra opaca de contacto.
 - [x] El specular directo del agua se suma después de Fresnel.
