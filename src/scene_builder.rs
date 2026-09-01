@@ -112,30 +112,56 @@ pub fn derive_orbit_radius(scene_radius: f32, monolith_height: f32) -> f32 {
 
 /// Radio de la esfera centrada en `centro` que contiene toda la geometría.
 ///
-/// Se mide sobre las esquinas de la envolvente, no sobre los centros de los
-/// objetos: un cuboide grande cuyo centro está cerca puede tener una
-/// esquina muy lejos.
+/// Se mide sobre las esquinas de **cada objeto**, no sobre las de la
+/// envolvente global. La diferencia no es menor: la esquina de la
+/// envolvente combina el máximo de los tres ejes aunque ningún objeto los
+/// alcance a la vez, y en una escena ancha y alta esa esquina cae en aire
+/// vacío. Medir ahí infla el radio y aleja la cámara de más.
+///
+/// Se usan las esquinas de cada objeto y no sus centros porque un cuboide
+/// grande con el centro cerca puede tener una esquina muy lejos.
 pub fn measure_scene_radius(scene: &Scene, centro: Vec3) -> f32 {
-    let Some(caja) = scene.bounds() else {
-        return 0.0;
-    };
-
     let mut maximo: f32 = 0.0;
-    for i in 0..8 {
-        let esquina = Vec3::new(
-            if i & 1 == 0 { caja.min.x } else { caja.max.x },
-            if i & 2 == 0 { caja.min.y } else { caja.max.y },
-            if i & 4 == 0 { caja.min.z } else { caja.max.z },
-        );
-        maximo = maximo.max((esquina - centro).magnitude());
+
+    for objeto in &scene.objects {
+        let caja = objeto.primitive.bounds();
+
+        for i in 0..8 {
+            let esquina = Vec3::new(
+                if i & 1 == 0 { caja.min.x } else { caja.max.x },
+                if i & 2 == 0 { caja.min.y } else { caja.max.y },
+                if i & 4 == 0 { caja.min.z } else { caja.max.z },
+            );
+            maximo = maximo.max((esquina - centro).magnitude());
+        }
     }
 
     maximo
 }
 
-/// Posición del ojo sobre la esfera orbital, para un yaw dado.
+/// Posición del ojo sobre la esfera orbital, con la elevación por defecto.
 pub fn eye_at_yaw(orbit_center: Vec3, orbit_radius: f32, yaw_degrees: f32) -> Vec3 {
-    let phi = EYE_ELEVATION_DEGREES.to_radians();
+    eye_at(
+        orbit_center,
+        orbit_radius,
+        yaw_degrees,
+        EYE_ELEVATION_DEGREES,
+    )
+}
+
+/// Posición del ojo para un yaw y una elevación cualesquiera.
+///
+/// La elevación variable existe para la vista de corte del Blockout 1: a
+/// `35°` la escena se lee en planta y la estratificación vertical
+/// —Praderas arriba, Rompeolas sosteniéndola— queda aplastada. Una
+/// elevación baja la muestra de perfil.
+pub fn eye_at(
+    orbit_center: Vec3,
+    orbit_radius: f32,
+    yaw_degrees: f32,
+    elevation_degrees: f32,
+) -> Vec3 {
+    let phi = elevation_degrees.to_radians();
     let theta = yaw_degrees.to_radians();
 
     let horizontal = orbit_radius * phi.cos();
@@ -178,6 +204,25 @@ impl Blockout {
     /// Toma hero: la que encara el borde roto.
     pub fn hero_camera(&self) -> Camera {
         self.camera_at_yaw(HERO_YAW_DEGREES)
+    }
+
+    /// Cámara con elevación explícita, para la vista de corte.
+    pub fn camera_at(&self, yaw_degrees: f32, elevation_degrees: f32) -> Camera {
+        let eye = eye_at(
+            self.anchors.orbit_center,
+            self.scale.orbit_radius,
+            yaw_degrees,
+            elevation_degrees,
+        );
+
+        Camera::new(
+            eye,
+            self.anchors.orbit_center,
+            self.anchors.look_at,
+            Vec3::new(0.0, 1.0, 0.0),
+            (2.0 * HALF_VERTICAL_FOV_DEGREES).to_radians(),
+        )
+        .with_radius_limits(self.scale.scene_radius * 1.2, self.scale.scene_radius * 4.0)
     }
 }
 

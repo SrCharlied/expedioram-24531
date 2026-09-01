@@ -21,7 +21,7 @@ use expedition33_continente_inacabado::camera::{Camera, DEFAULT_VERTICAL_FOV};
 use expedition33_continente_inacabado::framebuffer::Framebuffer;
 use expedition33_continente_inacabado::renderer::{render, Shading};
 use expedition33_continente_inacabado::scene::{cubo_de_prueba, Scene};
-use expedition33_continente_inacabado::scene_builder::SceneScale;
+use expedition33_continente_inacabado::scene_builder::{SceneScale, HERO_YAW_DEGREES};
 use expedition33_continente_inacabado::scenes::continent::blockout;
 
 const USO: &str = "\
@@ -31,6 +31,7 @@ Render sin ventana del Continente Inacabado.
   --width <n>         ancho en pixeles (por defecto: 800)
   --height <n>        alto en pixeles (por defecto: 600)
   --yaw <grados>      angulo de orbita; por defecto el de la toma hero
+  --elevation <grados> elevacion del ojo; por defecto 35 (la de la orbita)
   --shading <modo>    material | normals (por defecto: material)
   --output <ruta>     PNG de salida (por defecto: evidence/renders/hero.png)
   --help              esta ayuda
@@ -46,6 +47,8 @@ struct Opciones {
     /// `None` significa "el yaw propio del preset", que para el blockout es
     /// la toma hero.
     yaw: Option<f32>,
+    /// `None` usa la elevacion orbital estandar.
+    elevation: Option<f32>,
     shading: Shading,
     output: PathBuf,
 }
@@ -57,6 +60,7 @@ impl Default for Opciones {
             width: 800,
             height: 600,
             yaw: None,
+            elevation: None,
             shading: Shading::Material,
             output: PathBuf::from("evidence/renders/hero.png"),
         }
@@ -92,6 +96,13 @@ fn parsear(args: &[String]) -> Result<Option<Opciones>, String> {
                         .map_err(|_| format!("--yaw espera grados, no {valor:?}"))?,
                 )
             }
+            "--elevation" => {
+                opciones.elevation = Some(
+                    valor
+                        .parse()
+                        .map_err(|_| format!("--elevation espera grados, no {valor:?}"))?,
+                )
+            }
             "--shading" => {
                 opciones.shading = match valor.as_str() {
                     "material" => Shading::Material,
@@ -123,13 +134,18 @@ fn numero(bandera: &str, valor: &str) -> Result<usize, String> {
 ///
 /// El yaw explicito manda sobre el propio del preset: es lo que permite
 /// producir los cuatro angulos que valida la Tarea 2.5 sin recompilar.
-fn preset(nombre: &str, yaw: Option<f32>) -> Result<(Scene, Camera, Option<SceneScale>), String> {
+fn preset(
+    nombre: &str,
+    yaw: Option<f32>,
+    elevation: Option<f32>,
+) -> Result<(Scene, Camera, Option<SceneScale>), String> {
     match nombre {
         "blockout" => {
             let blockout = blockout();
-            let camera = match yaw {
-                Some(grados) => blockout.camera_at_yaw(grados),
-                None => blockout.hero_camera(),
+            let grados_yaw = yaw.unwrap_or(HERO_YAW_DEGREES);
+            let camera = match elevation {
+                Some(elev) => blockout.camera_at(grados_yaw, elev),
+                None => blockout.camera_at_yaw(grados_yaw),
             };
             let escala = blockout.scale;
 
@@ -159,7 +175,7 @@ fn preset(nombre: &str, yaw: Option<f32>) -> Result<(Scene, Camera, Option<Scene
 }
 
 fn ejecutar(opciones: Opciones) -> Result<(), String> {
-    let (scene, camera, escala) = preset(&opciones.preset, opciones.yaw)?;
+    let (scene, camera, escala) = preset(&opciones.preset, opciones.yaw, opciones.elevation)?;
 
     let mut framebuffer = Framebuffer::new(opciones.width, opciones.height);
 
