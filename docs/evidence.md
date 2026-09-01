@@ -54,17 +54,17 @@ git rev-parse <cualquier-commit-del-hito-0>:src
 
 ---
 
-## Contratos visuales — incompletos
+## Contratos visuales — completos
 
-`docs/design/` **no está completa**, y queda registrado aquí como exige la Tarea `0.4`.
+`docs/design/` contiene las tres fuentes de verdad de diseño.
 
 | Fuente de verdad | Archivo | Estado |
 |---:|---|---|
 | 3 | `Inventario_v6_Continente_Inacabado.md` | Presente |
-| 4 | `Expedition33_Blueprint_v2_2.svg` | **Falta** |
-| 5 | `Decisiones_Blueprint_v2_Expedition33.md` | **Falta** |
+| 4 | `Expedition33_Blueprint_v2_2.svg` | Presente — 2400 × 1540 |
+| 5 | `Decisiones_Blueprint_v2_Expedition33.md` | Presente |
 
-Hasta que se incorporen, cualquier discrepancia de composición se resuelve contra el inventario, que es la fuente de verdad inmediatamente superior disponible.
+**Discrepancia menor detectada.** La bitácora declara documentar `Expedition33_Blueprint_v2.svg`, mientras que el archivo versionado es `Expedition33_Blueprint_v2_2.svg`. Ambos miden 2400 × 1540. Queda anotado por trazabilidad; no se corrigió la bitácora porque es un registro histórico y su edición corresponde a quien la escribió.
 
 ---
 

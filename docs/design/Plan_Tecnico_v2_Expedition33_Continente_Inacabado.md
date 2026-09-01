@@ -36,7 +36,7 @@ docs/design/Expedition33_Blueprint_v2_2.svg
 docs/design/Decisiones_Blueprint_v2_Expedition33.md
 ```
 
-**Estado actual:** el inventario ya está en el repositorio, junto con este plan, bajo `docs/`. El SVG del blueprint y la bitácora de decisiones **todavía no existen en el repositorio**; son las fuentes de verdad `4` y `5` y hay que incorporarlas en la Tarea `0.4`. Hasta entonces, cualquier discrepancia de composición se resuelve contra el inventario.
+**Estado actual:** las tres fuentes de verdad de diseño están versionadas en `docs/design/`, junto con este plan. El Hito 0 quedó cerrado sin pendientes.
 
 La v6 manda sobre los presupuestos y políticas ópticas. El SVG manda sobre composición, no sobre implementación.
 
@@ -409,7 +409,9 @@ El repositorio académico **no** es el remoto de entrega. Se registra aparte, co
 | `0.1` Clonar el repositorio de trabajo | Completada | `git remote get-url origin` devuelve `SrCharlied/expedioram-24531` |
 | `0.2` Registrar `upstream` | Completada | `git remote -v` lista `upstream` |
 | `0.3` Verificar contra `f3e5539` | Completada | `src/` es `d77aad46c439f43ed5f06c2fd393bc25fa5bdf11` en ambos lados |
-| `0.4` Renombrar paquete y organizar contratos | Completada, con salvedad | `Cargo.toml` y `Cargo.lock` dicen `expedition33_continente_inacabado`; `docs/design/` existe pero le faltan el SVG y la bitácora (registrado en `docs/evidence.md`) |
+| `0.4` Renombrar paquete y organizar contratos | Completada | `Cargo.toml` y `Cargo.lock` dicen `expedition33_continente_inacabado`; `docs/design/` tiene las tres fuentes de verdad |
+
+**Hito 0 cerrado.** Las cuatro tareas están completas y el Hito 1 puede arrancar.
 
 `0.2` depende del clon: el remoto `upstream` es configuración local, no viaja con el repositorio. Cada integrante y cada copia de trabajo nueva tiene que registrarlo por su cuenta antes de poder correr `0.3`.
 
@@ -549,7 +551,7 @@ git mv docs/Inventario_v6_Continente_Inacabado.md docs/design/
 git mv docs/Plan_Tecnico_v2_Expedition33_Continente_Inacabado.md docs/design/
 ```
 
-**Pendiente real:** el SVG del blueprint y la bitácora de decisiones no están en el repositorio. Son fuentes de verdad `4` y `5` de la sección `0`. Copiarlos a `docs/design/` en esta tarea; si todavía no existen en forma de archivo, anotarlo explícitamente en `docs/evidence.md` en lugar de dejar la carpeta incompleta en silencio.
+El SVG del blueprint y la bitácora de decisiones son las fuentes de verdad `4` y `5` de la sección `0`. Ambas quedaron versionadas en `docs/design/` con `git mv`, de modo que el historial sigue a los archivos.
 
 Sobre `[profile.dev] opt-level = 3`, que viene de la base: **conservarlo** —hace usable el loop interactivo durante el desarrollo— pero documentar en el README que aquí el perfil debug está optimizado. De lo contrario, un tiempo medido en debug parecerá comparable a release y no lo es. Todos los benchmarks del plan se ejecutan en release, sin excepción.
 
