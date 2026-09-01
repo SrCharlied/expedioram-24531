@@ -68,6 +68,41 @@ git rev-parse <cualquier-commit-del-hito-0>:src
 
 ---
 
+## Preflight del Hito 1
+
+**Fecha:** 31 de agosto de 2026  
+**Commit:** `8287bb8d7698aa23ca5dad996bbf4915f686e07a`
+
+**Base heredada:** árbol `d77aad46c439f43ed5f06c2fd393bc25fa5bdf11`
+
+La base académica presentaba:
+
+- Dos diferencias de `cargo fmt --check`, en `src/camera.rs:49` y `src/main.rs:68`.
+- Un warning `clippy::wrong_self_convention` en `Color::to_hex`, que toma `&self` siendo `Color` un tipo `Copy`.
+
+Ambos bloqueaban los gates que el plan exige desde el Hito 1, donde `clippy` corre con `-D warnings`. Se corrigieron en un commit aislado antes de modificar arquitectura o comportamiento.
+
+Cambios exactos, sin efecto sobre el comportamiento:
+
+| Archivo | Cambio |
+|---|---|
+| `src/camera.rs` | rustfmt parte la línea larga de `radius_xz` |
+| `src/main.rs` | rustfmt une la llamada a `set_current_color` |
+| `src/color.rs` | `Color::to_hex` toma `self` por valor |
+
+Comandos ejecutados, los cuatro en verde tras el commit:
+
+- `cargo fmt -- --check` — sin diferencias
+- `cargo clippy --all-targets -- -D warnings` — sin warnings
+- `cargo test` — 0 tests, compila
+- `cargo check` — compila
+
+**Árbol `src/` tras la normalización:** `3fe8a4a8091bfc13582c791ba91c96c5fd95ae60`
+
+Desde este commit, `src/` diverge de `f3e5539` **por formato, no por lógica**. Es la frontera entre la base del curso y el código del proyecto: para comparar contra la base se usa cualquier commit anterior a `8287bb8`, cuyo árbol `src/` sigue siendo `d77aad46…`.
+
+---
+
 ## Pendientes de medición
 
 Ninguna de estas filas puede completarse por estimación. Cada hito llena la suya.
