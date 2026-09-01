@@ -1,4 +1,5 @@
-use nalgebra_glm::Vec3;
+use crate::ray::Ray;
+use nalgebra_glm::{normalize, Vec3};
 use std::f32::consts::PI;
 
 /// Límite del pitch: un poco antes de los polos. Justo en el polo la
@@ -132,6 +133,67 @@ impl Camera {
                 -radius * new_pitch.sin(),
                 radius * new_yaw.sin() * new_pitch.cos(),
             );
+    }
+
+    /// Acerca o aleja el ojo modificando el radio orbital.
+    ///
+    /// `delta` es un cambio de distancia con signo: negativo acerca. La
+    /// dirección no se toca —el ojo se desliza sobre el mismo rayo que sale
+    /// de `orbit_center`—, así que hacer zoom nunca reencuadra la escena.
+    ///
+    /// El resultado se recorta a `min_radius..=max_radius`. Sin ese recorte
+    /// se rompen dos cosas: acercarse demasiado mete la cámara dentro del
+    /// diorama y empieza a trazar desde el interior de la geometría, y
+    /// alejarse demasiado deja el Continente reducido a un punto.
+    pub fn zoom(&mut self, delta: f32) {
+        let radius_vector = self.eye - self.orbit_center;
+        let radius = radius_vector.magnitude();
+
+        // Con el ojo exactamente sobre el eje no hay dirección que
+        // conservar. No es un estado alcanzable orbitando, pero tampoco hay
+        // que dividir entre cero por él.
+        if radius < f32::EPSILON {
+            return;
+        }
+
+        let nuevo = (radius + delta).clamp(self.min_radius, self.max_radius);
+
+        self.eye = self.orbit_center + radius_vector * (nuevo / radius);
+    }
+
+    /// Rayo primario que atraviesa el centro del píxel `(x, y)`.
+    ///
+    /// Vive en la cámara y no en el renderer porque el picking del Hito 6
+    /// tiene que convertir la posición del cursor con **esta misma**
+    /// función: si el render y el picking calcularan la dirección por
+    /// separado, un clic terminaría apuntando a un píxel distinto del que
+    /// se ve en pantalla.
+    ///
+    /// El `+ 0.5` muestrea el centro del píxel y no su borde.
+    pub fn ray_from_pixel(&self, x: usize, y: usize, width: usize, height: usize) -> Ray {
+        let ancho = width as f32;
+        let alto = height as f32;
+        let aspect_ratio = ancho / alto;
+
+        // Media altura del plano de proyección, que está a una unidad de la
+        // cámara. Abrir el campo de visión ensancha el plano.
+        let perspective_scale = (self.vertical_fov / 2.0).tan();
+
+        // De coordenadas de píxel a coordenadas de pantalla, de -1 a 1. La
+        // y se invierte porque el píxel 0 está arriba y el eje Y del mundo
+        // crece hacia arriba.
+        let screen_x = (2.0 * (x as f32 + 0.5)) / ancho - 1.0;
+        let screen_y = -(2.0 * (y as f32 + 0.5)) / alto + 1.0;
+
+        // El rayo nace en coordenadas de cámara —viendo hacia -Z— y el
+        // cambio de base lo lleva al mundo, donde están los objetos.
+        let direccion = normalize(&Vec3::new(
+            screen_x * aspect_ratio * perspective_scale,
+            screen_y * perspective_scale,
+            -1.0,
+        ));
+
+        Ray::new(self.eye, self.basis_change(&direccion))
     }
 }
 
@@ -295,6 +357,189 @@ mod tests {
 
         assert_eq!(fijada.min_radius, 2.0);
         assert_eq!(fijada.max_radius, 9.0);
+    }
+
+    /// Ángulo entre dos direcciones, en radianes.
+    fn angulo(a: Vec3, b: Vec3) -> f32 {
+        dot(&a, &b).clamp(-1.0, 1.0).acos()
+    }
+
+    // Dimensiones impares: existe un píxel exactamente central.
+    const ANCHO: usize = 33;
+    const ALTO: usize = 25;
+
+    #[test]
+    fn el_pixel_central_apunta_al_look_at() {
+        let camera = camara_del_diorama();
+        let ray = camera.ray_from_pixel(ANCHO / 2, ALTO / 2, ANCHO, ALTO);
+
+        assert_eq!(ray.origin, camera.eye);
+        assert!(
+            (ray.direction - camera.forward()).magnitude() < 1e-5,
+            "{:?} contra {:?}",
+            ray.direction,
+            camera.forward()
+        );
+    }
+
+    #[test]
+    fn las_esquinas_respetan_el_fov_vertical() {
+        let camera = camara_del_diorama();
+
+        let arriba = camera.ray_from_pixel(ANCHO / 2, 0, ANCHO, ALTO);
+        let abajo = camera.ray_from_pixel(ANCHO / 2, ALTO - 1, ANCHO, ALTO);
+
+        // Los píxeles extremos se muestrean en su centro, así que abarcan
+        // (1 - 1/alto) del campo de visión, no el 100 %.
+        let fraccion = 1.0 - 1.0 / ALTO as f32;
+        let esperado = 2.0 * (fraccion * (DEFAULT_VERTICAL_FOV / 2.0).tan()).atan();
+        let medido = angulo(arriba.direction, abajo.direction);
+
+        assert!(
+            (medido - esperado).abs() < 1e-4,
+            "vertical {} contra {}",
+            medido.to_degrees(),
+            esperado.to_degrees()
+        );
+    }
+
+    #[test]
+    fn las_esquinas_respetan_el_aspecto() {
+        let camera = camara_del_diorama();
+
+        let izquierda = camera.ray_from_pixel(0, ALTO / 2, ANCHO, ALTO);
+        let derecha = camera.ray_from_pixel(ANCHO - 1, ALTO / 2, ANCHO, ALTO);
+
+        let aspect_ratio = ANCHO as f32 / ALTO as f32;
+        let fraccion = 1.0 - 1.0 / ANCHO as f32;
+        let esperado = 2.0 * (fraccion * aspect_ratio * (DEFAULT_VERTICAL_FOV / 2.0).tan()).atan();
+        let horizontal = angulo(izquierda.direction, derecha.direction);
+
+        assert!(
+            (horizontal - esperado).abs() < 1e-4,
+            "horizontal {} contra {}",
+            horizontal.to_degrees(),
+            esperado.to_degrees()
+        );
+
+        // El aspecto se aplica a la horizontal: en un frame apaisado el
+        // campo horizontal tiene que ser el mayor de los dos.
+        let vertical = angulo(
+            camera.ray_from_pixel(ANCHO / 2, 0, ANCHO, ALTO).direction,
+            camera
+                .ray_from_pixel(ANCHO / 2, ALTO - 1, ANCHO, ALTO)
+                .direction,
+        );
+
+        assert!(
+            horizontal > vertical,
+            "el aspecto se aplico al eje equivocado"
+        );
+    }
+
+    #[test]
+    fn la_fila_cero_esta_arriba() {
+        // Cámara horizontal: el píxel de la fila 0 debe mirar por encima
+        // del central, no por debajo.
+        let camera = Camera::new(
+            Vec3::new(0.0, 0.0, 5.0),
+            Vec3::zeros(),
+            Vec3::zeros(),
+            Vec3::new(0.0, 1.0, 0.0),
+            DEFAULT_VERTICAL_FOV,
+        );
+
+        let arriba = camera.ray_from_pixel(ANCHO / 2, 0, ANCHO, ALTO);
+        let centro = camera.ray_from_pixel(ANCHO / 2, ALTO / 2, ANCHO, ALTO);
+
+        assert!(
+            arriba.direction.y > centro.direction.y,
+            "la fila 0 apunto hacia abajo"
+        );
+    }
+
+    #[test]
+    fn el_zoom_conserva_la_direccion_y_cambia_el_radio() {
+        let mut camera = camara_del_diorama();
+        let direccion = (camera.eye - camera.orbit_center).normalize();
+        let radio = camera.radius();
+
+        camera.zoom(-1.5);
+
+        assert!((camera.radius() - (radio - 1.5)).abs() < 1e-5);
+        assert!(
+            ((camera.eye - camera.orbit_center).normalize() - direccion).magnitude() < 1e-5,
+            "el zoom reencuadro la escena"
+        );
+
+        // Ni el eje de órbita ni el encuadre se mueven.
+        assert_eq!(camera.orbit_center, Vec3::zeros());
+        assert_eq!(camera.look_at, Vec3::new(0.0, 0.75, 0.0));
+    }
+
+    #[test]
+    fn los_clamps_impiden_entrar_al_diorama_o_perderse() {
+        let mut camera = camara_del_diorama();
+
+        camera.zoom(-1_000.0);
+        assert!(
+            (camera.radius() - camera.min_radius).abs() < 1e-4,
+            "radio {} deberia haberse detenido en {}",
+            camera.radius(),
+            camera.min_radius
+        );
+        assert!(camera.radius() > 0.0, "la camara colapso sobre el eje");
+
+        camera.zoom(1_000.0);
+        assert!(
+            (camera.radius() - camera.max_radius).abs() < 1e-4,
+            "radio {} deberia haberse detenido en {}",
+            camera.radius(),
+            camera.max_radius
+        );
+    }
+
+    #[test]
+    fn el_zoom_reencuadra_el_pitch_pero_sigue_apuntando_al_look_at() {
+        // Consecuencia de separar órbita y encuadre: con `look_at` a otra
+        // altura que `orbit_center`, acercarse cambia el ángulo bajo el que
+        // se ve el punto de encuadre. El pitch de la vista está acoplado al
+        // radio y no puede elegirse independientemente del zoom.
+        let mut camera = camara_del_diorama();
+        let pitch_lejos = camera.view_pitch();
+
+        camera.zoom(-3.0);
+
+        assert!(
+            (camera.view_pitch() - pitch_lejos).abs() > 1e-3,
+            "el pitch deberia cambiar al acercarse"
+        );
+
+        // Lo que sí se conserva: el rayo central sigue apuntando al
+        // encuadre. `ray_from_pixel` y `forward` no pueden divergir.
+        let central = camera
+            .ray_from_pixel(ANCHO / 2, ALTO / 2, ANCHO, ALTO)
+            .direction;
+
+        assert!((central - camera.forward()).magnitude() < 1e-5);
+    }
+
+    #[test]
+    fn sin_separacion_el_zoom_no_toca_el_pitch() {
+        // Caso de control: con el encuadre sobre el eje de órbita, el
+        // acoplamiento desaparece.
+        let mut camera = Camera::new(
+            Vec3::new(0.0, 3.0, 4.0),
+            Vec3::zeros(),
+            Vec3::zeros(),
+            Vec3::new(0.0, 1.0, 0.0),
+            DEFAULT_VERTICAL_FOV,
+        );
+        let pitch_lejos = camera.view_pitch();
+
+        camera.zoom(-2.0);
+
+        assert!((camera.view_pitch() - pitch_lejos).abs() < 1e-5);
     }
 
     #[test]

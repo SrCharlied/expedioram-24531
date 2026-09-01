@@ -14,7 +14,7 @@ use expedition33_continente_inacabado::renderer::{cast_ray, render, Shading, BAC
 use expedition33_continente_inacabado::scene::{
     MaterialId, RevealGroup, Scene, SceneObject, SpatialGroupId,
 };
-use nalgebra_glm::{normalize, Vec3};
+use nalgebra_glm::Vec3;
 
 const ANCHO: usize = 32;
 const ALTO: usize = 24;
@@ -87,11 +87,8 @@ fn ningun_pixel_produce_nan() {
     // defecto pasaria inadvertido.
     for y in 0..ALTO {
         for x in 0..ANCHO {
-            let screen_x = (2.0 * x as f32) / ANCHO as f32 - 1.0;
-            let screen_y = -(2.0 * y as f32) / ALTO as f32 + 1.0;
-
-            let direccion = normalize(&Vec3::new(screen_x, screen_y, -1.0));
-            let ray = Ray::new(camera.eye, camera.basis_change(&direccion));
+            // Misma generacion de rayo que usa el render, no una copia.
+            let ray = camera.ray_from_pixel(x, y, ANCHO, ALTO);
 
             for shading in [Shading::Normals, Shading::Material] {
                 let color = cast_ray(&ray, &scene, shading);

@@ -23,6 +23,18 @@ const HEIGHT: usize = 600;
 /// Cuánto gira la cámara por cuadro mientras se sostiene una flecha.
 const ROTATION_SPEED: f32 = PI / 60.0;
 
+/// Cuánto se acerca o aleja la cámara por paso de zoom, como fracción del
+/// radio actual.
+///
+/// Es relativo y no absoluto para que el zoom se sienta igual de rápido de
+/// lejos que de cerca: un paso fijo en unidades de mundo sería imperceptible
+/// desde lejos y brusco desde cerca.
+const ZOOM_FRACTION: f32 = 0.06;
+
+/// La rueda del ratón entrega magnitudes muy distintas según el sistema;
+/// solo se usa su signo.
+const WHEEL_STEPS: f32 = 1.0;
+
 /// Escena de verificación del Hito 1: un cuboide centrado en el origen.
 ///
 /// No es todavía el diorama. Su función es que el gate del hito sea
@@ -87,6 +99,28 @@ fn main() {
                 camera.orbit(delta_yaw, delta_pitch);
                 camera_moved = true;
             }
+        }
+
+        // Zoom por teclado y por rueda. El paso es proporcional al radio
+        // actual, así que se siente parejo a cualquier distancia.
+        let mut pasos = 0.0;
+        if window.is_key_down(Key::W) {
+            pasos -= 1.0;
+        }
+        if window.is_key_down(Key::S) {
+            pasos += 1.0;
+        }
+        if let Some((_, vertical)) = window.get_scroll_wheel() {
+            if vertical > 0.0 {
+                pasos -= WHEEL_STEPS;
+            } else if vertical < 0.0 {
+                pasos += WHEEL_STEPS;
+            }
+        }
+
+        if pasos != 0.0 {
+            camera.zoom(pasos * ZOOM_FRACTION * camera.radius());
+            camera_moved = true;
         }
 
         if camera_moved {
