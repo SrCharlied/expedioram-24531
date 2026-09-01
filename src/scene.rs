@@ -40,6 +40,20 @@ pub enum RevealGroup {
     Finale,
 }
 
+impl SpatialGroupId {
+    /// Los siete grupos, en orden fijo. La estructura de aceleración los
+    /// recorre así para que el árbol salga idéntico en cada corrida.
+    pub const ALL: [SpatialGroupId; 7] = [
+        SpatialGroupId::Global,
+        SpatialGroupId::ContinentBackground,
+        SpatialGroupId::Meadows,
+        SpatialGroupId::Breakwater,
+        SpatialGroupId::FlyingWaters,
+        SpatialGroupId::Monolith,
+        SpatialGroupId::InteractionProps,
+    ];
+}
+
 impl RevealGroup {
     /// Cantidad de grupos: el tamaño del arreglo `[f32; 4]` que guardará el
     /// progreso.
@@ -104,18 +118,7 @@ impl Scene {
         self.objects
             .iter()
             .map(|objeto| objeto.primitive.bounds())
-            .reduce(|acumulado, caja| Aabb {
-                min: Vec3::new(
-                    acumulado.min.x.min(caja.min.x),
-                    acumulado.min.y.min(caja.min.y),
-                    acumulado.min.z.min(caja.min.z),
-                ),
-                max: Vec3::new(
-                    acumulado.max.x.max(caja.max.x),
-                    acumulado.max.y.max(caja.max.y),
-                    acumulado.max.z.max(caja.max.z),
-                ),
-            })
+            .reduce(|acumulado, caja| acumulado.union(&caja))
     }
 
     /// Impacto más cercano contra la escena, con `object_index` asignado.

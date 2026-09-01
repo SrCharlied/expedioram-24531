@@ -38,6 +38,24 @@ impl Aabb {
         }
     }
 
+    /// Caja mínima que contiene a las dos. Es la operación con la que la
+    /// estructura de aceleración compone los bounds de cada cluster, cada
+    /// grupo y la escena entera.
+    pub fn union(&self, otra: &Aabb) -> Aabb {
+        Aabb {
+            min: Vec3::new(
+                self.min.x.min(otra.min.x),
+                self.min.y.min(otra.min.y),
+                self.min.z.min(otra.min.z),
+            ),
+            max: Vec3::new(
+                self.max.x.max(otra.max.x),
+                self.max.y.max(otra.max.y),
+                self.max.z.max(otra.max.z),
+            ),
+        }
+    }
+
     pub fn centro(&self) -> Vec3 {
         (self.min + self.max) * 0.5
     }
@@ -215,6 +233,27 @@ mod tests {
         let caja = Aabb::from_corners(Vec3::new(1.0, 1.0, 1.0), Vec3::new(-1.0, -1.0, -1.0));
 
         assert_eq!(caja, cubo_unitario());
+    }
+
+    #[test]
+    fn union_contiene_a_las_dos() {
+        let a = Aabb::new(Vec3::new(-1.0, -1.0, -1.0), Vec3::new(0.0, 0.0, 0.0));
+        let b = Aabb::new(Vec3::new(2.0, 3.0, 1.0), Vec3::new(4.0, 5.0, 2.0));
+        let u = a.union(&b);
+
+        assert_eq!(u.min, Vec3::new(-1.0, -1.0, -1.0));
+        assert_eq!(u.max, Vec3::new(4.0, 5.0, 2.0));
+        assert!(u.contiene(&a.min) && u.contiene(&a.max));
+        assert!(u.contiene(&b.min) && u.contiene(&b.max));
+    }
+
+    #[test]
+    fn la_union_es_conmutativa_e_idempotente() {
+        let a = Aabb::new(Vec3::new(-2.0, 0.0, -1.0), Vec3::new(1.0, 2.0, 3.0));
+        let b = Aabb::new(Vec3::new(0.0, -3.0, 0.0), Vec3::new(2.0, 1.0, 1.0));
+
+        assert_eq!(a.union(&b), b.union(&a));
+        assert_eq!(a.union(&a), a);
     }
 
     #[test]
