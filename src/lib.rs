@@ -9,6 +9,7 @@
 pub mod bounds;
 pub mod camera;
 pub mod color;
+pub mod cuboid;
 pub mod framebuffer;
 pub mod hit;
 pub mod ray;

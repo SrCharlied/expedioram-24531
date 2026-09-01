@@ -10,11 +10,9 @@ use std::f32::consts::PI;
 use std::time::Duration;
 
 use expedition33_continente_inacabado::camera::Camera;
-use expedition33_continente_inacabado::color::Color;
+use expedition33_continente_inacabado::cuboid::Cuboid;
 use expedition33_continente_inacabado::framebuffer::Framebuffer;
-use expedition33_continente_inacabado::ray_intersect::Material;
 use expedition33_continente_inacabado::renderer::render;
-use expedition33_continente_inacabado::sphere::Sphere;
 
 const WIDTH: usize = 800;
 const HEIGHT: usize = 600;
@@ -29,32 +27,14 @@ fn main() {
 
     let mut window = Window::new("Lakitu", WIDTH, HEIGHT, WindowOptions::default()).unwrap();
 
-    // Los canales pasaron de 0..255 enteros a 0.0..1.0 flotantes; son los
-    // mismos colores divididos entre 255.
-    let ivory = Material::new(Color::new(0.392, 0.392, 0.314));
-    let rubber = Material::new(Color::new(0.314, 0.0, 0.0));
-    let cobalt = Material::new(Color::new(0.157, 0.314, 0.549));
-
-    // La escena se acomoda alrededor del origen, que es el punto que la
-    // cámara orbita. Las esferas están a distintas profundidades para que
-    // al girar se vea cuál pasa frente a cuál.
-    let objects = [
-        Sphere {
-            center: Vec3::new(0.0, 0.0, 0.0),
-            radius: 1.0,
-            material: ivory,
-        },
-        Sphere {
-            center: Vec3::new(1.8, 0.0, -0.8),
-            radius: 0.5,
-            material: rubber,
-        },
-        Sphere {
-            center: Vec3::new(-1.2, 0.6, 1.0),
-            radius: 0.6,
-            material: cobalt,
-        },
-    ];
+    // Gate visual de la Tarea 1.5: un solo cuboide coloreado por
+    // normales. Las tres esferas salieron de escena; su utilidad era
+    // validar la cámara orbital, y eso ya está hecho. Cada cara debe
+    // verse de un color distinto y estable al orbitar.
+    let objects = [Cuboid::centrado(
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(2.0, 2.0, 2.0),
+    )];
 
     let mut camera = Camera::new(
         Vec3::new(0.0, 0.0, 5.0),

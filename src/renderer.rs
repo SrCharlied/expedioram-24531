@@ -6,11 +6,11 @@
 
 use crate::camera::Camera;
 use crate::color::Color;
+use crate::cuboid::Cuboid;
 use crate::framebuffer::Framebuffer;
 use crate::hit::Hit;
 use crate::ray::Ray;
 use crate::ray_intersect::RayIntersect;
-use crate::sphere::Sphere;
 use nalgebra_glm::{normalize, Vec3};
 use std::f32::consts::PI;
 
@@ -27,7 +27,7 @@ pub const FOV: f32 = PI / 3.0;
 /// La primitiva no sabe en qué posición de la escena vive, así que el
 /// índice lo pone este recorrido. Es lo que después permite resolver el
 /// material sin haberlo copiado dentro del impacto.
-pub fn closest_hit(ray: &Ray, objects: &[Sphere]) -> Option<Hit> {
+pub fn closest_hit(ray: &Ray, objects: &[Cuboid]) -> Option<Hit> {
     let mut closest: Option<Hit> = None;
 
     for (index, object) in objects.iter().enumerate() {
@@ -42,15 +42,33 @@ pub fn closest_hit(ray: &Ray, objects: &[Sphere]) -> Option<Hit> {
     closest
 }
 
+/// Traduce una normal a color, llevando el rango `-1.0..=1.0` de cada
+/// componente a `0.0..=1.0`.
+///
+/// Es una vista de depuración, no sombreado: sirve para verificar a simple
+/// vista que las seis caras del cuboide miran hacia donde deben. Cada eje
+/// se ve como un color distinto, así que una cara mal orientada salta de
+/// inmediato.
+pub fn color_por_normal(hit: &Hit) -> Color {
+    Color::new(
+        hit.normal.x * 0.5 + 0.5,
+        hit.normal.y * 0.5 + 0.5,
+        hit.normal.z * 0.5 + 0.5,
+    )
+}
+
 /// Devuelve el color del objeto más cercano que toca el rayo.
-pub fn cast_ray(ray: &Ray, objects: &[Sphere]) -> Color {
+///
+/// Todavía colorea por normal: el cuboide es geometría pura y el material
+/// no le pertenece, sino al `SceneObject` que lo envuelve en la Tarea 1.6.
+pub fn cast_ray(ray: &Ray, objects: &[Cuboid]) -> Color {
     match closest_hit(ray, objects) {
-        Some(hit) => objects[hit.object_index].material.diffuse,
+        Some(hit) => color_por_normal(&hit),
         None => Color::from_hex(BACKGROUND_COLOR),
     }
 }
 
-pub fn render(framebuffer: &mut Framebuffer, objects: &[Sphere], camera: &Camera) {
+pub fn render(framebuffer: &mut Framebuffer, objects: &[Cuboid], camera: &Camera) {
     let width = framebuffer.width as f32;
     let height = framebuffer.height as f32;
     let aspect_ratio = width / height;
