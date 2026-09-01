@@ -29,9 +29,11 @@ fn main() {
 
     let mut window = Window::new("Lakitu", WIDTH, HEIGHT, WindowOptions::default()).unwrap();
 
-    let ivory = Material::new(Color::new(100, 100, 80));
-    let rubber = Material::new(Color::new(80, 0, 0));
-    let cobalt = Material::new(Color::new(40, 80, 140));
+    // Los canales pasaron de 0..255 enteros a 0.0..1.0 flotantes; son los
+    // mismos colores divididos entre 255.
+    let ivory = Material::new(Color::new(0.392, 0.392, 0.314));
+    let rubber = Material::new(Color::new(0.314, 0.0, 0.0));
+    let cobalt = Material::new(Color::new(0.157, 0.314, 0.549));
 
     // La escena se acomoda alrededor del origen, que es el punto que la
     // cámara orbita. Las esferas están a distintas profundidades para que
