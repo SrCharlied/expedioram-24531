@@ -71,7 +71,7 @@ git rev-parse <cualquier-commit-del-hito-0>:src
 ## Preflight del Hito 1
 
 **Fecha:** 31 de agosto de 2026  
-**Commit:** `8287bb8d7698aa23ca5dad996bbf4915f686e07a`
+**Commit:** `847d0e3dc0cf1ee10f5b5e585093aa9abfcb0953`
 
 **Base heredada:** árbol `d77aad46c439f43ed5f06c2fd393bc25fa5bdf11`
 
@@ -99,7 +99,40 @@ Comandos ejecutados, los cuatro en verde tras el commit:
 
 **Árbol `src/` tras la normalización:** `3fe8a4a8091bfc13582c791ba91c96c5fd95ae60`
 
-Desde este commit, `src/` diverge de `f3e5539` **por formato, no por lógica**. Es la frontera entre la base del curso y el código del proyecto: para comparar contra la base se usa cualquier commit anterior a `8287bb8`, cuyo árbol `src/` sigue siendo `d77aad46…`.
+Desde este commit, `src/` diverge de `f3e5539` **por formato, no por lógica**. Es la frontera entre la base del curso y el código del proyecto: para comparar contra la base se usa cualquier commit anterior a este, cuyo árbol `src/` sigue siendo `d77aad46…`.
+
+**Por qué el ancla de registro es el árbol y no el commit.** Este apartado citaba originalmente el commit `8287bb8…`; una reescritura posterior del historial lo dejó huérfano y esa referencia quedó rota. Los hashes de árbol no dependen de la identidad del commit —se derivan del contenido—, así que `d77aad46…` y `3fe8a4a…` sobrevivieron sin cambio. Cuando haya que señalar un estado del código, citar el árbol; el commit es una comodidad que puede caducar.
+
+---
+
+## Hito 1 — Núcleo matemático testeable
+
+**Fecha:** 1 de septiembre de 2026 (el plan asignaba hasta el 4 de septiembre)  
+**Árbol `src/` al cierre:** `2aa3202aebdbedd31466a3298ae4e11530b5d7db`
+
+Un commit por tarea, en orden:
+
+| Tarea | Commit | Qué introdujo |
+|---|---|---|
+| 1.1 | `3b84522` | `lib.rs` y `renderer.rs`; `main.rs` queda con ventana, input y presentación |
+| 1.2 | `46f0769` | `Color` en `f32` lineal, con el recorte una sola vez en `to_hex` |
+| 1.3 | `c757df9` | `Ray`, `Hit` con `front_face` y `object_index`, `EPSILON` canónico |
+| 1.4 | `4d720a9` | `Aabb` y el slab test, con el eje paralelo tratado aparte |
+| 1.5 | `190108b` | `Cuboid` con normal y UV por cara |
+| 1.6 | `707451c` | `Primitive`, `Scene`, `SceneObject`; se elimina `sphere.rs` |
+
+**Gate del hito, los cuatro en verde:**
+
+- `cargo fmt -- --check` — sin diferencias
+- `cargo clippy --all-targets -- -D warnings` — sin warnings
+- `cargo test` — 43 tests en 4 targets (38 unitarios, 5 de integración)
+- `cargo build --release` — compila
+
+El render headless del gate vive en `tests/render_smoke.rs`: renderiza `32 × 24` sin abrir ventana y comprueba que haya píxeles de cubo y de fondo, que el material se resuelva por `object_index` y que ningún color salga NaN. La comprobación de NaN se hace sobre `Color` y no sobre el framebuffer, porque al empacar a `u32` un NaN ya se habría convertido en un entero cualquiera.
+
+**Sin medir.** El Hito 1 no produce números de rendimiento y no debe intentar producirlos: no hay luces, ni escena de tamaño real, ni aceleración. La primera medición legítima es la del Hito 3.
+
+**Verificación visual pendiente.** `cargo run` abre ventana y no se puede automatizar aquí. Debe mostrar un cuboide coloreado por normales, con cada cara de un color distinto y estable al orbitar.
 
 ---
 
