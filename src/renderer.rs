@@ -6,11 +6,10 @@
 
 use crate::camera::Camera;
 use crate::color::Color;
-use crate::cuboid::Cuboid;
 use crate::framebuffer::Framebuffer;
 use crate::hit::Hit;
 use crate::ray::Ray;
-use crate::ray_intersect::RayIntersect;
+use crate::scene::Scene;
 use nalgebra_glm::{normalize, Vec3};
 use std::f32::consts::PI;
 
@@ -21,34 +20,22 @@ pub const BACKGROUND_COLOR: u32 = 0x040C24;
 /// 90 grados por poner el plano de proyección a una unidad de distancia.
 pub const FOV: f32 = PI / 3.0;
 
-/// Impacto más cercano del rayo contra la escena, con `object_index` ya
-/// asignado.
+/// Cómo se resuelve el color de un impacto.
 ///
-/// La primitiva no sabe en qué posición de la escena vive, así que el
-/// índice lo pone este recorrido. Es lo que después permite resolver el
-/// material sin haberlo copiado dentro del impacto.
-pub fn closest_hit(ray: &Ray, objects: &[Cuboid]) -> Option<Hit> {
-    let mut closest: Option<Hit> = None;
-
-    for (index, object) in objects.iter().enumerate() {
-        if let Some(mut hit) = object.ray_intersect(ray) {
-            if closest.is_none_or(|previo| hit.distance < previo.distance) {
-                hit.object_index = index;
-                closest = Some(hit);
-            }
-        }
-    }
-
-    closest
+/// `Normals` no es sombreado sino una vista de depuración: cada eje se ve
+/// de un color distinto, así que una cara mal orientada salta a simple
+/// vista. Es lo que hace verificable el cubo mientras no haya luces —hasta
+/// el Hito 3 un color plano solo daría una silueta—, y sigue sirviendo
+/// después para revisar geometría nueva.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Shading {
+    #[default]
+    Material,
+    Normals,
 }
 
 /// Traduce una normal a color, llevando el rango `-1.0..=1.0` de cada
 /// componente a `0.0..=1.0`.
-///
-/// Es una vista de depuración, no sombreado: sirve para verificar a simple
-/// vista que las seis caras del cuboide miran hacia donde deben. Cada eje
-/// se ve como un color distinto, así que una cara mal orientada salta de
-/// inmediato.
 pub fn color_por_normal(hit: &Hit) -> Color {
     Color::new(
         hit.normal.x * 0.5 + 0.5,
@@ -59,16 +46,26 @@ pub fn color_por_normal(hit: &Hit) -> Color {
 
 /// Devuelve el color del objeto más cercano que toca el rayo.
 ///
-/// Todavía colorea por normal: el cuboide es geometría pura y el material
-/// no le pertenece, sino al `SceneObject` que lo envuelve en la Tarea 1.6.
-pub fn cast_ray(ray: &Ray, objects: &[Cuboid]) -> Color {
-    match closest_hit(ray, objects) {
-        Some(hit) => color_por_normal(&hit),
-        None => Color::from_hex(BACKGROUND_COLOR),
+/// El material se resuelve por `object_index` contra la paleta de la
+/// escena; el impacto nunca lo carga. Por ahora usa `final_material`
+/// directamente: la interpolación desde `canvas_unpainted` llega en la
+/// Tarea 4.4, cuando exista `RevealState`.
+pub fn cast_ray(ray: &Ray, scene: &Scene, shading: Shading) -> Color {
+    let Some(hit) = scene.intersect(ray) else {
+        return Color::from_hex(BACKGROUND_COLOR);
+    };
+
+    match shading {
+        Shading::Normals => color_por_normal(&hit),
+        Shading::Material => {
+            let objeto = scene.objects[hit.object_index];
+
+            scene.material(objeto.final_material).diffuse
+        }
     }
 }
 
-pub fn render(framebuffer: &mut Framebuffer, objects: &[Cuboid], camera: &Camera) {
+pub fn render(framebuffer: &mut Framebuffer, scene: &Scene, camera: &Camera, shading: Shading) {
     let width = framebuffer.width as f32;
     let height = framebuffer.height as f32;
     let aspect_ratio = width / height;
@@ -93,7 +90,7 @@ pub fn render(framebuffer: &mut Framebuffer, objects: &[Cuboid], camera: &Camera
             let ray_direction = normalize(&Vec3::new(screen_x, screen_y, -1.0));
             let ray = Ray::new(camera.eye, camera.basis_change(&ray_direction));
 
-            framebuffer.set_current_color(cast_ray(&ray, objects).to_hex());
+            framebuffer.set_current_color(cast_ray(&ray, scene, shading).to_hex());
             framebuffer.point(x, y);
         }
     }

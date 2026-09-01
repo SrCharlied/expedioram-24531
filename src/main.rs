@@ -10,15 +10,39 @@ use std::f32::consts::PI;
 use std::time::Duration;
 
 use expedition33_continente_inacabado::camera::Camera;
+use expedition33_continente_inacabado::color::Color;
 use expedition33_continente_inacabado::cuboid::Cuboid;
 use expedition33_continente_inacabado::framebuffer::Framebuffer;
-use expedition33_continente_inacabado::renderer::render;
+use expedition33_continente_inacabado::ray_intersect::Material;
+use expedition33_continente_inacabado::renderer::{render, Shading};
+use expedition33_continente_inacabado::scene::{RevealGroup, Scene, SceneObject, SpatialGroupId};
 
 const WIDTH: usize = 800;
 const HEIGHT: usize = 600;
 
 /// Cuánto gira la cámara por cuadro mientras se sostiene una flecha.
 const ROTATION_SPEED: f32 = PI / 60.0;
+
+/// Escena de verificación del Hito 1: un cuboide centrado en el origen.
+///
+/// No es todavía el diorama. Su función es que el gate del hito sea
+/// comprobable a simple vista: al orbitar, cada cara debe conservar su
+/// color y su orientación.
+fn escena_de_prueba() -> Scene {
+    let mut scene = Scene::new();
+
+    let piedra = scene.add_material(Material::new(Color::new(0.62, 0.60, 0.55)));
+
+    scene.add_object(SceneObject {
+        primitive: Cuboid::centrado(Vec3::zeros(), Vec3::new(2.0, 2.0, 2.0)).into(),
+        initial_material: piedra,
+        final_material: piedra,
+        spatial_group: SpatialGroupId::Monolith,
+        reveal_group: RevealGroup::Finale,
+    });
+
+    scene
+}
 
 fn main() {
     let frame_delay = Duration::from_millis(16);
@@ -27,14 +51,12 @@ fn main() {
 
     let mut window = Window::new("Lakitu", WIDTH, HEIGHT, WindowOptions::default()).unwrap();
 
-    // Gate visual de la Tarea 1.5: un solo cuboide coloreado por
-    // normales. Las tres esferas salieron de escena; su utilidad era
-    // validar la cámara orbital, y eso ya está hecho. Cada cara debe
-    // verse de un color distinto y estable al orbitar.
-    let objects = [Cuboid::centrado(
-        Vec3::new(0.0, 0.0, 0.0),
-        Vec3::new(2.0, 2.0, 2.0),
-    )];
+    let scene = escena_de_prueba();
+
+    // Hasta que existan luces, en el Hito 3, un color plano solo daría una
+    // silueta. La vista por normales es lo que permite verificar que las
+    // seis caras miran hacia donde deben.
+    let shading = Shading::Normals;
 
     let mut camera = Camera::new(
         Vec3::new(0.0, 0.0, 5.0),
@@ -63,7 +85,7 @@ fn main() {
         }
 
         if camera_moved {
-            render(&mut framebuffer, &objects, &camera);
+            render(&mut framebuffer, &scene, &camera, shading);
             camera_moved = false;
         }
 

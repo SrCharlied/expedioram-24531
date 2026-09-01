@@ -12,10 +12,11 @@ pub mod color;
 pub mod cuboid;
 pub mod framebuffer;
 pub mod hit;
+pub mod primitive;
 pub mod ray;
 pub mod ray_intersect;
 pub mod renderer;
-pub mod sphere;
+pub mod scene;
 
 /// Margen para despegar un rayo secundario de la superficie que lo originó.
 ///
