@@ -9,6 +9,16 @@
 pub mod camera;
 pub mod color;
 pub mod framebuffer;
+pub mod hit;
+pub mod ray;
 pub mod ray_intersect;
 pub mod renderer;
 pub mod sphere;
+
+/// Margen para despegar un rayo secundario de la superficie que lo originó.
+///
+/// Sin él, el rayo vuelve a impactar el mismo punto del que sale por error
+/// de redondeo: es el acné de sombras. Un solo valor canónico para todo el
+/// proyecto —intersecciones, rayos de sombra, reflexión y refracción— para
+/// que no aparezcan tres epsilons distintos que haya que reconciliar.
+pub const EPSILON: f32 = 1e-4;

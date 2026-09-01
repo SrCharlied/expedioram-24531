@@ -7,6 +7,8 @@
 use crate::camera::Camera;
 use crate::color::Color;
 use crate::framebuffer::Framebuffer;
+use crate::hit::Hit;
+use crate::ray::Ray;
 use crate::ray_intersect::RayIntersect;
 use crate::sphere::Sphere;
 use nalgebra_glm::{normalize, Vec3};
@@ -19,21 +21,33 @@ pub const BACKGROUND_COLOR: u32 = 0x040C24;
 /// 90 grados por poner el plano de proyección a una unidad de distancia.
 pub const FOV: f32 = PI / 3.0;
 
-/// Devuelve el color del objeto más cercano que toca el rayo.
-pub fn cast_ray(ray_origin: &Vec3, ray_direction: &Vec3, objects: &[Sphere]) -> Color {
-    let mut closest: Option<f32> = None;
-    let mut color = Color::from_hex(BACKGROUND_COLOR);
+/// Impacto más cercano del rayo contra la escena, con `object_index` ya
+/// asignado.
+///
+/// La primitiva no sabe en qué posición de la escena vive, así que el
+/// índice lo pone este recorrido. Es lo que después permite resolver el
+/// material sin haberlo copiado dentro del impacto.
+pub fn closest_hit(ray: &Ray, objects: &[Sphere]) -> Option<Hit> {
+    let mut closest: Option<Hit> = None;
 
-    for object in objects {
-        if let Some(intersect) = object.ray_intersect(ray_origin, ray_direction) {
-            if closest.is_none_or(|distance| intersect.distance < distance) {
-                closest = Some(intersect.distance);
-                color = intersect.material.diffuse;
+    for (index, object) in objects.iter().enumerate() {
+        if let Some(mut hit) = object.ray_intersect(ray) {
+            if closest.is_none_or(|previo| hit.distance < previo.distance) {
+                hit.object_index = index;
+                closest = Some(hit);
             }
         }
     }
 
-    color
+    closest
+}
+
+/// Devuelve el color del objeto más cercano que toca el rayo.
+pub fn cast_ray(ray: &Ray, objects: &[Sphere]) -> Color {
+    match closest_hit(ray, objects) {
+        Some(hit) => objects[hit.object_index].material.diffuse,
+        None => Color::from_hex(BACKGROUND_COLOR),
+    }
 }
 
 pub fn render(framebuffer: &mut Framebuffer, objects: &[Sphere], camera: &Camera) {
@@ -59,9 +73,9 @@ pub fn render(framebuffer: &mut Framebuffer, objects: &[Sphere], camera: &Camera
             // El rayo nace en coordenadas de cámara —viendo hacia -Z— y el
             // cambio de base lo lleva al mundo, donde están los objetos.
             let ray_direction = normalize(&Vec3::new(screen_x, screen_y, -1.0));
-            let ray_direction = camera.basis_change(&ray_direction);
+            let ray = Ray::new(camera.eye, camera.basis_change(&ray_direction));
 
-            framebuffer.set_current_color(cast_ray(&camera.eye, &ray_direction, objects).to_hex());
+            framebuffer.set_current_color(cast_ray(&ray, objects).to_hex());
             framebuffer.point(x, y);
         }
     }
