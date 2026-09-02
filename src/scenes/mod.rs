@@ -399,6 +399,8 @@ pub fn safe_level_con(
             water_surface_y,
             anchors_base.flying_waters_anchor.z,
         ),
+        // Del ancla **base**, no de la ya desplazada a la superficie.
+        boat_anchor: flying_waters::centro_visible_del_barco(anchors_base.flying_waters_anchor),
         ..anchors_base
     };
 
@@ -441,6 +443,7 @@ pub fn anclas_del_diorama() -> SceneAnchors {
         meadows_anchor: Vec3::new(-4.2, 5.6, -4.6),
         breakwater_anchor: Vec3::new(-4.2, 2.4, -1.9),
         flying_waters_anchor: Vec3::new(0.0, 0.0, 4.2),
+        boat_anchor: flying_waters::centro_visible_del_barco(Vec3::new(0.0, 0.0, 4.2)),
         palette_anchor: Vec3::new(6.6, 0.4, 5.8),
         hero_camera_anchor: origen,
         broken_edge_anchor: Vec3::new(0.0, 1.2, 6.6),

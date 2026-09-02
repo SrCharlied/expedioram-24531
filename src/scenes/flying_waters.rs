@@ -159,6 +159,26 @@ pub fn ancla_del_casco(ancla: Vec3) -> Vec3 {
     ancla + Vec3::new(-0.3, 2.05, 0.2)
 }
 
+/// Centro **visible** del barco, no el centro de su caja.
+///
+/// Es lo que pide el inventario para calibrar `L-02`: la luz tiene que
+/// mantener legible lo que se ve del barco, y lo que se ve son las caras de
+/// arriba de la cubierta, las costillas y la popa. El centro de la caja del
+/// casco cae por debajo de todas ellas.
+///
+/// El desplazamiento está **medido**, no derivado: se promedian los puntos
+/// donde un rayo vertical disparado desde justo bajo la superficie del agua
+/// toca una pieza del casco. Sobre 242 muestras el centro visible queda
+/// `0.34` más arriba y `0.22` más a popa que el centro de la caja, porque la
+/// cubierta y la popa aportan casi toda la superficie expuesta.
+///
+/// Un desplazamiento medido a mano se desincroniza en el primer ajuste de
+/// composición, así que hay un test que **vuelve a medirlo** contra la
+/// escena y falla si esta constante se queda atrás.
+pub fn centro_visible_del_barco(ancla: Vec3) -> Vec3 {
+    ancla_del_casco(ancla) + Vec3::new(-0.22, 0.34, 0.0)
+}
+
 /// `A-03` · casco del barco, doce primitivas.
 ///
 /// Se prioriza la silueta rota y suspendida, no la precisión naval.

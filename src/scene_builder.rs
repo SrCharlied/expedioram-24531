@@ -44,6 +44,14 @@ pub struct SceneAnchors {
     pub breakwater_anchor: Vec3,
     /// Centro de la bahía sobre el plano de la superficie del agua.
     pub flying_waters_anchor: Vec3,
+    /// Centro **visible** del barco, el objetivo declarado de `L-02`.
+    ///
+    /// Existe como ancla y no se calcula en `light::diorama` por una razón
+    /// concreta: `flying_waters_anchor` **cambia** entre la construcción de
+    /// la escena y el armado de las luces —pasa de `y = 0` a la altura de
+    /// la superficie del agua—, así que derivar el barco de él desde el rig
+    /// daría una posición desplazada en toda la altura de la bahía.
+    pub boat_anchor: Vec3,
     pub palette_anchor: Vec3,
     pub hero_camera_anchor: Vec3,
     pub broken_edge_anchor: Vec3,

@@ -22,7 +22,9 @@ use expedition33_continente_inacabado::renderer::{cast_ray, Shading};
 use expedition33_continente_inacabado::reveal::RevealState;
 use expedition33_continente_inacabado::scene::{Scene, SpatialGroupId};
 use expedition33_continente_inacabado::scene_builder::Blockout;
-use expedition33_continente_inacabado::scenes::flying_waters::{ancla_del_casco, caja_del_volumen};
+use expedition33_continente_inacabado::scenes::flying_waters::{
+    ancla_del_casco, caja_del_volumen, centro_visible_del_barco,
+};
 use expedition33_continente_inacabado::scenes::{anclas_del_diorama, safe_level, WaterPreset};
 use expedition33_continente_inacabado::EPSILON;
 use nalgebra_glm::Vec3;
@@ -458,5 +460,48 @@ fn el_monolito_conserva_su_sombra_de_contacto() {
         diorama.scene.objects[impacto.object_index].spatial_group,
         SpatialGroupId::Monolith,
         "la sombra al pie del Monolito la proyecta otra masa"
+    );
+}
+
+// ------------------------------------------------- calibracion de L-02
+
+#[test]
+fn el_centro_visible_del_barco_sigue_siendo_el_que_dice_la_constante() {
+    // `centro_visible_del_barco` lleva un desplazamiento **medido**, y un
+    // numero medido a mano se desincroniza en el primer ajuste de
+    // composicion. Este test lo vuelve a medir contra la escena: promedia
+    // los puntos donde los rayos de la rejilla tocan el casco y lo compara
+    // con la constante.
+    //
+    // No es cosmetico: de esa posicion sale `distance_boat`, y de
+    // `distance_boat` sale la intensidad de `L-02`.
+    let (diorama, _) = nivel();
+    let muestras = muestras_sobre_el_casco(&diorama);
+
+    let mut suma = Vec3::zeros();
+    for (origen, _) in &muestras {
+        let rayo = Ray::new(*origen, Vec3::new(0.0, -1.0, 0.0));
+        let impacto = diorama
+            .accel
+            .intersect(&diorama.scene, &rayo, &mut TraversalStats::default())
+            .expect("la muestra da en el casco");
+
+        suma += impacto.point;
+    }
+
+    let medido = suma / muestras.len() as f32;
+    let declarado = centro_visible_del_barco(anclas_del_diorama().flying_waters_anchor);
+
+    let desvio = (medido - declarado).magnitude();
+
+    assert!(
+        desvio < 0.02,
+        "el centro visible medido es {medido:?} y la constante dice {declarado:?}          (desvio {desvio:.4})"
+    );
+
+    // Y el ancla de la escena es esa misma: es lo que lee `light::diorama`.
+    assert!(
+        (diorama.anchors.boat_anchor - declarado).magnitude() < 1e-5,
+        "boat_anchor no coincide con el centro visible declarado"
     );
 }

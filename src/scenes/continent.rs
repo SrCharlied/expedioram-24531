@@ -233,6 +233,10 @@ pub fn blockout() -> Blockout {
         meadows_anchor,
         breakwater_anchor,
         flying_waters_anchor: Vec3::new(bay_center.x, WATER_SURFACE_Y, bay_center.z),
+        // El blockout no tiene barco: el ancla apunta al centro de la
+        // bahia, que es lo mas parecido a «lo que L-02 debe iluminar»
+        // cuando todavia no hay nada dentro.
+        boat_anchor: Vec3::new(bay_center.x, WATER_SURFACE_Y, bay_center.z),
         palette_anchor,
         hero_camera_anchor: eye_at_yaw(orbit_center, orbit_radius, HERO_YAW_DEGREES),
         broken_edge_anchor,

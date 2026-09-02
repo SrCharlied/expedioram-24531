@@ -988,6 +988,141 @@ El render con solo `L-02` es además la evidencia visual del **light
 linking**: el resto del diorama cae a ambiente mientras la bahía queda
 iluminada. `L-02` afecta y ocluye únicamente a `FlyingWaters`, y se ve.
 
+### Tarea 5.7 — calibración de `L-02` con el blockout real
+
+Los cinco pasos que exige el inventario. `cargo run --release --example calibrate_l02`
+imprime el barrido completo; aquí quedan los valores.
+
+#### 1 y 2 · las distancias medidas
+
+| Magnitud | Valor | En múltiplos de `S` |
+|---|---:|---:|
+| `scene_radius` | `12.0586` | `1.000 S` |
+| `distance_boat` | `2.3179` | `0.192 S` |
+| `distance_farthest` (centro) | `5.1560` | `0.428 S` |
+| `distance_farthest` (esquina) | `7.5026` | `0.622 S` |
+
+`distance_boat` se mide al **centro visible** del barco, que es lo que pide
+el inventario, y no al centro de la caja del casco. La diferencia importa:
+el centro visible está `0.34` más arriba y `0.22` más a popa, porque la
+cubierta y la popa aportan casi toda la superficie expuesta y el centro de
+la caja cae por debajo de todas ellas. Se obtiene promediando los `242`
+puntos donde los rayos de la rejilla de la Tarea 5.6 tocan el casco.
+
+Todas las entradas de Aguas Voladoras del nivel seguro son obligatorias
+—`A-09` y `A-10` son las opcionales y valen cero primitivas—, así que el
+objeto más lejano se busca sobre las 58.
+
+#### 3 · el alcance elegido
+
+Barrido de la razón entre lo que recibe el objeto más lejano y lo que recibe
+el barco:
+
+| `range` | `= S ×` | Lejano / barco |
+|---:|---:|---:|
+| `1.8088` | `0.15` | `29.0 %` |
+| `2.4117` | `0.20` | `34.5 %` ← heredado |
+| `3.0147` | `0.25` | `40.5 %` |
+| **`3.6176`** | **`0.30`** | **`46.5 %`** ← elegido |
+| `4.8234` | `0.40` | `57.4 %` |
+| `6.6322` | `0.55` | `69.9 %` |
+| `9.6469` | `0.80` | `82.3 %` |
+
+**`range = 0.30 S`.** El fondo de la bahía conserva casi la mitad de la
+iluminación del barco: baja lo justo para que la bahía tenga profundidad, y
+no tanto como para que su fondo desaparezca.
+
+El argumento original para un alcance estrecho era evitar que el azul se
+derramara fuera de Aguas Voladoras, y de eso ya se encarga el **light
+linking**, que lo lleva a cero exacto. La atenuación solo tiene que modelar
+la caída *dentro* de la bahía, así que ensancharla no cuesta nada fuera.
+
+#### 4 · `E_boat` y la intensidad derivada
+
+Barrido de `E_boat` contra el brillo del casco, medido sobre las mismas 242
+caras y expresado en byte sRGB, que es la escala en la que se juzga si algo
+se lee:
+
+| `E_boat` | `intensity` a `0.30 S` | Media del casco | Byte medio | Byte máximo |
+|---:|---:|---:|---:|---:|
+| `1.00` | `1.4106` | `0.0940` | `50` | `87` |
+| `1.50` | `2.1158` | `0.1367` | `60` | `105` |
+| **`2.00`** | **`2.8211`** | **`0.1794`** | **`69`** | **`120`** |
+| `2.50` | `3.5264` | `0.2222` | `77` | `133` |
+| `3.00` | `4.2317` | `0.2649` | `84` | `144` |
+| `4.00` | `5.6422` | `0.3503` | `96` | `164` |
+
+**`E_boat = 2.0`**, que da `intensity = 2.8211`. Es el único número
+artístico de la calibración; todo lo demás se deriva de él y de la
+geometría. Los valores heredados equivalían a `E_boat ≈ 1.04`, con el casco
+en el byte `50`: una mancha oscura.
+
+`2.50` y `3.00` quedan registrados como las alternativas si el gate de la
+Tarea 5.8 pide más presencia. Subir de ahí empieza a desbalancear la bahía
+contra el resto del diorama, que solo tiene `L-01`.
+
+**La intensidad se deriva, no se escribe.** `l02_intensity` invierte el
+modelo de atenuación:
+
+```text
+intensity = E_boat × (1 + (distance_boat / range)²)
+```
+
+Si la composición se mueve, la intensidad la sigue sola y la contribución
+sobre el barco se mantiene. Es la misma razón por la que `orbit_radius` se
+deriva del encuadre en vez de escribirse.
+
+#### 5 · antes y después
+
+Sobre las 242 caras visibles del casco, brillo sumado de los tres canales:
+
+| Luces | Antes (media) | Después (media) | Antes (máx) | Después (máx) |
+|---|---:|---:|---:|---:|
+| Solo `L-02` | `0.1054` | `0.1955` | `0.2496` | `0.4484` |
+| Rig completo | `0.2064` | `0.2964` | `0.4400` | `0.6392` |
+
+El casco recibe **1.85 veces** más luz de `L-02`. El mínimo no cambia
+—`0.0054` en las dos—: las caras que una costilla tapa siguen apoyadas en el
+suelo de ambiente, que es lo correcto, porque no reciben luz directa ni
+antes ni después.
+
+Renders a `800 × 600`, mismo encuadre y mismo preset:
+
+| | Archivo |
+|---|---|
+| Antes | `evidence/hito5/safe-refractive-water.png` |
+| Después | `evidence/hito5/l02-calibrada.png` |
+
+#### Una trampa del ancla que hubo que evitar
+
+`flying_waters_anchor` **cambia** entre la construcción de la escena y el
+armado de las luces: se construye con `y = 0` y el nivel seguro la reescribe
+a la altura de la superficie del agua. Derivar la posición del barco de ella
+desde `light::diorama` habría dado un objetivo desplazado en toda la altura
+de la bahía, y la intensidad calibrada contra un punto que no es el barco.
+
+Por eso el centro visible entra como ancla propia, `boat_anchor`, calculada
+desde el ancla **base**. El blockout, que no tiene barco, la apunta al
+centro de la bahía.
+
+#### Qué queda amarrado con tests
+
+- La atenuación de `L-02` sobre `boat_anchor` es exactamente `E_boat`.
+- La intensidad derivada **sube si el barco se aleja**, y vale `E_boat`
+  exacto a distancia cero. Un `range` no positivo da cero en vez de dividir
+  entre cero.
+- El alcance calibrado deja el objeto más lejano en el `46.5 %`, y el
+  heredado lo dejaba en el `34.5 %`.
+- El desplazamiento medido del centro visible **se vuelve a medir** contra
+  la escena, con tolerancia `0.02`. Un número medido a mano se
+  desincroniza en el primer ajuste de composición, y de esa posición sale
+  la intensidad de la luz.
+
+Las dos tablas ilustrativas del inventario —la de `0.55S` contra `0.20S` y
+la cifra del `25.77 %` que justifica el light linking— siguen comprobadas
+con luces sintéticas, así que la calibración no las invalida: documentan el
+modelo, no el rig.
+
 ---
 
 ## Pendientes de medición
@@ -1001,7 +1136,7 @@ Ninguna de estas filas puede completarse por estimación. Cada hito llena la suy
 | 3 | Benchmark `safe-interior-visible` (159 primitivas) — mín/mediana/máx | **Registrado** |
 | 3 | Benchmark `safe-opaque-water` (160 primitivas) — control de oclusión | **Registrado** |
 | 3 | `interactive_frame_time` del perfil interactivo | **Registrado** — perfil fijado en `MEDIA` (400 × 300) |
-| 5 | Calibración de `L-02`: `distance_boat`, `range`, `intensity` | Pendiente |
+| 5 | Calibración de `L-02`: `distance_boat`, `range`, `intensity` | **Registrado** — `0.192 S`, `0.30 S`, `2.8211` derivada |
 | 6 | `reveal_duration` derivada de `interactive_frame_time` | Pendiente |
 | 7 | Matriz de rendimiento por preset | Pendiente |
 | 8 | Hardware de medición y tiempos finales en release | Pendiente |

@@ -127,15 +127,67 @@ pub const PICTORIAL_CYAN: Color = Color {
     b: 1.0,
 };
 
+/// Alcance de `L-02` como fracción de `scene_radius`, **calibrado**.
+///
+/// Sale del barrido de la Tarea 5.7 con las distancias reales medidas: el
+/// centro visible del barco queda a `0.192 S` de la luz y el objeto
+/// obligatorio más lejano de Aguas a `0.428 S`. Con este alcance el más
+/// lejano conserva el `46.5 %` de la iluminación del barco: baja lo justo
+/// para que la bahía tenga profundidad, y no tanto como para que su fondo
+/// desaparezca.
+///
+/// Sube desde el `0.20 S` heredado, que dejaba el fondo en el `34.5 %`. El
+/// argumento original para un alcance estrecho era evitar que el azul se
+/// derramara fuera de Aguas, y de eso ya se encarga el light linking, que
+/// lo lleva a cero exacto: la atenuación solo tiene que modelar la caída
+/// **dentro** de la bahía.
+pub const L02_RANGE_FRACTION: f32 = 0.30;
+
+/// Contribución objetivo de `L-02` sobre el centro visible del barco.
+///
+/// Es el único número artístico de la calibración; todo lo demás se deriva
+/// de él y de la geometría. Elegido por medición, no a ojo: con `2.0` la
+/// media de las 242 caras visibles del casco aterriza en el byte sRGB `69`
+/// y la más brillante en `120`. Con el `1.04` que daban los valores
+/// heredados, la media era `50` y el pecio se leía como una mancha.
+pub const L02_E_BOAT: f32 = 2.0;
+
+/// Intensidad de `L-02` que produce `L02_E_BOAT` a la distancia dada.
+///
+/// Invierte el modelo de atenuación del proyecto:
+///
+/// ```text
+/// attenuation(d) = intensity / (1 + (d / range)²)
+/// intensity      = E_boat × (1 + (distance_boat / range)²)
+/// ```
+///
+/// Se deriva en vez de escribirse porque la posición del barco y la escala
+/// de la escena son medidas: si la composición se mueve, la intensidad la
+/// sigue sola y la contribución sobre el barco se mantiene. Es la misma
+/// razón por la que `orbit_radius` se deriva del encuadre.
+pub fn l02_intensity(distance_boat: f32, range: f32) -> f32 {
+    if range <= 0.0 {
+        return 0.0;
+    }
+
+    L02_E_BOAT * (1.0 + (distance_boat / range).powi(2))
+}
+
 /// Las tres luces del inventario, colocadas contra las anclas y la escala
 /// medidas del blockout.
 ///
-/// Los valores de `L-02` son **provisionales**: el inventario los marca
-/// `calibration: provisional_until_blockout_4`. La Tarea 5.7 mide las
-/// distancias reales al barco y recalcula `range` e `intensity`; heredarlos
-/// sin medir es exactamente lo que el plan prohíbe.
+/// `L-02` ya no es provisional: la Tarea 5.7 midió las distancias reales y
+/// su `range` e `intensity` salen de ahí. Ver `L02_RANGE_FRACTION`,
+/// `L02_E_BOAT` y `l02_intensity`.
 pub fn diorama(anchors: &SceneAnchors, scale: &SceneScale) -> Vec<PointLight> {
     let s = scale.scene_radius;
+
+    // `L-02` se resuelve antes del vector porque su intensidad depende de
+    // su propia posición: primero se coloca, después se mide cuánto dista
+    // del barco, y de ahí sale la intensidad.
+    let l02_position = anchors.flying_waters_anchor + Vec3::new(0.0, 0.15 * s, 0.10 * s);
+    let l02_range = L02_RANGE_FRACTION * s;
+    let distance_boat = (l02_position - anchors.boat_anchor).magnitude();
 
     vec![
         // L-01 · luz principal cálida.
@@ -152,10 +204,10 @@ pub fn diorama(anchors: &SceneAnchors, scale: &SceneScale) -> Vec<PointLight> {
         // L-02 · azul de Aguas Voladoras, confinada por light linking.
         PointLight {
             id: "L-02",
-            position: anchors.flying_waters_anchor + Vec3::new(0.0, 0.15 * s, 0.10 * s),
+            position: l02_position,
             color: COOL_BLUE,
-            intensity: 2.0,
-            range: 0.20 * s,
+            intensity: l02_intensity(distance_boat, l02_range),
+            range: l02_range,
             casts_shadows: true,
             affected_groups: GroupMask::only(&[SpatialGroupId::FlyingWaters]),
             occluder_groups: GroupMask::only(&[SpatialGroupId::FlyingWaters]),
@@ -353,7 +405,7 @@ mod tests {
         ));
 
         let l02 = &luces[1];
-        assert!(cerca(l02.range, 0.20 * s, 1e-3));
+        assert!(cerca(l02.range, L02_RANGE_FRACTION * s, 1e-3));
         // Anclada sobre la superficie del agua, no sobre el origen.
         assert!(cerca(
             l02.position.z - diorama_.anchors.flying_waters_anchor.z,
@@ -394,5 +446,69 @@ mod tests {
         assert!(cerca(c.r, 0.4, 1e-5));
         assert!(cerca(c.g, 0.6, 1e-5));
         assert!(cerca(c.b, 1.0, 1e-5));
+    }
+
+    #[test]
+    fn la_intensidad_de_l02_produce_la_contribucion_objetivo_en_el_barco() {
+        // El punto de derivar la intensidad en vez de escribirla: la
+        // contribucion sobre el barco es la elegida, y sigue siendolo si la
+        // composicion se mueve.
+        use crate::scenes::{safe_level, WaterPreset};
+
+        let diorama_ = safe_level(WaterPreset::RefractiveWater);
+        let luces = diorama(&diorama_.anchors, &diorama_.scale);
+        let l02 = luces.iter().find(|l| l.id == "L-02").expect("existe L-02");
+
+        let distancia = (l02.position - diorama_.anchors.boat_anchor).magnitude();
+
+        assert!(
+            cerca(l02.attenuation(distancia), L02_E_BOAT, 1e-4),
+            "la atenuacion en el barco dio {} y el objetivo es {L02_E_BOAT}",
+            l02.attenuation(distancia)
+        );
+    }
+
+    #[test]
+    fn la_intensidad_derivada_sigue_a_la_geometria() {
+        // Si el barco se alejara, la intensidad tendria que subir para
+        // conservar la misma contribucion. Es lo que un valor escrito a
+        // mano no hace.
+        let range = 3.6;
+        let cerca_ = l02_intensity(2.0, range);
+        let lejos = l02_intensity(4.0, range);
+
+        assert!(lejos > cerca_, "{lejos} deberia superar {cerca_}");
+
+        // Y a distancia cero la intensidad es exactamente el objetivo.
+        assert!(cerca(l02_intensity(0.0, range), L02_E_BOAT, 1e-6));
+
+        // Un rango degenerado no divide entre cero.
+        assert_eq!(l02_intensity(2.0, 0.0), 0.0);
+        assert_eq!(l02_intensity(2.0, -1.0), 0.0);
+    }
+
+    #[test]
+    fn el_alcance_calibrado_deja_legible_el_fondo_de_la_bahia() {
+        // Las dos distancias medidas en la Tarea 5.7, en multiplos de S, y
+        // la razon que justifica el alcance elegido.
+        let (barco, lejano) = (0.1922_f32, 0.4276_f32);
+        let l = luz(1.0, L02_RANGE_FRACTION);
+
+        let relativo = 100.0 * l.attenuation(lejano) / l.attenuation(barco);
+
+        assert!(
+            cerca(relativo, 46.5, 0.2),
+            "el objeto mas lejano recibe el {relativo} % y se calibro para 46.5 %"
+        );
+
+        // Con el alcance heredado quedaba bastante mas oscuro.
+        let heredado = luz(1.0, 0.20);
+        let antes = 100.0 * heredado.attenuation(lejano) / heredado.attenuation(barco);
+
+        assert!(
+            cerca(antes, 34.5, 0.2),
+            "el heredado dejaba el {antes} %, y se registro 34.5 %"
+        );
+        assert!(relativo > antes, "la calibracion tenia que subir el fondo");
     }
 }
