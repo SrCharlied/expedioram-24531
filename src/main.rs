@@ -61,7 +61,7 @@ fn main() -> ExitCode {
     // se aborta con su ruta en vez de arrancar con colores planos que nadie
     // distinguiría de un material mal ajustado.
     let raiz = PathBuf::from(".");
-    let diorama = match safe_level_con(WaterPreset::InteriorVisible, Some(&raiz)) {
+    let diorama = match safe_level_con(WaterPreset::RefractiveWater, Some(&raiz)) {
         Ok(diorama) => diorama,
         Err(e) => {
             eprintln!("error: {e}");

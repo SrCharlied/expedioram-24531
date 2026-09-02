@@ -21,7 +21,8 @@
 //! no puede usarse para aprobar rendimiento.
 
 use super::{masa, Palette, WaterPreset, Xorshift32};
-use crate::scene::{RevealGroup, Scene, SpatialGroupId};
+use crate::material::{Material, ShadowMode};
+use crate::scene::{MaterialId, RevealGroup, Scene, SpatialGroupId};
 use nalgebra_glm::Vec3;
 
 const GRUPO: SpatialGroupId = SpatialGroupId::FlyingWaters;
@@ -58,28 +59,70 @@ pub fn aguas_voladoras(
 
     // `A-01` va al final para que su presencia o ausencia no desplace los
     // índices de lo que hay dentro.
-    if water == WaterPreset::OpaqueWater {
-        volumen_de_agua(scene, paleta, ancla, superficie);
+    if let Some(material) = material_del_volumen(scene, paleta, water) {
+        volumen_de_agua(scene, paleta.canvas, material, ancla);
     }
 
     superficie
 }
 
-/// `A-01` · el volumen, un **único cuboide cerrado**.
+/// Caja del volumen de agua: centro y tamaño, dada el ancla de la bahía.
 ///
-/// Nunca varios apilados: el aspecto rasgado del borde lo producen los
-/// cuboides de terreno de `A-11` ocluyendo su cara frontal, no un AABB
-/// roto. Rasgar el volumen multiplicaría las fronteras que refractar.
-fn volumen_de_agua(scene: &mut Scene, paleta: &Palette, ancla: Vec3, superficie: f32) {
-    masa(
-        scene,
+/// Vive aparte porque no la usa solo el constructor: la comprobación de que
+/// el borde roto ocluye la cara frontal necesita saber dónde está esa cara,
+/// y dos copias de la misma caja se desincronizan en el primer ajuste.
+pub fn caja_del_volumen(ancla: Vec3) -> (Vec3, Vec3) {
+    let superficie = ancla.y + ALTURA_SUPERFICIE;
+
+    (
         Vec3::new(ancla.x, superficie - ESPESOR_AGUA * 0.5, ancla.z),
         Vec3::new(8.6, ESPESOR_AGUA, 5.0),
-        paleta.canvas,
-        paleta.water,
-        GRUPO,
-        REVELA,
-    );
+    )
+}
+
+/// Material con el que se inserta `A-01`, o `None` si el preset lo omite.
+///
+/// El control opaco **deriva del agua** en vez de ser un material nuevo:
+/// conserva su albedo, su textura y su escala UV, y solo le quita la
+/// óptica. Así el inventario sigue teniendo cinco materiales finales y el
+/// control se diferencia de la escena real en exactamente una cosa, que es
+/// lo que un control tiene que hacer.
+fn material_del_volumen(
+    scene: &mut Scene,
+    paleta: &Palette,
+    water: WaterPreset,
+) -> Option<MaterialId> {
+    match water {
+        WaterPreset::InteriorVisible => None,
+        WaterPreset::RefractiveWater => Some(paleta.water),
+        WaterPreset::OpaqueWater => {
+            let opaco = Material {
+                reflection_cap: 0.0,
+                transmission_cap: 0.0,
+                // `ShadowMode::Ignore` se conserva: ver `WaterPreset`.
+                shadow_mode: ShadowMode::Ignore,
+                ..scene.material(paleta.water)
+            };
+
+            Some(scene.add_material(opaco))
+        }
+    }
+}
+
+/// `A-01` · el volumen, un **único cuboide cerrado**.
+///
+/// Nunca varios apilados, y esto ya no es solo una preferencia de
+/// presupuesto: desde la Tarea 5.3 cada frontera cuesta un nivel de
+/// recursión. Un volumen partido en tres losas gastaría los tres niveles de
+/// `MAX_DEPTH` solo en atravesarse, y el interior de la bahía terminaría en
+/// cielo antes de llegar al barco.
+///
+/// El aspecto rasgado del borde lo producen los cuboides de terreno de
+/// `A-11` ocluyendo esta cara frontal, no un AABB roto.
+fn volumen_de_agua(scene: &mut Scene, canvas: MaterialId, material: MaterialId, ancla: Vec3) {
+    let (centro, tamano) = caja_del_volumen(ancla);
+
+    masa(scene, centro, tamano, canvas, material, GRUPO, REVELA);
 }
 
 /// `A-02` · cinco masas de lecho.
@@ -329,6 +372,7 @@ fn borde_roto(scene: &mut Scene, paleta: &Palette, borde: Vec3) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cuboid::Cuboid;
     use crate::scenes::SAFE;
 
     fn construir(water: WaterPreset) -> (Scene, Palette) {
@@ -345,12 +389,87 @@ mod tests {
         (scene, paleta)
     }
 
-    #[test]
-    fn con_agua_opaca_produce_las_58_del_inventario() {
-        let (scene, _) = construir(WaterPreset::OpaqueWater);
+    /// Ancla de la bahía y del borde, las mismas que usa el nivel seguro.
+    const ANCLA: Vec3 = Vec3::new(0.0, 0.0, 4.2);
+    const BORDE: Vec3 = Vec3::new(0.0, 1.2, 6.6);
 
-        assert_eq!(scene.objects.len(), SAFE.flying_waters);
-        assert_eq!(scene.objects.len(), 58);
+    #[test]
+    fn los_dos_presets_con_volumen_producen_las_58_del_inventario() {
+        for water in [WaterPreset::RefractiveWater, WaterPreset::OpaqueWater] {
+            let (scene, _) = construir(water);
+
+            assert_eq!(scene.objects.len(), SAFE.flying_waters, "{water:?}");
+            assert_eq!(scene.objects.len(), 58, "{water:?}");
+        }
+    }
+
+    #[test]
+    fn el_volumen_refractivo_usa_el_material_de_agua_del_inventario() {
+        let (scene, paleta) = construir(WaterPreset::RefractiveWater);
+        let volumen = scene.objects.last().expect("hay volumen");
+
+        assert_eq!(volumen.final_material, paleta.water);
+
+        let material = scene.material(volumen.final_material);
+        assert_eq!(material.reflection_cap, 0.9);
+        assert_eq!(material.transmission_cap, 0.9);
+        assert!((material.ior - 1.333).abs() < 1e-6);
+        assert_eq!(material.shadow_mode, ShadowMode::Ignore);
+    }
+
+    #[test]
+    fn el_control_opaco_es_agua_sin_optica_y_nada_mas() {
+        // El fallo que este test vigila: el preset "opaco" insertaba
+        // `paleta.water` tal cual. Mientras `cast_ray` ignoraba los techos
+        // eso daba lo mismo, pero al llegar la recursion de la Tarea 5.3 el
+        // control dejo de ser un control y empezo a refractar.
+        let (scene, paleta) = construir(WaterPreset::OpaqueWater);
+        let volumen = scene.objects.last().expect("hay volumen");
+
+        assert_ne!(
+            volumen.final_material, paleta.water,
+            "el control no puede compartir material con el agua real"
+        );
+
+        let control = scene.material(volumen.final_material);
+        let agua = scene.material(paleta.water);
+
+        assert_eq!(control.reflection_cap, 0.0, "el control refleja");
+        assert_eq!(control.transmission_cap, 0.0, "el control transmite");
+
+        // Y se diferencia del agua **solo** en eso: mismo color, misma
+        // textura, misma escala UV, mismo modo de sombra.
+        assert_eq!(control.albedo, agua.albedo);
+        assert_eq!(control.albedo_texture, agua.albedo_texture);
+        assert_eq!(control.uv_scale, agua.uv_scale);
+        assert_eq!(control.shadow_mode, agua.shadow_mode);
+        assert_eq!(control.specular_strength, agua.specular_strength);
+    }
+
+    #[test]
+    fn el_volumen_no_se_rasga() {
+        // Una sola primitiva con la caja del volumen, en los dos presets
+        // que lo insertan. Partirlo en losas gastaria los tres niveles de
+        // `MAX_DEPTH` solo en atravesarse.
+        let (centro, tamano) = caja_del_volumen(ANCLA);
+        let esperada = Cuboid::centrado(centro, tamano).bounds;
+
+        for water in [WaterPreset::RefractiveWater, WaterPreset::OpaqueWater] {
+            let (scene, _) = construir(water);
+
+            let con_esa_caja = scene
+                .objects
+                .iter()
+                .filter(|o| {
+                    let caja = o.primitive.bounds();
+
+                    (caja.min - esperada.min).magnitude() < 1e-5
+                        && (caja.max - esperada.max).magnitude() < 1e-5
+                })
+                .count();
+
+            assert_eq!(con_esa_caja, 1, "{water:?}: el volumen no es uno solo");
+        }
     }
 
     #[test]
@@ -361,28 +480,86 @@ mod tests {
     }
 
     #[test]
-    fn el_volumen_de_agua_es_uno_solo_y_va_al_final() {
-        let (scene, paleta) = construir(WaterPreset::OpaqueWater);
+    fn el_volumen_de_agua_va_al_final() {
+        let (centro, tamano) = caja_del_volumen(ANCLA);
+        let esperada = Cuboid::centrado(centro, tamano).bounds;
 
-        let de_agua: Vec<usize> = scene
-            .objects
-            .iter()
-            .enumerate()
-            .filter(|(_, o)| o.final_material == paleta.water)
-            .map(|(i, _)| i)
-            .collect();
+        let (scene, _) = construir(WaterPreset::RefractiveWater);
+        let ultimo = scene.objects.last().expect("hay volumen");
 
-        assert_eq!(de_agua.len(), 1, "un unico cuboide cerrado");
-        assert_eq!(
-            de_agua[0],
-            scene.objects.len() - 1,
-            "va al final para no desplazar los indices del interior"
+        assert!(
+            (ultimo.primitive.bounds().min - esperada.min).magnitude() < 1e-5,
+            "el volumen no va al final y desplazaria los indices del interior"
+        );
+    }
+
+    #[test]
+    fn el_borde_roto_ocluye_parcialmente_la_cara_frontal() {
+        // La cara frontal del volumen es un rectangulo limpio. El aspecto
+        // rasgado sale de que los ocho cuboides de terreno de `A-11` se
+        // planten delante y la tapen **a medias**: si la taparan del todo
+        // no se veria el agua, y si no la taparan nada se veria una caja.
+        let (centro, tamano) = caja_del_volumen(ANCLA);
+        let cara_z = centro.z + tamano.z * 0.5;
+        let (x0, x1) = (centro.x - tamano.x * 0.5, centro.x + tamano.x * 0.5);
+        let (y0, y1) = (centro.y - tamano.y * 0.5, centro.y + tamano.y * 0.5);
+
+        // Se construye **solo** el borde, sin el resto de la region: no se
+        // puede identificar por «lo que sobresale de la cara», porque la
+        // masa principal del lecho mide 5.4 de fondo contra los 5.0 del
+        // volumen y tambien asoma.
+        let mut scene = Scene::new();
+        let paleta = Palette::registrar(&mut scene);
+        borde_roto(&mut scene, &paleta, BORDE);
+
+        let delante: Vec<_> = scene.objects.iter().map(|o| o.primitive.bounds()).collect();
+
+        assert_eq!(delante.len(), 8, "el borde roto son ocho cuboides");
+        assert!(
+            delante.len() <= 10,
+            "el inventario permite diez como maximo"
+        );
+
+        // Cada uno atraviesa el plano de la cara: delante y detras a la vez.
+        for caja in &delante {
+            assert!(
+                caja.min.z < cara_z && caja.max.z > cara_z,
+                "un cuboide del borde no cruza la cara frontal: {:?}",
+                caja
+            );
+        }
+
+        // Cobertura muestreada de la cara. Medida: 88.7 %.
+        let pasos = 120;
+        let mut cubiertos = 0;
+
+        for i in 0..pasos {
+            let x = x0 + (i as f32 + 0.5) / pasos as f32 * (x1 - x0);
+
+            for j in 0..pasos {
+                let y = y0 + (j as f32 + 0.5) / pasos as f32 * (y1 - y0);
+
+                if delante
+                    .iter()
+                    .any(|c| x >= c.min.x && x <= c.max.x && y >= c.min.y && y <= c.max.y)
+                {
+                    cubiertos += 1;
+                }
+            }
+        }
+
+        let cobertura = cubiertos as f32 / (pasos * pasos) as f32;
+
+        assert!(
+            (0.55..0.95).contains(&cobertura),
+            "la oclusion de la cara frontal salio del rango parcial: {:.1} %",
+            cobertura * 100.0
         );
     }
 
     #[test]
     fn quitar_el_agua_no_desplaza_los_indices_del_interior() {
-        let (con, _) = construir(WaterPreset::OpaqueWater);
+        let (con, _) = construir(WaterPreset::RefractiveWater);
         let (sin, _) = construir(WaterPreset::InteriorVisible);
 
         for (a, b) in sin.objects.iter().zip(&con.objects) {

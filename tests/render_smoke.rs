@@ -8,6 +8,7 @@ use expedition33_continente_inacabado::camera::{Camera, DEFAULT_VERTICAL_FOV};
 use expedition33_continente_inacabado::color::Color;
 use expedition33_continente_inacabado::cuboid::Cuboid;
 use expedition33_continente_inacabado::framebuffer::Framebuffer;
+use expedition33_continente_inacabado::light::diorama as luces_del_diorama;
 use expedition33_continente_inacabado::material::Material;
 use expedition33_continente_inacabado::ray::Ray;
 use expedition33_continente_inacabado::renderer::{cast_ray, render, Shading, BACKGROUND_COLOR};
@@ -15,6 +16,7 @@ use expedition33_continente_inacabado::reveal::RevealState;
 use expedition33_continente_inacabado::scene::{
     MaterialId, RevealGroup, Scene, SceneObject, SpatialGroupId,
 };
+use expedition33_continente_inacabado::scenes::{safe_level, WaterPreset};
 use nalgebra_glm::Vec3;
 
 const ANCHO: usize = 32;
@@ -218,4 +220,85 @@ fn guarda_un_png_valido_y_decodificable() {
     assert_eq!(obtenido, esperado, "el primer pixel no sobrevivio al PNG");
 
     let _ = std::fs::remove_file(&destino);
+}
+
+/// Cuántos píxeles difieren entre dos framebuffers del mismo tamaño.
+fn pixeles_distintos(a: &Framebuffer, b: &Framebuffer) -> usize {
+    a.buffer
+        .iter()
+        .zip(&b.buffer)
+        .filter(|(uno, otro)| uno != otro)
+        .count()
+}
+
+/// Render headless del nivel seguro con el preset dado.
+fn render_del_nivel(water: WaterPreset) -> (Framebuffer, TraversalStats) {
+    // Sin assets: los tests no dependen de que las texturas esten generadas.
+    let nivel = safe_level(water);
+    let luces = luces_del_diorama(&nivel.anchors, &nivel.scale);
+    let mut framebuffer = Framebuffer::new(160, 120);
+
+    let stats = render(
+        &mut framebuffer,
+        &nivel.scene,
+        &nivel.accel,
+        &luces,
+        &RevealState::painted(),
+        &nivel.hero_camera(),
+        Shading::Material,
+    );
+
+    (framebuffer, stats)
+}
+
+#[test]
+fn el_volumen_refractivo_cambia_la_imagen_frente_al_control_opaco() {
+    // El test visual headless de la Tarea 5.4. La comprobacion no es «se
+    // ve bonito» sino que la optica **llega al pixel**: el mismo volumen,
+    // con y sin techos opticos, tiene que producir imagenes distintas.
+    let (refractivo, stats_refractivo) = render_del_nivel(WaterPreset::RefractiveWater);
+    let (opaco, stats_opaco) = render_del_nivel(WaterPreset::OpaqueWater);
+
+    // Los dos presets insertan la misma geometria: 160 primitivas.
+    assert_eq!(stats_refractivo.primary_rays, stats_opaco.primary_rays);
+
+    // Los contadores son de la escena, no del agua: el cristal pictorico
+    // tambien transmite —`transmission_cap = 0.25`— y el monolito ocupa
+    // buena parte del cuadro. Lo que se compara es la **diferencia**, que
+    // solo puede venir del volumen.
+    // Medido: 1629 contra 932, o sea unos 700 rayos de mas, que es del
+    // orden de los pixeles donde la superficie del agua se ve.
+    assert!(
+        stats_refractivo.refraction_rays >= stats_opaco.refraction_rays + 400,
+        "el volumen apenas refracto: {} contra {} del control",
+        stats_refractivo.refraction_rays,
+        stats_opaco.refraction_rays
+    );
+
+    // Y la diferencia se ve. El umbral es deliberadamente bajo: la bahia
+    // ocupa una fraccion del cuadro y el resto del diorama es identico en
+    // los dos renders.
+    let distintos = pixeles_distintos(&refractivo, &opaco);
+    let total = 160 * 120;
+
+    assert!(
+        distintos > total / 100,
+        "solo {distintos} de {total} pixeles cambiaron: la optica no llega al pixel"
+    );
+}
+
+#[test]
+fn quitar_el_volumen_no_deja_la_bahia_en_negro() {
+    // El terminal de la recursion es cielo, no negro, y eso tiene que
+    // sostenerse tambien en la escena real: ningun pixel del render debe
+    // quedar completamente apagado.
+    let (refractivo, _) = render_del_nivel(WaterPreset::RefractiveWater);
+
+    let negros = refractivo
+        .buffer
+        .iter()
+        .filter(|pixel| **pixel & 0x00FF_FFFF == 0)
+        .count();
+
+    assert_eq!(negros, 0, "{negros} pixeles salieron en negro absoluto");
 }

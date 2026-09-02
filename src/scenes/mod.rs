@@ -107,26 +107,39 @@ pub(crate) fn masa_inerte(
     });
 }
 
-/// Cómo se representa `A-01`, el volumen de agua, antes de que exista
-/// óptica.
+/// Cómo se representa `A-01`, el volumen de agua.
 ///
-/// El inventario obliga a distinguirlos porque **miden cosas distintas**, y
-/// confundirlos daría un benchmark optimista por accidente.
+/// Los tres miden cosas distintas, y confundirlos daría un benchmark
+/// optimista por accidente. `RefractiveWater` es el preset **canónico**
+/// desde la Tarea 5.4; los otros dos son instrumentos de medición.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WaterPreset {
     /// El volumen **no** se inserta como primitiva trazable. Quedan 159, y
     /// los rayos alcanzan barco, mástil, cadena, ancla, kelp, rocas y
-    /// lecho.
+    /// lecho sin cruzar ninguna frontera óptica.
     ///
-    /// Es el preset canónico del benchmark temprano: mide el coste real de
-    /// mirar dentro de la bahía.
+    /// Es el preset del benchmark temprano: mide el coste de mirar dentro
+    /// de la bahía **sin** el coste de la refracción. Sigue siendo la
+    /// referencia con la que se compara todo lo medido en el Hito 3.
     InteriorVisible,
-    /// El volumen se inserta como cuboide azul opaco. Conserva las 160
-    /// primitivas y sirve para validar composición.
+    /// El volumen cerrado con su material real: `0.9 / 0.9`, `ior 1.333`.
+    /// Ciento sesenta primitivas y óptica completa.
     ///
-    /// **No sirve para aprobar rendimiento:** al ser opaco oculta las 44
-    /// primitivas del interior, que dejan de probarse. Un tiempo medido así
-    /// parece bueno por la razón equivocada.
+    /// Es lo que se presenta y lo que hay que medir en el gate de Aguas
+    /// Voladoras: el rayo primario refracta en la cara frontal, cruza el
+    /// volumen y alcanza el interior.
+    RefractiveWater,
+    /// El mismo volumen con los **techos ópticos forzados a cero**: sin
+    /// reflejo y sin transmisión. Conserva las 160 primitivas.
+    ///
+    /// Es un control de oclusión, no una escena presentable. Al no
+    /// transmitir, oculta las 44 primitivas del interior, que dejan de
+    /// probarse; un tiempo medido así parece bueno por la razón
+    /// equivocada.
+    ///
+    /// Conserva `ShadowMode::Ignore` a propósito: el inventario prohíbe que
+    /// `A-01` bloquee sombras, y cambiarlo aquí rompería la comparación con
+    /// los tiempos del Hito 3.
     OpaqueWater,
 }
 
@@ -367,7 +380,7 @@ pub fn safe_level_con(
         water,
     );
     let esperado = match water {
-        WaterPreset::OpaqueWater => SAFE.flying_waters,
+        WaterPreset::RefractiveWater | WaterPreset::OpaqueWater => SAFE.flying_waters,
         // Sin el volumen de agua queda una primitiva menos.
         WaterPreset::InteriorVisible => SAFE.flying_waters - 1,
     };

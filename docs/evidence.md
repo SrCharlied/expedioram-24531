@@ -652,6 +652,90 @@ con repeticiones y sobre `safe-interior-visible`, como en el Hito 3.
 
 ---
 
+## Hito 5 — Reflexión, refracción y Aguas Voladoras
+
+### Tarea 5.4 — el volumen cerrado, y un preset que había dejado de ser lo que decía
+
+Al insertar el volumen con óptica real salió a la luz una deriva: el preset
+`safe-opaque-water` **ya no era opaco**.
+
+`Palette::registrar` le dio al agua sus techos reales —`0.9 / 0.9`,
+`ior 1.333`— en el Hito 4, y el preset «opaco» insertaba `paleta.water` tal
+cual. Mientras `cast_ray` ignoraba los techos eso daba lo mismo. Al llegar
+la recursión de la Tarea 5.3, el control de oclusión empezó a refractar y
+dejó de ocultar las 44 primitivas del interior, que es su única razón de
+existir.
+
+**Los tiempos del Hito 3 no quedan invalidados**: se midieron antes de que
+existiera la recursión, así que en ese momento el volumen era opaco de
+hecho. Lo que ya no reproduce esos números es volver a correr ese preset
+hoy sin la corrección.
+
+La corrección: el control deriva del agua y le quita **solo** la óptica
+—techos a cero—, conservando albedo, textura, escala UV, specular y
+`ShadowMode::Ignore`. Un control tiene que diferenciarse de la escena real
+en exactamente una cosa. Conservar `Ignore` no es descuido: el inventario
+prohíbe que `A-01` bloquee sombras, y cambiarlo rompería la comparación con
+el Hito 3.
+
+#### Los tres presets
+
+| Preset | Primitivas | Qué mide |
+|---|---:|---|
+| `safe-refractive-water` | 160 | **el canónico** desde 5.4: el volumen real con óptica |
+| `safe-interior-visible` | 159 | el interior sin el coste de la refracción; referencia del Hito 3 |
+| `safe-opaque-water` | 160 | control de oclusión, con los techos en cero |
+
+Medido a `800 × 600`, `reveal 1.0`, cinco repeticiones:
+
+| Preset | Mediana | Reflejados | Refractados |
+|---|---:|---:|---:|
+| `safe-refractive-water` | `0.2887 s` | `48 199` | `40 850` |
+| `safe-interior-visible` | `0.2223 s` | `28 936` | `26 068` |
+| `safe-opaque-water` | `0.2343 s` | `26 084` | `23 407` |
+
+El volumen añade un **30 %** sobre la referencia sin refracción, y casi
+duplica los rayos secundarios. Contra los `0.0956 s` que el Hito 3 midió
+sin óptica alguna, la escena presentable cuesta hoy **3.0×**.
+
+Nótese que los contadores **no son del agua**: el cristal pictórico también
+transmite —`transmission_cap = 0.25`— y el Monolito ocupa buena parte del
+cuadro. Por eso el control opaco sigue marcando 23 407 refracciones. Lo que
+se puede atribuir al volumen es la diferencia.
+
+#### El volumen no se rasga
+
+Una sola primitiva, comprobado en los dos presets que lo insertan. Y desde
+la Tarea 5.3 esto dejó de ser una preferencia de presupuesto: **cada
+frontera cuesta un nivel de recursión**. Un volumen partido en tres losas
+gastaría los tres niveles de `MAX_DEPTH` solo en atravesarse, y el interior
+de la bahía terminaría en cielo antes de llegar al barco.
+
+#### Oclusión de la cara frontal, medida
+
+Los ocho cuboides de terreno de `A-11` cubren el **88.7 %** de la cara
+frontal del volumen, muestreado sobre una rejilla de `120 × 120`. Los ocho
+cruzan el plano de la cara: quedan mitad delante y mitad dentro.
+
+El 11 % descubierto no está repartido: se concentra en el **borde superior**,
+donde los bloques más bajos —`2.22`, `2.25`, `2.48` y `2.55` de alto contra
+una cara que llega a `2.6`— dejan asomar el filo del agua. Eso es lo que
+produce el aspecto rasgado en vez de una caja limpia.
+
+El test no puede identificar el borde por «lo que sobresale de la cara»:
+la masa principal del lecho mide `5.4` de fondo contra los `5.0` del
+volumen y también asoma. Construye el borde solo.
+
+#### Lo que este render todavía no resuelve
+
+El interior de la bahía sigue oscuro y el borde roto se lee casi negro por
+su cara frontal. Es lo esperado: reciben solo ambiente. Los resuelven la
+Tarea 5.6 —validación de sombras submarinas— y la 5.7 —calibración de
+`L-02`—. El render de `evidence/hito5/safe-refractive-water.png` se guarda
+como el antes de esa calibración.
+
+---
+
 ## Pendientes de medición
 
 Ninguna de estas filas puede completarse por estimación. Cada hito llena la suya.

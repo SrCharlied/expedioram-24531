@@ -45,11 +45,14 @@ Render sin ventana del Continente Inacabado.
   --help              esta ayuda
 
 Presets disponibles:
-  safe-interior-visible   nivel seguro sin el volumen de agua (159 primitivas).
-                          Es el preset canonico del benchmark: los rayos
-                          alcanzan el interior de la bahia.
-  safe-opaque-water       nivel seguro con el agua como cuboide opaco (160).
-                          Sirve para validar composicion, NO rendimiento:
+  safe-refractive-water   nivel seguro con el volumen de agua real (160
+                          primitivas): 0.9/0.9, ior 1.333. Es el preset
+                          canonico desde la Tarea 5.4 y el que se presenta.
+  safe-interior-visible   nivel seguro sin el volumen de agua (159).
+                          Mide el interior de la bahia sin el coste de la
+                          refraccion; es la referencia del Hito 3.
+  safe-opaque-water       el mismo volumen con los techos opticos en cero
+                          (160). Control de oclusion, NO rendimiento:
                           oculta 44 primitivas del interior.
   blockout                composicion global del Blockout 1, en grises
   cubo                    un cuboide centrado, para geometria y camara";
@@ -188,11 +191,11 @@ fn preset(
     texturas: bool,
 ) -> Result<Preset, String> {
     match nombre {
-        "safe-interior-visible" | "safe-opaque-water" => {
-            let water = if nombre == "safe-opaque-water" {
-                WaterPreset::OpaqueWater
-            } else {
-                WaterPreset::InteriorVisible
+        "safe-refractive-water" | "safe-interior-visible" | "safe-opaque-water" => {
+            let water = match nombre {
+                "safe-refractive-water" => WaterPreset::RefractiveWater,
+                "safe-opaque-water" => WaterPreset::OpaqueWater,
+                _ => WaterPreset::InteriorVisible,
             };
 
             // Con texturas, la raiz del proyecto es el directorio actual.
