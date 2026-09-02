@@ -118,8 +118,12 @@ pub struct Palette {
 
 impl Palette {
     pub fn registrar(scene: &mut Scene) -> Self {
+        // Los albedos se escriben con `from_srgb`: son colores elegidos a
+        // ojo, no cantidades de energia. Escribirlos con `new` los dejaria
+        // como lineales y saldrian bastante mas claros de lo previsto.
+
         // Lienzo sin pintar: marfil, mate, opaco.
-        let canvas = scene.add_material(Material::new(Color::new(0.90, 0.87, 0.79)));
+        let canvas = scene.add_material(Material::new(Color::from_srgb(0.90, 0.87, 0.79)));
 
         // Agua: caps 0.9 y no 1.0. Con caps unitarios kl queda en cero y el
         // albedo del agua no contribuye nunca; con 0.9 queda un 10 % fijo
@@ -131,17 +135,20 @@ impl Palette {
             specular_strength: 0.18,
             shininess: 128.0,
             shadow_mode: ShadowMode::Ignore,
-            ..Material::new(Color::new(0.22, 0.45, 0.72))
+            ..Material::new(Color::from_srgb(0.22, 0.45, 0.72))
         });
 
         // Roca húmeda: brillo local alto, cero rebotes.
-        let wet_basalt = scene.add_material(Material::wet_basalt(Color::new(0.26, 0.27, 0.30)));
+        let wet_basalt =
+            scene.add_material(Material::wet_basalt(Color::from_srgb(0.26, 0.27, 0.30)));
 
-        let aged_wood = scene
-            .add_material(Material::new(Color::new(0.32, 0.22, 0.14)).with_specular(0.06, 16.0));
+        let aged_wood = scene.add_material(
+            Material::new(Color::from_srgb(0.32, 0.22, 0.14)).with_specular(0.06, 16.0),
+        );
 
-        let meadow = scene
-            .add_material(Material::new(Color::new(0.30, 0.52, 0.24)).with_specular(0.04, 8.0));
+        let meadow = scene.add_material(
+            Material::new(Color::from_srgb(0.30, 0.52, 0.24)).with_specular(0.04, 8.0),
+        );
 
         // Cristal pictórico: brillo y transparencia parcial. El modo de
         // sombra lo decide cada objeto, no el material.
@@ -151,7 +158,7 @@ impl Palette {
             ior: 1.45,
             specular_strength: 0.55,
             shininess: 110.0,
-            ..Material::new(Color::new(0.62, 0.86, 0.92))
+            ..Material::new(Color::from_srgb(0.62, 0.86, 0.92))
         });
 
         Palette {

@@ -13,7 +13,7 @@
 //!   aspecto de lienzo pintado se lleva mejor con píxeles definidos que con
 //!   una interpolación que los difumina.
 
-use crate::color::Color;
+use crate::color::{srgb_to_linear, Color};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -87,13 +87,12 @@ pub struct Texture {
 }
 
 impl Texture {
-    /// Carga un PNG desde disco.
+    /// Carga un PNG desde disco, **decodificando sRGB a lineal**.
     ///
-    /// Los canales se dividen entre 255 sin corrección de gamma, igual que
-    /// `Color::from_hex`. Es una simplificación deliberada: el proyecto no
-    /// tiene un pipeline de gamma —no decodifica sRGB al entrar ni lo
-    /// codifica al salir— y aplicarla solo aquí desalinearía las texturas
-    /// de los colores de material escritos a mano.
+    /// Un PNG guarda valores percibidos, no energía. El renderer trabaja en
+    /// lineal, así que la conversión ocurre aquí, una sola vez al cargar, y
+    /// no en cada muestreo: son millones de muestras por cuadro contra unas
+    /// pocas cargas al arrancar.
     pub fn load(path: &Path) -> Result<Texture, TextureError> {
         if !path.exists() {
             return Err(TextureError::NoEncontrada(path.to_path_buf()));
@@ -115,9 +114,9 @@ impl Texture {
             .pixels()
             .map(|p| {
                 Color::new(
-                    p[0] as f32 / 255.0,
-                    p[1] as f32 / 255.0,
-                    p[2] as f32 / 255.0,
+                    srgb_to_linear(p[0] as f32 / 255.0),
+                    srgb_to_linear(p[1] as f32 / 255.0),
+                    srgb_to_linear(p[2] as f32 / 255.0),
                 )
             })
             .collect();
@@ -328,6 +327,7 @@ mod tests {
         assert_eq!(tex.width(), 2);
         assert_eq!(tex.height(), 2);
         // Y respeta la misma convencion de v que la textura en memoria.
+        // Los valores llegan decodificados: 255 sRGB es 1.0 lineal, y 0 es 0.
         assert_eq!(tex.sample(0.25, 0.75), Color::new(1.0, 0.0, 0.0));
         assert_eq!(tex.sample(0.25, 0.25), Color::new(0.0, 0.0, 1.0));
 

@@ -40,7 +40,10 @@ struct Paleta {
 
 impl Paleta {
     fn registrar(scene: &mut Scene) -> Self {
-        let mut gris = |v: f32| scene.add_material(Material::new(Color::new(v, v, v * 1.02)));
+        // Grises elegidos a ojo: `from_srgb` los conserva tal como se veian
+        // antes del pipeline de color.
+        let mut gris =
+            |v: f32| scene.add_material(Material::new(Color::from_srgb(v, v, (v * 1.02).min(1.0))));
 
         Paleta {
             plinto: gris(0.80),
