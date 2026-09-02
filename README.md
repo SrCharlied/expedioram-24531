@@ -141,3 +141,49 @@ La bandera se enciende con cada tecla de órbita y con el primer cuadro. El cicl
 - [Spherical coordinate system](https://en.wikipedia.org/wiki/Spherical_coordinate_system)
 - [`gluLookAt` — la convención eye / center / up](https://registry.khronos.org/OpenGL-Refpages/gl2.1/xhtml/gluLookAt.xml)
 - [Scratchapixel — Placing a Camera: the LookAt Function](https://www.scratchapixel.com/lessons/mathematics-physics-for-computer-graphics/lookat-function/framing-lookat-function.html)
+
+## Procedencia de los assets
+
+Los ocho assets de `assets/` se **generan dentro del proyecto**. No hay
+imágenes descargadas, así que no hay licencias de terceros que rastrear ni
+acreditar.
+
+```bash
+cargo run --release --bin generate_assets
+```
+
+| Archivo | Tamaño | Semilla |
+|---|---|---|
+| `assets/textures/canvas.png` | 256 × 256 | `0x0CA1_7A50` |
+| `assets/textures/water.png` | 256 × 256 | `0x0A90_A900`, alabeo `0x0A90_0AA0` |
+| `assets/textures/wet_basalt.png` | 256 × 256 | `0x0BA5_A170`, motas `0x5A17_0501` |
+| `assets/textures/aged_wood.png` | 256 × 256 | `0x0DE0_71BA`, fibra `0xF1B0_4400` |
+| `assets/textures/meadow.png` | 256 × 256 | `0x6BA5_5A00`, brotes `0xB007_E500` |
+| `assets/textures/pictorial_crystal.png` | 256 × 256 | `0xC157_A100` |
+| `assets/skybox/pale.png` | 1024 × 512 | `0x0A1E_0001` |
+| `assets/skybox/painted.png` | 1024 × 512 | `0x0A17_7ED0` |
+
+**Algoritmo.** Ruido de valor sobre una rejilla, sumado en octavas con
+lacunaridad 2 y ganancia 0.5. Los índices de la rejilla se envuelven con
+`rem_euclid`, así que el ruido es **periódico por construcción** y las
+texturas repiten sin costura visible. Encima de esa base, cada material
+aplica su propio patrón: trama y urdimbre para el lienzo, ondas deformadas
+por ruido para el agua, anillos distorsionados para la madera, escalones
+para las facetas del cristal.
+
+Con semilla fija, regenerar desde un clon limpio produce bytes idénticos.
+Los PNG se versionan porque son los que carga el renderer; el generador se
+conserva como su fuente reproducible. Está permitido retocarlos después,
+pero si alguno se sustituye por una imagen de origen externo hay que guardar
+su licencia y atribución aquí.
+
+**Espacio de color.** Los PNG están en sRGB, que es lo que espera cualquier
+visor. El renderer los decodifica a lineal al cargarlos y vuelve a codificar
+a sRGB al escribir el píxel; el cálculo de iluminación, reflexión y
+refracción ocurre siempre en lineal.
+
+**Panoramas del skybox.** Equirectangulares y cubren la esfera completa:
+`v = 0` es el nadir, `v = 0.5` el horizonte y `v = 1` el cenit. Cubrir la
+esfera entera es necesario porque la cámara orbita a 35° de elevación
+mirando hacia abajo, así que hay rayos que fallan la geometría viajando por
+debajo del horizonte.
