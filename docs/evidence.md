@@ -734,6 +734,87 @@ Tarea 5.6 —validación de sombras submarinas— y la 5.7 —calibración de
 `L-02`—. El render de `evidence/hito5/safe-refractive-water.png` se guarda
 como el antes de esa calibración.
 
+### Tarea 5.5 — barco, cadena y ancla
+
+Presupuesto verificado **entrada por entrada** y no solo en el total: un
+casco que se pase de largo y un mástil que se quede corto se cancelarían en
+la suma.
+
+| Entrada | Primitivas |
+|---|---:|
+| `A-03` casco | 12 |
+| `A-04` mástil y soportes | 3 |
+| `A-05` cadena | 8 |
+| `A-06` ancla | 3 |
+
+#### El metal de la cadena era una promesa del comentario
+
+El doc de `A-05` decía que la cadena reutiliza `wet_basalt` «distinguido por
+escala UV, albedo gris y specular local», como pide el inventario para no
+crear un sexto material final. El código pasaba `paleta.wet_basalt` tal
+cual: la cadena y el ancla eran roca del acantilado.
+
+Ahora existe `metal_reusado`, que deriva del basalto y cambia tres cosas:
+
+| Propiedad | Basalto | Metal |
+|---|---:|---:|
+| Tinte | gris cálido | `#8C9299` gris frío |
+| Escala UV | `3.0` | `12.0` |
+| `shininess` | `96` | `220` |
+| `specular_strength` | `0.85` | `0.80` |
+| `reflection_cap` | `0.0` | `0.0` |
+
+La distinción **no es un brillo más fuerte**. `wet_basalt` ya viene con
+`specular_strength = 0.85` porque la roca mojada brilla mucho, y competir
+en fuerza no distinguiría nada. Lo que separa al metal es el **tamaño del
+lóbulo**: un punto de luz pequeño e intenso en vez de un brillo extendido.
+
+La escala UV de `12.0` sale del tamaño de la pieza: los eslabones miden
+`0.13`, y con la escala `3.0` del acantilado la textura no alcanzaría a
+repetir ni una vez sobre una cara.
+
+`reflection_cap` se queda en cero, heredado. Son once primitivas pequeñas
+**dentro** del volumen de agua, y cada una reflejando costaría un nivel de
+los tres de `MAX_DEPTH`, justo donde el rayo ya gastó dos en entrar.
+
+#### La silueta, medida
+
+Lo que hace legible al pecio no es el detalle sino tres decisiones de forma,
+y las tres están ahora amarradas por tests:
+
+- El cuerpo **se estrecha hacia proa**: el ancho de las cinco secciones
+  decrece de forma monótona.
+- El casco es más de tres veces más largo que ancho.
+- La popa es la pieza más alta.
+
+Y una que descubrí midiendo: **la popa rompe la superficie del agua**, a
+`2.76` contra los `2.6` del volumen. No estaba escrito en ninguna parte.
+Una sola pieza de doce, y mejora la lectura: un pecio escorado con la popa
+levantada se lee mucho mejor que un casco enteramente sumergido. Queda
+registrado como intencional, con un test que permite una o dos piezas
+asomando y ninguna más.
+
+El mástil sobresale `2.05` unidades sobre la superficie. Es el ancla visual
+del barco: con la bahía en penumbra, es lo único que se lee sin buscar.
+
+En planta, nada del barco se sale del volumen; en altura, solo el mástil y
+la popa, a propósito.
+
+#### Lo que sigue faltando
+
+El casco bajo el agua se lee **débil**: recibe solo ambiente, y la
+superficie del agua encima refleja el cielo. La cadena y el ancla no se
+distinguen a resolución de presentación. Los resuelven la Tarea 5.6
+—sombras submarinas— y la 5.7 —calibración de `L-02`, la luz enlazada a
+Aguas Voladoras cuyo objetivo declarado es el barco—.
+
+#### Un hallazgo fuera de alcance
+
+`A-07` (kelp) tiene el mismo defecto que tenía `A-05`: su doc dice
+«reutiliza `meadow` con tinte submarino» y el código pasa `paleta.meadow`
+sin teñir. No se tocó, porque es otra entrada del inventario y su tinte es
+una decisión visual que corresponde aprobar aparte.
+
 ---
 
 ## Pendientes de medición

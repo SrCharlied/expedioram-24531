@@ -21,6 +21,7 @@
 //! no puede usarse para aprobar rendimiento.
 
 use super::{masa, Palette, WaterPreset, Xorshift32};
+use crate::color::Color;
 use crate::material::{Material, ShadowMode};
 use crate::scene::{MaterialId, RevealGroup, Scene, SpatialGroupId};
 use nalgebra_glm::Vec3;
@@ -241,13 +242,43 @@ fn mastil(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
     );
 }
 
+/// Metal de la cadena y del ancla: `wet_basalt` **reusado**.
+///
+/// El inventario lo pide así para no crear un sexto material final. Tres
+/// cosas lo separan del basalto del acantilado, y ninguna cuesta una
+/// entrada de paleta:
+///
+/// - **Tinte gris frío** en vez del gris cálido de la roca. Sobre una
+///   textura, el tinte multiplica; el basalto texturizado tiene albedo
+///   blanco, así que el tinte es lo único que decide su color.
+/// - **Escala UV de `12.0`**, cuatro veces la del basalto. Los eslabones
+///   miden `0.13`: con la escala del acantilado la textura no alcanzaría a
+///   repetir ni una vez sobre una cara y el metal se vería plano.
+/// - **Brillo más estrecho.** No más fuerte: `wet_basalt` ya viene con
+///   `specular_strength = 0.85`, porque la roca mojada brilla mucho. Lo que
+///   separa al metal es el **tamaño del lóbulo**: `shininess 220` contra
+///   `96`, un punto de luz pequeño e intenso en vez de un brillo extendido.
+///
+/// `reflection_cap` sigue en cero, heredado del basalto: la cadena **no
+/// lanza rayos**. Son once primitivas pequeñas dentro del volumen de agua,
+/// y cada una reflejando costaría un nivel de recursión de los tres que
+/// hay, justo donde el rayo ya gastó dos en entrar.
+fn metal_reusado(scene: &mut Scene, paleta: &Palette) -> MaterialId {
+    let metal = scene
+        .material(paleta.wet_basalt)
+        .with_tint(Color::from_srgb(0.55, 0.57, 0.61))
+        .with_uv_scale(12.0)
+        .with_specular(0.80, 220.0);
+
+    scene.add_material(metal)
+}
+
 /// `A-05` · ocho segmentos de cadena, del barco al ancla.
 ///
-/// Siguen una curva suave; no se modelan eslabones. Reutiliza
-/// `wet_basalt` para no crear un sexto material final: es metal, y se
-/// distingue por escala UV, albedo gris y specular local. Sigue teniendo
-/// `reflection_cap = 0`.
+/// Siguen una curva suave; no se modelan eslabones. El material es el metal
+/// reusado de `metal_reusado`, no el basalto a secas.
 fn cadena(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
+    let metal = metal_reusado(scene, paleta);
     let arriba = ancla + Vec3::new(0.9, 2.0, 0.35);
     let abajo = ancla + Vec3::new(2.1, 0.95, 0.9);
 
@@ -262,7 +293,7 @@ fn cadena(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
             punto,
             Vec3::new(0.13, 0.13, 0.13),
             paleta.canvas,
-            paleta.wet_basalt,
+            metal,
             GRUPO,
             REVELA,
         );
@@ -270,7 +301,11 @@ fn cadena(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
 }
 
 /// `A-06` · el ancla, tres primitivas.
+///
+/// Mismo metal que la cadena: es la pieza a la que la cadena llega, y dos
+/// grises distintos ahí romperían la lectura de una sola cadena continua.
 fn ancla_del_barco(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
+    let metal = metal_reusado(scene, paleta);
     let base = ancla + Vec3::new(2.2, 0.95, 0.95);
 
     masa(
@@ -278,7 +313,7 @@ fn ancla_del_barco(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
         base,
         Vec3::new(0.12, 0.7, 0.12),
         paleta.canvas,
-        paleta.wet_basalt,
+        metal,
         GRUPO,
         REVELA,
     );
@@ -287,7 +322,7 @@ fn ancla_del_barco(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
         base + Vec3::new(0.0, -0.3, 0.0),
         Vec3::new(0.72, 0.11, 0.11),
         paleta.canvas,
-        paleta.wet_basalt,
+        metal,
         GRUPO,
         REVELA,
     );
@@ -296,7 +331,7 @@ fn ancla_del_barco(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
         base + Vec3::new(0.0, 0.3, 0.0),
         Vec3::new(0.34, 0.10, 0.10),
         paleta.canvas,
-        paleta.wet_basalt,
+        metal,
         GRUPO,
         REVELA,
     );
@@ -598,8 +633,9 @@ mod tests {
             .filter(|o| o.final_material == paleta.wet_basalt)
             .count();
 
-        // Lecho 5 + cadena 8 + ancla 3 + rocas 6 + borde 8.
-        assert_eq!(de_basalto, 30);
+        // Lecho 5 + rocas 6 + borde 8. La cadena y el ancla ya **no**
+        // cuentan: usan el metal reusado, que es otro `MaterialId`.
+        assert_eq!(de_basalto, 19);
     }
 
     #[test]
@@ -609,6 +645,275 @@ mod tests {
 
         for (x, y) in a.objects.iter().zip(&b.objects) {
             assert_eq!(x.primitive.bounds(), y.primitive.bounds());
+        }
+    }
+
+    /// Construye una sola entrada en una escena vacía y devuelve cuántas
+    /// primitivas produjo, con la paleta para poder inspeccionarlas.
+    fn solo(entrada: fn(&mut Scene, &Palette, Vec3)) -> (Scene, Palette) {
+        let mut scene = Scene::new();
+        let paleta = Palette::registrar(&mut scene);
+        entrada(&mut scene, &paleta, ANCLA);
+
+        (scene, paleta)
+    }
+
+    #[test]
+    fn cada_entrada_del_barco_respeta_su_presupuesto() {
+        // Los cuatro números del plan para la Tarea 5.5, entrada por
+        // entrada y no solo en el total: un casco que se pase de largo y un
+        // mástil que se quede corto se cancelarían en la suma.
+        for (nombre, entrada, esperado) in [
+            ("A-03 casco", casco as fn(&mut Scene, &Palette, Vec3), 12),
+            ("A-04 mastil", mastil, 3),
+            ("A-05 cadena", cadena, 8),
+            ("A-06 ancla", ancla_del_barco, 3),
+        ] {
+            let (scene, _) = solo(entrada);
+
+            assert_eq!(scene.objects.len(), esperado, "{nombre}");
+        }
+    }
+
+    #[test]
+    fn el_casco_se_lee_como_silueta_y_no_como_bloque() {
+        // «Se prioriza la silueta, no la precisión naval». Lo que hace que
+        // se lea como un casco roto: se estrecha hacia proa, la cubierta va
+        // partida en tres con hueco en medio, y la popa es la pieza más
+        // alta.
+        let (scene, _) = solo(casco);
+        let cajas: Vec<_> = scene.objects.iter().map(|o| o.primitive.bounds()).collect();
+
+        // Se estrecha: el ancho en Z de las cinco secciones del cuerpo
+        // decrece de forma monótona.
+        let cuerpo: Vec<f32> = cajas[..5].iter().map(|c| c.max.z - c.min.z).collect();
+        for par in cuerpo.windows(2) {
+            assert!(
+                par[1] < par[0],
+                "el cuerpo no se estrecha hacia proa: {cuerpo:?}"
+            );
+        }
+
+        // La popa es la pieza más alta del casco.
+        let mas_alta = cajas
+            .iter()
+            .map(|c| c.max.y - c.min.y)
+            .fold(0.0_f32, f32::max);
+        let popa = cajas.last().expect("hay popa");
+        assert!(
+            (popa.max.y - popa.min.y - mas_alta).abs() < 1e-6,
+            "la popa deberia ser la pieza mas alta"
+        );
+
+        // Y la silueta no es una caja: el casco es claramente más largo que
+        // ancho.
+        let largo = cajas.iter().map(|c| c.max.x).fold(f32::MIN, f32::max)
+            - cajas.iter().map(|c| c.min.x).fold(f32::MAX, f32::min);
+        let ancho = cajas.iter().map(|c| c.max.z).fold(f32::MIN, f32::max)
+            - cajas.iter().map(|c| c.min.z).fold(f32::MAX, f32::min);
+
+        assert!(largo > ancho * 3.0, "largo {largo} contra ancho {ancho}");
+    }
+
+    #[test]
+    fn el_mastil_atraviesa_la_superficie_del_agua() {
+        // Es la decisión de composición que hace legible al barco: el casco
+        // queda sumergido y solo el mástil rompe la superficie. Sin eso, con
+        // la bahía en penumbra, el barco sería una mancha.
+        let (_, tamano) = caja_del_volumen(ANCLA);
+        let superficie = ANCLA.y + ALTURA_SUPERFICIE;
+
+        let (scene, _) = solo(mastil);
+        let cajas: Vec<_> = scene.objects.iter().map(|o| o.primitive.bounds()).collect();
+
+        let cima = cajas.iter().map(|c| c.max.y).fold(f32::MIN, f32::max);
+        assert!(
+            cima > superficie,
+            "el mastil se queda bajo el agua: {cima} contra {superficie}"
+        );
+
+        // El mastil no se queda corto: sobresale mas de una unidad.
+        assert!(
+            cima > superficie + 1.0,
+            "el mastil apenas asoma: {cima} contra {superficie}"
+        );
+
+        let (scene_casco, _) = solo(casco);
+
+        // Del casco solo la popa rompe la superficie, y eso es parte de la
+        // silueta: un pecio escorado con la popa levantada se lee mucho
+        // mejor que un casco enteramente sumergido. Lo que no puede pasar
+        // es que asome medio barco.
+        let asoman = scene_casco
+            .objects
+            .iter()
+            .filter(|o| o.primitive.bounds().max.y > superficie)
+            .count();
+
+        assert!(
+            (1..=2).contains(&asoman),
+            "{asoman} piezas del casco rompen la superficie de 12"
+        );
+
+        // Y la que asoma es la mas alta: la popa.
+        let mas_alta = scene_casco
+            .objects
+            .iter()
+            .map(|o| {
+                let caja = o.primitive.bounds();
+
+                caja.max.y - caja.min.y
+            })
+            .fold(0.0_f32, f32::max);
+        let popa = scene_casco
+            .objects
+            .last()
+            .expect("hay popa")
+            .primitive
+            .bounds();
+
+        assert!(
+            (popa.max.y - popa.min.y - mas_alta).abs() < 1e-6,
+            "la pieza que asoma no es la popa"
+        );
+
+        // Y el casco tampoco atraviesa el fondo del volumen.
+        let piso = superficie - tamano.y;
+        let quilla = scene_casco
+            .objects
+            .iter()
+            .map(|o| o.primitive.bounds().min.y)
+            .fold(f32::MAX, f32::min);
+        assert!(quilla > piso, "el casco se sale por el fondo del volumen");
+    }
+
+    #[test]
+    fn la_cadena_y_el_ancla_usan_metal_reusado_y_no_basalto() {
+        // El inventario limita el proyecto a cinco materiales finales, y el
+        // metal no es uno de ellos: es basalto con otro tinte y otra escala.
+        for entrada in [cadena as fn(&mut Scene, &Palette, Vec3), ancla_del_barco] {
+            let (scene, paleta) = solo(entrada);
+            let basalto = scene.material(paleta.wet_basalt);
+
+            for objeto in &scene.objects {
+                assert_ne!(
+                    objeto.final_material, paleta.wet_basalt,
+                    "usa el basalto tal cual en vez del metal reusado"
+                );
+
+                let metal = scene.material(objeto.final_material);
+
+                // Lo que lo distingue.
+                assert_ne!(metal.albedo, basalto.albedo, "mismo tinte que la roca");
+                assert!(metal.uv_scale > basalto.uv_scale, "misma escala UV");
+                // El brillo no es mas fuerte, es mas **estrecho**: la roca
+                // mojada ya viene con specular 0.85, y competir en fuerza
+                // no distinguiria nada. El lobulo si.
+                assert!(
+                    metal.shininess > basalto.shininess * 2.0,
+                    "el lobulo del metal no es mas estrecho que el de la roca: {} contra {}",
+                    metal.shininess,
+                    basalto.shininess
+                );
+                assert!(
+                    metal.specular_strength >= 0.7,
+                    "el metal perdio su brillo: {}",
+                    metal.specular_strength
+                );
+
+                // Y lo que **no** cambia: no lanza rayos.
+                assert_eq!(
+                    metal.reflection_cap, 0.0,
+                    "la cadena no puede lanzar rayos reflejados"
+                );
+                assert_eq!(metal.transmission_cap, 0.0);
+                assert_eq!(metal.shadow_mode, ShadowMode::Opaque);
+                assert!(metal.is_valid());
+            }
+        }
+    }
+
+    #[test]
+    fn la_cadena_cuelga_del_barco_al_ancla() {
+        // La comba no es adorno: una cadena recta entre dos puntos se lee
+        // como una varilla. Y los extremos tienen que quedar donde estan el
+        // barco y el ancla, o la cadena no une nada.
+        let (scene, _) = solo(cadena);
+        let centros: Vec<Vec3> = scene
+            .objects
+            .iter()
+            .map(|o| {
+                let caja = o.primitive.bounds();
+
+                (caja.min + caja.max) * 0.5
+            })
+            .collect();
+
+        // Baja de forma monótona: el primer segmento es el más alto.
+        for par in centros.windows(2) {
+            assert!(par[1].y < par[0].y, "la cadena no baja de forma monotona");
+        }
+
+        // Y cuelga: cada segmento queda por debajo de la recta que une el
+        // primero con el último.
+        let (a, b) = (centros[0], centros[centros.len() - 1]);
+        let mut alguno_debajo = false;
+
+        for punto in &centros[1..centros.len() - 1] {
+            let t = (punto.x - a.x) / (b.x - a.x);
+            let recta = a.y + (b.y - a.y) * t;
+
+            assert!(punto.y <= recta + 1e-5, "un segmento sube sobre la recta");
+            if punto.y < recta - 0.05 {
+                alguno_debajo = true;
+            }
+        }
+
+        assert!(alguno_debajo, "la cadena va recta, sin comba");
+
+        // El ancla empieza donde la cadena termina.
+        let (escena_ancla, _) = solo(ancla_del_barco);
+        let cima_del_ancla = escena_ancla
+            .objects
+            .iter()
+            .map(|o| o.primitive.bounds().max.y)
+            .fold(f32::MIN, f32::max);
+        let final_de_cadena = b.y;
+
+        assert!(
+            (final_de_cadena - cima_del_ancla).abs() < 0.6,
+            "la cadena termina a {final_de_cadena} y el ancla empieza a {cima_del_ancla}"
+        );
+    }
+
+    #[test]
+    fn el_barco_completo_cabe_dentro_del_volumen_en_planta() {
+        // En planta, no en altura: el mastil sale por arriba a proposito,
+        // pero nada del barco debe asomar por los lados de la bahia.
+        let (centro, tamano) = caja_del_volumen(ANCLA);
+
+        for entrada in [
+            casco as fn(&mut Scene, &Palette, Vec3),
+            mastil,
+            cadena,
+            ancla_del_barco,
+        ] {
+            let (scene, _) = solo(entrada);
+
+            for objeto in &scene.objects {
+                let caja = objeto.primitive.bounds();
+
+                assert!(
+                    caja.min.x > centro.x - tamano.x * 0.5
+                        && caja.max.x < centro.x + tamano.x * 0.5,
+                    "algo del barco se sale en X: {caja:?}"
+                );
+                assert!(
+                    caja.min.z > centro.z - tamano.z * 0.5
+                        && caja.max.z < centro.z + tamano.z * 0.5,
+                    "algo del barco se sale en Z: {caja:?}"
+                );
+            }
         }
     }
 }
