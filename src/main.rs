@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use expedition33_continente_inacabado::framebuffer::Framebuffer;
 use expedition33_continente_inacabado::light::diorama as luces_del_diorama;
-use expedition33_continente_inacabado::renderer::{render, Shading};
+use expedition33_continente_inacabado::renderer::{render, InteractiveProfile, Shading};
 use expedition33_continente_inacabado::scenes::continent::blockout;
 
 const WIDTH: usize = 800;
@@ -55,10 +55,21 @@ fn main() {
     let scene = diorama.scene;
     let accel = diorama.accel;
 
-    // Renderizar cuesta 480 000 rayos. Mientras la cámara esté quieta la
-    // imagen es la misma, así que solo se vuelve a calcular cuando algo
-    // cambió; el primer cuadro cuenta como cambio.
-    let mut camera_moved = true;
+    // A 800 x 600 el nivel seguro cuesta ~0.096 s por cuadro: orbitar a
+    // 10 fps se siente pegajoso. Mientras algo se mueve se dibuja en el
+    // perfil interactivo y se escala; al soltar los controles se produce
+    // un cuadro final a resolución completa.
+    let perfil = InteractiveProfile::default();
+    let mut borrador = Framebuffer::new(perfil.width, perfil.height);
+
+    println!(
+        "perfil interactivo: {} x {} mientras se mueve, {WIDTH} x {HEIGHT} en reposo",
+        perfil.width, perfil.height
+    );
+
+    // El primer cuadro cuenta como cambio pendiente, para que la ventana
+    // arranque ya con la imagen definitiva.
+    let mut cuadro_final_pendiente = true;
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let orbit = [
@@ -68,10 +79,12 @@ fn main() {
             (Key::Down, 0.0, ROTATION_SPEED),
         ];
 
+        let mut en_movimiento = false;
+
         for (key, delta_yaw, delta_pitch) in orbit {
             if window.is_key_down(key) {
                 camera.orbit(delta_yaw, delta_pitch);
-                camera_moved = true;
+                en_movimiento = true;
             }
         }
 
@@ -94,12 +107,21 @@ fn main() {
 
         if pasos != 0.0 {
             camera.zoom(pasos * ZOOM_FRACTION * camera.radius());
-            camera_moved = true;
+            en_movimiento = true;
         }
 
-        if camera_moved {
+        if en_movimiento {
+            // Cuadro barato: se traza a la resolución del perfil y se
+            // escala al tamaño de la ventana.
+            render(&mut borrador, &scene, &accel, &lights, &camera, shading);
+            framebuffer.blit_upscaled(&borrador);
+            cuadro_final_pendiente = true;
+        } else if cuadro_final_pendiente {
+            // Todo quieto: una sola pasada a resolución completa. Mientras
+            // nada cambie se reutiliza el framebuffer, como en la rama del
+            // profesor.
             render(&mut framebuffer, &scene, &accel, &lights, &camera, shading);
-            camera_moved = false;
+            cuadro_final_pendiente = false;
         }
 
         window

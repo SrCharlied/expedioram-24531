@@ -346,6 +346,38 @@ fps, con la resolución final reservada para el cuadro en reposo.
 antes de medir, y esta es la primera medición: los números de arriba son el
 punto de partida, no una meta.
 
+### Perfil aplicado (Tarea 3.9)
+
+La mitigación se ejecutó de inmediato, como manda su disparador. El perfil
+elegido es **`MEDIA`, 400 × 300**, con `BAJA` (320 × 240) en reserva.
+
+| Perfil | Trazado | Escalado | Total | Frente al cuadro final | Píxeles distintos |
+|---|---:|---:|---:|---:|---:|
+| `MEDIA` 400 × 300 | 0.0244 s | 0.0008 s | **0.0252 s** | 3.8× más rápido | 4.6 % |
+| `BAJA` 320 × 240 | 0.0156 s | 0.0008 s | 0.0164 s | 5.9× más rápido | 5.4 % |
+| Final 800 × 600 | — | — | 0.0960 s | — | — |
+
+Se elige `MEDIA` porque 3.8× ya saca el loop de la zona pegajosa —de 10.5 a
+unos 40 fps— y pierde menos detalle. `BAJA` apenas gana 0.009 s más, y ese
+margen conviene guardarlo para cuando entren texturas y óptica.
+
+El escalado cuesta **0.0008 s**, menos del 4 % del cuadro interactivo: es
+irrelevante frente al trazado, que es lo que se quería comprobar antes de
+adoptarlo.
+
+Se usa **vecino más cercano** y no interpolación: el diorama es de caras
+planas y aristas duras, y suavizar emborronaría precisamente los bordes que
+dan la lectura de volumen.
+
+**Comportamiento.** Mientras la cámara se mueve —y, desde la Tarea 6.4,
+mientras una región se revela— se traza en el perfil y se escala. Al soltar
+los controles se produce un único cuadro a resolución completa. Con todo
+quieto se reutiliza el framebuffer sin volver a trazar.
+
+**Coste de calendario.** Por la decisión cerrada del plan, los días que
+consuma esta mitigación salen de la reserva del 25 al 27 de septiembre, no
+de la calidad ni de los tests. El freeze del 28 no se mueve.
+
 ### Consecuencia para la Tarea 6.3
 
 Con `interactive_frame_time = 0.0242 s` a 400 × 300, quince cuadros de
@@ -382,7 +414,7 @@ Ninguna de estas filas puede completarse por estimación. Cada hito llena la suy
 | 2 | `orbit_radius` derivado por bisección, con `framing_margin` usado | **Registrado** |
 | 3 | Benchmark `safe-interior-visible` (159 primitivas) — mín/mediana/máx | **Registrado** |
 | 3 | Benchmark `safe-opaque-water` (160 primitivas) — control de oclusión | **Registrado** |
-| 3 | `interactive_frame_time` del perfil interactivo | **Registrado** — pendiente de fijar el perfil en la Tarea 3.9 |
+| 3 | `interactive_frame_time` del perfil interactivo | **Registrado** — perfil fijado en `MEDIA` (400 × 300) |
 | 5 | Calibración de `L-02`: `distance_boat`, `range`, `intensity` | Pendiente |
 | 6 | `reveal_duration` derivada de `interactive_frame_time` | Pendiente |
 | 7 | Matriz de rendimiento por preset | Pendiente |

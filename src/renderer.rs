@@ -19,6 +19,48 @@ use nalgebra_glm::Vec3;
 /// Color que devuelve un rayo que no toca nada.
 pub const BACKGROUND_COLOR: u32 = 0x040C24;
 
+/// Resolución a la que se dibujan los cuadros mientras algo se mueve.
+///
+/// A `800 × 600` el nivel seguro tarda `0.0956 s` por cuadro —unos 10.5
+/// fps—, y eso es latencia perceptible al orbitar. Los Hitos 4 a 6 hay que
+/// poder probarlos de forma interactiva, así que mientras la cámara o la
+/// revelación cambian se dibuja a menor resolución y se escala; al quedar
+/// todo quieto se produce un cuadro final a resolución completa.
+///
+/// Las dos opciones salen de la medición de la Tarea 3.8, no de una
+/// suposición.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InteractiveProfile {
+    pub width: usize,
+    pub height: usize,
+}
+
+impl InteractiveProfile {
+    /// Media resolución: `0.0242 s` medidos, unos 41 fps. Es el punto de
+    /// partida que fija el plan.
+    pub const MEDIA: InteractiveProfile = InteractiveProfile {
+        width: 400,
+        height: 300,
+    };
+
+    /// Un paso más agresivo: `0.0157 s`, unos 64 fps. Reserva para cuando
+    /// la escena crezca con texturas y óptica.
+    pub const BAJA: InteractiveProfile = InteractiveProfile {
+        width: 320,
+        height: 240,
+    };
+
+    pub fn pixels(&self) -> usize {
+        self.width * self.height
+    }
+}
+
+impl Default for InteractiveProfile {
+    fn default() -> Self {
+        InteractiveProfile::MEDIA
+    }
+}
+
 /// Cómo se resuelve el color de un impacto.
 ///
 /// `Normals` no es sombreado sino una vista de depuración: cada eje se ve
