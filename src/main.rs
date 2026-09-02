@@ -11,7 +11,7 @@ use std::time::Duration;
 use expedition33_continente_inacabado::framebuffer::Framebuffer;
 use expedition33_continente_inacabado::light::diorama as luces_del_diorama;
 use expedition33_continente_inacabado::renderer::{render, InteractiveProfile, Shading};
-use expedition33_continente_inacabado::scenes::continent::blockout;
+use expedition33_continente_inacabado::scenes::{safe_level, WaterPreset};
 
 const WIDTH: usize = 800;
 const HEIGHT: usize = 600;
@@ -36,14 +36,30 @@ fn main() {
 
     let mut framebuffer = Framebuffer::new(WIDTH, HEIGHT);
 
-    let mut window = Window::new("Lakitu", WIDTH, HEIGHT, WindowOptions::default()).unwrap();
+    // El título usa el nombre de presentación de la obra, no el del
+    // paquete ni el del repositorio.
+    let mut window = Window::new(
+        "El Continente Inacabado",
+        WIDTH,
+        HEIGHT,
+        WindowOptions::default(),
+    )
+    .unwrap();
 
-    let diorama = blockout();
+    // Nivel seguro con el interior de la bahía visible.
+    //
+    // El volumen de agua no se inserta: hasta que el Hito 5 traiga
+    // refracción, un cuboide azul opaco taparía las 44 primitivas del
+    // interior —barco, mástil, cadena, ancla, kelp y rocas— y el plan
+    // prohíbe expresamente fingir transparencia sin óptica. Mostrar el
+    // interior es también lo que hace útil la ventana mientras se trabajan
+    // los materiales de los Hitos 4 a 6.
+    let diorama = safe_level(WaterPreset::InteriorVisible);
     let lights = luces_del_diorama(&diorama.anchors, &diorama.scale);
 
-    // Ya hay luces: el sombreado completo dice mas que el albedo plano.
-    // `Shading::Albedo` reproduce las imagenes con las que se aprobo el
-    // Blockout 1, y `Normals` sigue disponible para revisar geometria.
+    // Ya hay luces: el sombreado completo dice más que el albedo plano.
+    // `Shading::Albedo` reproduce las imágenes con las que se aprobó el
+    // Blockout 1, y `Normals` sigue disponible para revisar geometría.
     let shading = Shading::Material;
 
     // El encuadre queda por encima del eje de órbita, y el radio sale de la
@@ -62,10 +78,17 @@ fn main() {
     let perfil = InteractiveProfile::default();
     let mut borrador = Framebuffer::new(perfil.width, perfil.height);
 
+    println!("El Continente Inacabado");
     println!(
-        "perfil interactivo: {} x {} mientras se mueve, {WIDTH} x {HEIGHT} en reposo",
+        "  escena   nivel seguro, {} primitivas, {} luces",
+        scene.objects.len(),
+        lights.len()
+    );
+    println!(
+        "  perfil   {} x {} en movimiento, {WIDTH} x {HEIGHT} en reposo",
         perfil.width, perfil.height
     );
+    println!("  flechas  orbitar     W / S / rueda  zoom     Escape  salir");
 
     // El primer cuadro cuenta como cambio pendiente, para que la ventana
     // arranque ya con la imagen definitiva.

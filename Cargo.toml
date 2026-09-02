@@ -2,6 +2,10 @@
 name = "expedition33_continente_inacabado"
 version = "0.1.0"
 edition = "2021"
+# El paquete tiene dos binarios: el de ventana y el render headless.
+# Sin esto, `cargo run` a secas se niega a elegir, y es el comando que
+# verifica la Tarea 8.6 en un clon limpio.
+default-run = "expedition33_continente_inacabado"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
