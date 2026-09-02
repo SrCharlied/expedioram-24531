@@ -226,11 +226,10 @@ pub const AMBIENT: f32 = 0.06;
 /// luz llega a este objeto antes de llamar. Devolver solo el aporte
 /// mantiene la función pura y comprobable sin escena.
 ///
-/// El `albedo` llega aparte y no se lee del material: con textura depende
-/// del punto de la superficie, y resolverlo requiere la tabla de texturas
-/// de la escena. Mantenerlo fuera deja esta función pura.
+/// El material que llega aquí es el que devuelve `reveal::resolve`: su
+/// `albedo` es el color ya muestreado y ya interpolado, y su
+/// `albedo_texture` es `None`. Esta función no muestrea nada.
 pub fn direct_light(
-    albedo: Color,
     material: &Material,
     normal: &Vec3,
     to_light: &Vec3,
@@ -251,7 +250,7 @@ pub fn direct_light(
     // La difusa se tiñe con el albedo; el brillo no. Un highlight toma el
     // color de la luz, no el del objeto: es luz reflejada en la superficie,
     // no luz absorbida y reemitida.
-    albedo * luz * difusa + luz * (material.specular_strength * brillo)
+    material.albedo * luz * difusa + luz * (material.specular_strength * brillo)
 }
 
 #[cfg(test)]
@@ -341,33 +340,9 @@ mod tests {
         let material = Material::new(Color::new(1.0, 1.0, 1.0));
         let blanco = Color::new(1.0, 1.0, 1.0);
 
-        let plena = direct_light(
-            material.albedo,
-            &material,
-            &arriba(),
-            &arriba(),
-            &arriba(),
-            blanco,
-            1.0,
-        );
-        let media = direct_light(
-            material.albedo,
-            &material,
-            &arriba(),
-            &arriba(),
-            &arriba(),
-            blanco,
-            0.5,
-        );
-        let nula = direct_light(
-            material.albedo,
-            &material,
-            &arriba(),
-            &arriba(),
-            &arriba(),
-            blanco,
-            0.0,
-        );
+        let plena = direct_light(&material, &arriba(), &arriba(), &arriba(), blanco, 1.0);
+        let media = direct_light(&material, &arriba(), &arriba(), &arriba(), blanco, 0.5);
+        let nula = direct_light(&material, &arriba(), &arriba(), &arriba(), blanco, 0.0);
 
         assert!(media.r < plena.r && media.r > 0.0);
         assert!(cerca(media.r, plena.r * 0.5));
@@ -378,7 +353,6 @@ mod tests {
     fn una_superficie_de_espaldas_no_aporta_nada() {
         let material = Material::new(Color::new(1.0, 1.0, 1.0));
         let aporte = direct_light(
-            material.albedo,
             &material,
             &arriba(),
             &-arriba(),
@@ -396,7 +370,6 @@ mod tests {
         // aporta al canal rojo, pero el highlight es blanco.
         let material = Material::new(Color::new(1.0, 0.0, 0.0)).with_specular(1.0, 1.0);
         let aporte = direct_light(
-            material.albedo,
             &material,
             &arriba(),
             &arriba(),

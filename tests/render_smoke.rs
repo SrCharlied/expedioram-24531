@@ -11,6 +11,7 @@ use expedition33_continente_inacabado::framebuffer::Framebuffer;
 use expedition33_continente_inacabado::material::Material;
 use expedition33_continente_inacabado::ray::Ray;
 use expedition33_continente_inacabado::renderer::{cast_ray, render, Shading, BACKGROUND_COLOR};
+use expedition33_continente_inacabado::reveal::RevealState;
 use expedition33_continente_inacabado::scene::{
     MaterialId, RevealGroup, Scene, SceneObject, SpatialGroupId,
 };
@@ -61,6 +62,7 @@ fn render_pequeno_termina_y_llena_el_framebuffer() {
         &scene,
         &accel,
         &[],
+        &RevealState::painted(),
         &camara_hero(),
         Shading::Normals,
     );
@@ -78,6 +80,7 @@ fn al_menos_un_pixel_no_es_el_fondo() {
         &scene,
         &accel,
         &[],
+        &RevealState::painted(),
         &camara_hero(),
         Shading::Normals,
     );
@@ -117,6 +120,7 @@ fn ningun_pixel_produce_nan() {
                     &scene,
                     &accel,
                     &[],
+                    &RevealState::painted(),
                     shading,
                     &mut TraversalStats::default(),
                 );
@@ -142,6 +146,7 @@ fn el_sombreado_por_albedo_resuelve_la_paleta() {
         &scene,
         &accel,
         &[],
+        &RevealState::painted(),
         Shading::Albedo,
         &mut TraversalStats::default(),
     );
@@ -160,6 +165,7 @@ fn el_fondo_se_devuelve_cuando_el_rayo_no_toca_nada() {
         &scene,
         &accel,
         &[],
+        &RevealState::painted(),
         Shading::Albedo,
         &mut TraversalStats::default(),
     );
@@ -177,6 +183,7 @@ fn guarda_un_png_valido_y_decodificable() {
         &scene,
         &accel,
         &[],
+        &RevealState::painted(),
         &camara_hero(),
         Shading::Normals,
     );

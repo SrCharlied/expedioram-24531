@@ -19,6 +19,7 @@ pub mod primitive;
 pub mod ray;
 pub mod ray_intersect;
 pub mod renderer;
+pub mod reveal;
 pub mod scene;
 pub mod scene_builder;
 pub mod scenes;

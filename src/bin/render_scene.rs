@@ -22,6 +22,8 @@ use expedition33_continente_inacabado::camera::{Camera, DEFAULT_VERTICAL_FOV};
 use expedition33_continente_inacabado::framebuffer::Framebuffer;
 use expedition33_continente_inacabado::light::{diorama as luces_del_diorama, PointLight};
 use expedition33_continente_inacabado::renderer::{render, Shading};
+use expedition33_continente_inacabado::reveal::RevealState;
+use expedition33_continente_inacabado::scene::RevealGroup;
 use expedition33_continente_inacabado::scene::{cubo_de_prueba, Scene};
 use expedition33_continente_inacabado::scene_builder::{SceneScale, HERO_YAW_DEGREES};
 use expedition33_continente_inacabado::scenes::continent::blockout;
@@ -38,6 +40,7 @@ Render sin ventana del Continente Inacabado.
   --shading <modo>    material | albedo | normals (por defecto: material)
   --benchmark <n>     repite el render n veces y reporta min/mediana/max
   --no-textures       color plano, sin cargar los assets de textura
+  --reveal <0..1>     progreso de pintura de las cuatro regiones (por defecto 1)
   --output <ruta>     PNG de salida (por defecto: evidence/renders/hero.png)
   --help              esta ayuda
 
@@ -64,6 +67,8 @@ struct Opciones {
     benchmark: usize,
     /// Con texturas por defecto; se pueden desactivar para comparar.
     texturas: bool,
+    /// Progreso de revelacion aplicado a los cuatro grupos.
+    reveal: f32,
     shading: Shading,
     output: PathBuf,
 }
@@ -78,6 +83,7 @@ impl Default for Opciones {
             elevation: None,
             benchmark: 1,
             texturas: true,
+            reveal: 1.0,
             shading: Shading::Material,
             output: PathBuf::from("evidence/renders/hero.png"),
         }
@@ -113,6 +119,11 @@ fn parsear(args: &[String]) -> Result<Option<Opciones>, String> {
             "--width" => opciones.width = numero(bandera, valor)?,
             "--height" => opciones.height = numero(bandera, valor)?,
             "--output" => opciones.output = PathBuf::from(valor),
+            "--reveal" => {
+                opciones.reveal = valor
+                    .parse()
+                    .map_err(|_| format!("--reveal espera 0..1, no {valor:?}"))?;
+            }
             "--benchmark" => {
                 opciones.benchmark = numero(bandera, valor)?.max(1);
             }
@@ -253,6 +264,18 @@ fn ejecutar(opciones: Opciones) -> Result<(), String> {
 
     let mut framebuffer = Framebuffer::new(opciones.width, opciones.height);
 
+    // Un solo progreso para los cuatro grupos: basta para inspeccionar la
+    // interpolacion, y la revelacion por region llega con el picking.
+    let mut reveal = RevealState::unpainted();
+    for grupo in [
+        RevealGroup::Meadows,
+        RevealGroup::Breakwater,
+        RevealGroup::FlyingWaters,
+        RevealGroup::Finale,
+    ] {
+        reveal.set_progress(grupo, opciones.reveal);
+    }
+
     // Repetir y quedarse con la distribucion: una sola pasada mide tanto
     // el estado de la cache como el renderer.
     let mut tiempos = Vec::with_capacity(opciones.benchmark);
@@ -265,6 +288,7 @@ fn ejecutar(opciones: Opciones) -> Result<(), String> {
             &scene,
             &accel,
             &lights,
+            &reveal,
             &camera,
             opciones.shading,
         );
@@ -283,6 +307,7 @@ fn ejecutar(opciones: Opciones) -> Result<(), String> {
     println!("objetos   {}", scene.objects.len());
     println!("luces     {}", lights.len());
     println!("texturas  {}", scene.textures.len());
+    println!("reveal    {:.2}", opciones.reveal);
     println!(
         "grupos    {} ({} clusters)",
         accel.groups.len(),

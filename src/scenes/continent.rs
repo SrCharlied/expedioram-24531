@@ -19,7 +19,7 @@ use crate::scene_builder::{
     derive_orbit_radius, eye_at_yaw, measure_scene_radius, Blockout, SceneAnchors, SceneScale,
     HERO_YAW_DEGREES, LOOK_AT_HEIGHT_FRACTION,
 };
-use crate::scenes::{masa as masa_compartida, Palette};
+use crate::scenes::{masa as masa_compartida, masa_inerte, Palette};
 use nalgebra_glm::Vec3;
 
 /// Altura de la superficie del agua en la bahía.
@@ -94,7 +94,7 @@ fn masa(
 pub fn globales(scene: &mut Scene, paleta: &Palette, anchors: &SceneAnchors) -> f32 {
     // `G-01` · el lienzo sobre el que nace el Continente. Su material
     // inicial y final son ambos lienzo: nunca se pinta.
-    masa_compartida(
+    masa_inerte(
         scene,
         Vec3::new(0.0, -0.55, 0.0),
         Vec3::new(17.0, 1.1, 15.0),
@@ -121,6 +121,7 @@ pub fn globales(scene: &mut Scene, paleta: &Palette, anchors: &SceneAnchors) -> 
             scene,
             centro,
             tamano,
+            paleta.canvas,
             paleta.meadow,
             SpatialGroupId::ContinentBackground,
             RevealGroup::Finale,
@@ -148,6 +149,7 @@ pub fn globales(scene: &mut Scene, paleta: &Palette, anchors: &SceneAnchors) -> 
             scene,
             anchors.monolith_base_anchor + offset,
             tamano,
+            paleta.canvas,
             paleta.pictorial_crystal,
             SpatialGroupId::Monolith,
             RevealGroup::Finale,
@@ -167,7 +169,7 @@ pub fn globales(scene: &mut Scene, paleta: &Palette, anchors: &SceneAnchors) -> 
         (Vec3::new(0.30, 0.65, 0.42), Vec3::new(0.11, 0.16, 0.11)),
     ];
     for (offset, tamano) in piezas {
-        masa_compartida(
+        masa_inerte(
             scene,
             base + offset,
             tamano,

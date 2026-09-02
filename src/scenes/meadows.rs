@@ -45,7 +45,15 @@ fn meseta(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
     ];
 
     for (offset, tamano) in masas {
-        masa(scene, ancla + offset, tamano, paleta.meadow, GRUPO, REVELA);
+        masa(
+            scene,
+            ancla + offset,
+            tamano,
+            paleta.canvas,
+            paleta.meadow,
+            GRUPO,
+            REVELA,
+        );
     }
 }
 
@@ -62,6 +70,7 @@ fn frente_de_cascada(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
             scene,
             ancla + Vec3::new(-2.6 + t * 0.78, -1.4 - altura * 0.5, 2.7 + 0.18 * t.cos()),
             Vec3::new(0.9, altura, 0.9),
+            paleta.canvas,
             paleta.wet_basalt,
             GRUPO,
             REVELA,
@@ -79,7 +88,15 @@ fn cesped(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
     ];
 
     for (offset, tamano) in laminas {
-        masa(scene, ancla + offset, tamano, paleta.meadow, GRUPO, REVELA);
+        masa(
+            scene,
+            ancla + offset,
+            tamano,
+            paleta.canvas,
+            paleta.meadow,
+            GRUPO,
+            REVELA,
+        );
     }
 }
 
@@ -97,6 +114,7 @@ fn arboles(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
             scene,
             ancla + base + Vec3::new(0.0, 0.55 * escala, 0.0),
             Vec3::new(0.22 * escala, 1.1 * escala, 0.22 * escala),
+            paleta.canvas,
             paleta.aged_wood,
             GRUPO,
             REVELA,
@@ -106,6 +124,7 @@ fn arboles(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
             scene,
             ancla + base + Vec3::new(0.05 * escala, 1.35 * escala, 0.0),
             Vec3::new(1.15 * escala, 0.75 * escala, 1.15 * escala),
+            paleta.canvas,
             paleta.meadow,
             GRUPO,
             REVELA,
@@ -114,6 +133,7 @@ fn arboles(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
             scene,
             ancla + base + Vec3::new(-0.10 * escala, 1.85 * escala, 0.08 * escala),
             Vec3::new(0.75 * escala, 0.55 * escala, 0.75 * escala),
+            paleta.canvas,
             paleta.meadow,
             GRUPO,
             REVELA,
@@ -131,6 +151,7 @@ fn cascada(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
         scene,
         ancla + Vec3::new(0.2, -1.5, 2.9),
         Vec3::new(1.8, 3.2, 0.5),
+        paleta.canvas,
         paleta.water,
         GRUPO,
         REVELA,
@@ -149,6 +170,7 @@ fn flores(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
             scene,
             ancla + offset,
             Vec3::new(lado, lado * 1.4, lado),
+            paleta.canvas,
             paleta.meadow,
             GRUPO,
             REVELA,

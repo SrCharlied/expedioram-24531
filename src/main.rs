@@ -13,6 +13,7 @@ use std::time::Duration;
 use expedition33_continente_inacabado::framebuffer::Framebuffer;
 use expedition33_continente_inacabado::light::diorama as luces_del_diorama;
 use expedition33_continente_inacabado::renderer::{render, InteractiveProfile, Shading};
+use expedition33_continente_inacabado::reveal::RevealState;
 use expedition33_continente_inacabado::scenes::{safe_level_con, WaterPreset};
 
 const WIDTH: usize = 800;
@@ -69,6 +70,11 @@ fn main() -> ExitCode {
         }
     };
     let lights = luces_del_diorama(&diorama.anchors, &diorama.scale);
+
+    // Arranca con todo pintado: el picking de la Tarea 6.2 y la
+    // temporizacion de la 6.3 son las que lo vuelven interactivo. Mostrar el
+    // lienzo entero ahora dejaria una ventana de un solo color.
+    let reveal = RevealState::painted();
 
     // Ya hay luces: el sombreado completo dice más que el albedo plano.
     // `Shading::Albedo` reproduce las imágenes con las que se aprobó el
@@ -150,14 +156,30 @@ fn main() -> ExitCode {
         if en_movimiento {
             // Cuadro barato: se traza a la resolución del perfil y se
             // escala al tamaño de la ventana.
-            render(&mut borrador, &scene, &accel, &lights, &camera, shading);
+            render(
+                &mut borrador,
+                &scene,
+                &accel,
+                &lights,
+                &reveal,
+                &camera,
+                shading,
+            );
             framebuffer.blit_upscaled(&borrador);
             cuadro_final_pendiente = true;
         } else if cuadro_final_pendiente {
             // Todo quieto: una sola pasada a resolución completa. Mientras
             // nada cambie se reutiliza el framebuffer, como en la rama del
             // profesor.
-            render(&mut framebuffer, &scene, &accel, &lights, &camera, shading);
+            render(
+                &mut framebuffer,
+                &scene,
+                &accel,
+                &lights,
+                &reveal,
+                &camera,
+                shading,
+            );
             cuadro_final_pendiente = false;
         }
 

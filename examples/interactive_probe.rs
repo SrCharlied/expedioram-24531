@@ -3,6 +3,7 @@
 use expedition33_continente_inacabado::framebuffer::Framebuffer;
 use expedition33_continente_inacabado::light::diorama;
 use expedition33_continente_inacabado::renderer::{render, InteractiveProfile, Shading};
+use expedition33_continente_inacabado::reveal::RevealState;
 use expedition33_continente_inacabado::scenes::{safe_level, WaterPreset};
 use std::time::Instant;
 
@@ -21,6 +22,7 @@ fn main() {
         &nivel.scene,
         &nivel.accel,
         &lights,
+        &RevealState::painted(),
         &camera,
         Shading::Material,
     );
@@ -37,6 +39,7 @@ fn main() {
             &nivel.scene,
             &nivel.accel,
             &lights,
+            &RevealState::painted(),
             &camera,
             Shading::Material,
         );

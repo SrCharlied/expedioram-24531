@@ -74,6 +74,7 @@ pub fn rompeolas_seguro(
             ..Arco::default()
         },
         DetailLevel::Safe,
+        paleta.canvas,
         paleta.wet_basalt,
     );
 
@@ -86,6 +87,7 @@ pub fn rompeolas_seguro(
             scene,
             ancla + Vec3::new(-3.0 + t * 1.2, 0.08, 1.9 + 0.22 * (t * 0.8).sin()),
             Vec3::new(1.15, 0.14, 1.0),
+            paleta.canvas,
             paleta.wet_basalt,
             SpatialGroupId::Breakwater,
             RevealGroup::Breakwater,
@@ -104,6 +106,7 @@ pub fn rompeolas_seguro(
             scene,
             ancla + offset,
             tamano,
+            paleta.canvas,
             paleta.wet_basalt,
             SpatialGroupId::Breakwater,
             RevealGroup::Breakwater,
@@ -168,6 +171,7 @@ pub fn generar(
     plan: &mut ClusterPlan,
     arco: &Arco,
     nivel: DetailLevel,
+    canvas: MaterialId,
     material: MaterialId,
 ) -> Formacion {
     let por_cluster = nivel.pilares_por_cluster();
@@ -206,7 +210,7 @@ pub fn generar(
                 Vec3::new(arco.ancho, altura, arco.ancho),
             )
             .into(),
-            initial_material: material,
+            initial_material: canvas,
             final_material: material,
             spatial_group: SpatialGroupId::Breakwater,
             reveal_group: RevealGroup::Breakwater,
@@ -257,6 +261,7 @@ mod tests {
                 ..Arco::default()
             },
             nivel,
+            material,
             material,
         );
 
@@ -411,7 +416,14 @@ mod tests {
             semilla: 0x1234_5678,
             ..Arco::default()
         };
-        generar(&mut scene, &mut plan, &arco, DetailLevel::Safe, material);
+        generar(
+            &mut scene,
+            &mut plan,
+            &arco,
+            DetailLevel::Safe,
+            material,
+            material,
+        );
 
         let (referencia, _, _) = generar_nivel(DetailLevel::Safe);
 

@@ -13,7 +13,14 @@ fn main() {
         let mut scene = Scene::new();
         let mut plan = ClusterPlan::new();
         let material = scene.add_material(Material::new(Color::new(0.3, 0.3, 0.32)));
-        generar(&mut scene, &mut plan, &Arco::default(), nivel, material);
+        generar(
+            &mut scene,
+            &mut plan,
+            &Arco::default(),
+            nivel,
+            material,
+            material,
+        );
 
         let particionado = SceneAccel::build_from_plan(&scene, &plan).unwrap();
         let entero = SceneAccel::build(&scene).unwrap();

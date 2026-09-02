@@ -59,11 +59,37 @@ impl Xorshift32 {
     }
 }
 
-/// Añade un cuboide centrado con su grupo espacial y de revelación.
+/// Añade un cuboide que **se revela**: nace en lienzo y termina en
+/// `final_material`.
 ///
-/// En nivel seguro el material inicial y el final coinciden: la
-/// interpolación desde `canvas_unpainted` llega en la Tarea 4.4.
+/// Es el caso normal. Todo el Continente arranca sin pintar, y lo que la
+/// revelación hace es interpolar de `canvas_unpainted` al material final;
+/// si los dos coincidieran, pintar no cambiaría nada.
 pub(crate) fn masa(
+    scene: &mut Scene,
+    centro: Vec3,
+    tamano: Vec3,
+    canvas: MaterialId,
+    final_material: MaterialId,
+    spatial_group: SpatialGroupId,
+    reveal_group: RevealGroup,
+) {
+    scene.add_object(SceneObject {
+        primitive: Cuboid::centrado(centro, tamano).into(),
+        initial_material: canvas,
+        final_material,
+        spatial_group,
+        reveal_group,
+    });
+}
+
+/// Añade un cuboide **inerte**: mismo material inicial y final.
+///
+/// Solo dos entradas del inventario lo son, y por razones opuestas: `G-01`
+/// (el plinto) es lienzo y nunca se pinta, y `G-04` (la paleta y el pincel)
+/// nace ya en cristal porque es la herramienta con la que se pinta, no parte
+/// del cuadro.
+pub(crate) fn masa_inerte(
     scene: &mut Scene,
     centro: Vec3,
     tamano: Vec3,

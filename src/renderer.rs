@@ -12,6 +12,7 @@ use crate::hit::Hit;
 use crate::light::PointLight;
 use crate::material::{direct_light, AMBIENT};
 use crate::ray::Ray;
+use crate::reveal::{resolve, RevealState};
 use crate::scene::Scene;
 use crate::EPSILON;
 use nalgebra_glm::Vec3;
@@ -100,6 +101,7 @@ pub fn cast_ray(
     scene: &Scene,
     accel: &SceneAccel,
     lights: &[PointLight],
+    reveal: &RevealState,
     shading: Shading,
     stats: &mut TraversalStats,
 ) -> Color {
@@ -108,19 +110,20 @@ pub fn cast_ray(
     };
 
     let objeto = scene.objects[hit.object_index];
-    let material = scene.material(objeto.final_material);
 
-    // El albedo se resuelve una vez por impacto, no una por luz: con
-    // textura implica un muestreo, y hay hasta tres luces por punto.
-    let albedo = scene.albedo_at(&material, &hit.uv);
+    // Un solo lugar resuelve el material visible: muestrea las texturas,
+    // interpola lienzo hacia material final según el progreso del grupo, y
+    // toma el `shadow_mode` del final sin interpolarlo. Se hace una vez por
+    // impacto y no una por luz: hay hasta tres luces por punto.
+    let material = resolve(scene, &objeto, reveal, &hit.uv);
 
     match shading {
         Shading::Normals => color_por_normal(&hit),
-        Shading::Albedo => albedo,
+        Shading::Albedo => material.albedo,
         Shading::Material => {
             // Ambiente: no es física, es el suelo que impide que lo no
             // iluminado quede en negro absoluto y pierda su silueta.
-            let mut color = albedo * AMBIENT;
+            let mut color = material.albedo * AMBIENT;
 
             // El ojo, no la luz: el specular depende de desde dónde se mira.
             let hacia_ojo = -ray.direction;
@@ -154,7 +157,6 @@ pub fn cast_ray(
 
                 color = color
                     + direct_light(
-                        albedo,
                         &material,
                         &hit.normal,
                         &direccion,
@@ -211,6 +213,7 @@ pub fn render(
     scene: &Scene,
     accel: &SceneAccel,
     lights: &[PointLight],
+    reveal: &RevealState,
     camera: &Camera,
     shading: Shading,
 ) -> TraversalStats {
@@ -225,7 +228,7 @@ pub fn render(
             let ray = camera.ray_from_pixel(x, y, ancho, alto);
             stats.primary_rays += 1;
 
-            let color = cast_ray(&ray, scene, accel, lights, shading, &mut stats);
+            let color = cast_ray(&ray, scene, accel, lights, reveal, shading, &mut stats);
 
             framebuffer.set_current_color(color.to_hex());
             framebuffer.point(x, y);
@@ -331,6 +334,7 @@ mod tests {
             &scene,
             &accel,
             &luces,
+            &RevealState::painted(),
             Shading::Material,
             &mut stats,
         );
@@ -353,6 +357,7 @@ mod tests {
             &scene,
             &accel,
             &luces,
+            &RevealState::painted(),
             Shading::Material,
             &mut stats,
         );
@@ -377,6 +382,7 @@ mod tests {
             &scene,
             &accel,
             &luces,
+            &RevealState::painted(),
             Shading::Material,
             &mut stats,
         );
@@ -398,6 +404,7 @@ mod tests {
             &con_agua,
             &accel_agua,
             &luces,
+            &RevealState::painted(),
             Shading::Material,
             &mut TraversalStats::default(),
         );
@@ -409,6 +416,7 @@ mod tests {
             &con_monolito,
             &accel_monolito,
             &luces,
+            &RevealState::painted(),
             Shading::Material,
             &mut TraversalStats::default(),
         );
@@ -436,6 +444,7 @@ mod tests {
             &scene,
             &accel,
             &[confinada],
+            &RevealState::painted(),
             Shading::Material,
             &mut TraversalStats::default(),
         );
@@ -444,6 +453,7 @@ mod tests {
             &scene,
             &accel,
             &[abierta],
+            &RevealState::painted(),
             Shading::Material,
             &mut TraversalStats::default(),
         );
@@ -468,6 +478,7 @@ mod tests {
             &scene,
             &accel,
             &[sin_sombras],
+            &RevealState::painted(),
             Shading::Material,
             &mut TraversalStats::default(),
         );
@@ -497,6 +508,7 @@ mod tests {
             &scene,
             &accel,
             &[luz_cenital(10.0)],
+            &RevealState::painted(),
             &camera,
             Shading::Material,
         );
