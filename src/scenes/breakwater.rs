@@ -12,6 +12,7 @@
 //! desfasadas. La Ruta A —prismas hexagonales reales— depende de una
 //! autorización del profesor y llega, si llega, en la Tarea 7.3.
 
+use super::{masa, Palette, Xorshift32};
 use crate::accel::ClusterPlan;
 use crate::cuboid::Cuboid;
 use crate::scene::{MaterialId, RevealGroup, Scene, SceneObject, SpatialGroupId};
@@ -42,38 +43,74 @@ impl DetailLevel {
 /// Cuatro tramos contiguos del arco. Lo fija el inventario.
 pub const CLUSTERS: usize = 4;
 
-/// Generador pseudoaleatorio determinista, sin dependencias.
+/// Acantilado Rompeolas en nivel seguro: **38 primitivas trazables**.
 ///
-/// El inventario exige `seed: fixed` para toda entrada generada: el blockout
-/// y los renders de evidencia tienen que salir idénticos en cada corrida, y
-/// dos capturas que difieran por el azar no sirven para comparar nada.
-/// `rand` traería esa garantía solo si se fijara la semilla igual, así que
-/// no compensa la dependencia.
-struct Xorshift32(u32);
+/// | Entrada | Primitivas |
+/// |---|---:|
+/// | `R-01` formación de pilares | 28 |
+/// | `R-02` sendero húmedo | 6 |
+/// | `R-03` masas de soporte | 4 |
+///
+/// `R-04` (árbol solitario) y `R-05` (fragmentos) son opcionales y valen
+/// cero en nivel seguro.
+///
+/// Solo `R-01` declara partición: sus cuatro tramos del arco. El sendero y
+/// las masas de soporte son conjuntos compactos y caen en el cluster por
+/// defecto, tal como prevé el inventario para las entradas hero.
+pub fn rompeolas_seguro(
+    scene: &mut Scene,
+    plan: &mut ClusterPlan,
+    paleta: &Palette,
+    ancla: Vec3,
+) -> usize {
+    let antes = scene.objects.len();
 
-impl Xorshift32 {
-    fn new(semilla: u32) -> Self {
-        // El cero es un punto fijo del xorshift: se quedaría clavado.
-        Xorshift32(if semilla == 0 { 0x9E37_79B9 } else { semilla })
+    // `R-01` · los 28 pilares en cuatro tramos contiguos.
+    generar(
+        scene,
+        plan,
+        &Arco {
+            ancla,
+            ..Arco::default()
+        },
+        DetailLevel::Safe,
+        paleta.wet_basalt,
+    );
+
+    // `R-02` · seis segmentos de sendero. El brillo húmedo es local: el
+    // material lleva specular alto y `reflection_cap = 0`.
+    for i in 0..6 {
+        let t = i as f32;
+
+        masa(
+            scene,
+            ancla + Vec3::new(-3.0 + t * 1.2, 0.08, 1.9 + 0.22 * (t * 0.8).sin()),
+            Vec3::new(1.15, 0.14, 1.0),
+            paleta.wet_basalt,
+            SpatialGroupId::Breakwater,
+            RevealGroup::Breakwater,
+        );
     }
 
-    /// Siguiente valor en `0.0..1.0`.
-    fn siguiente(&mut self) -> f32 {
-        let mut x = self.0;
-        x ^= x << 13;
-        x ^= x >> 17;
-        x ^= x << 5;
-        self.0 = x;
-
-        // Se usan los 24 bits altos: los bajos de un xorshift tienen peor
-        // distribución.
-        (x >> 8) as f32 / (1u32 << 24) as f32
+    // `R-03` · cuatro masas de soporte bajo el borde de la meseta.
+    let soportes = [
+        (Vec3::new(0.0, -0.30, -0.9), Vec3::new(6.4, 3.4, 1.8)),
+        (Vec3::new(-2.6, -1.10, 0.3), Vec3::new(2.0, 2.2, 1.6)),
+        (Vec3::new(2.5, -1.00, 0.1), Vec3::new(2.2, 2.0, 1.5)),
+        (Vec3::new(0.2, -1.60, 1.2), Vec3::new(3.0, 1.4, 1.2)),
+    ];
+    for (offset, tamano) in soportes {
+        masa(
+            scene,
+            ancla + offset,
+            tamano,
+            paleta.wet_basalt,
+            SpatialGroupId::Breakwater,
+            RevealGroup::Breakwater,
+        );
     }
 
-    /// Siguiente valor en `-1.0..1.0`.
-    fn simetrico(&mut self) -> f32 {
-        self.siguiente() * 2.0 - 1.0
-    }
+    scene.objects.len() - antes
 }
 
 /// Forma del arco sobre el que se apoya la formación.

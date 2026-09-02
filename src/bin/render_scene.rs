@@ -25,6 +25,7 @@ use expedition33_continente_inacabado::renderer::{render, Shading};
 use expedition33_continente_inacabado::scene::{cubo_de_prueba, Scene};
 use expedition33_continente_inacabado::scene_builder::{SceneScale, HERO_YAW_DEGREES};
 use expedition33_continente_inacabado::scenes::continent::blockout;
+use expedition33_continente_inacabado::scenes::{safe_level, WaterPreset};
 
 const USO: &str = "\
 Render sin ventana del Continente Inacabado.
@@ -39,8 +40,14 @@ Render sin ventana del Continente Inacabado.
   --help              esta ayuda
 
 Presets disponibles:
-  blockout   composicion global del Blockout 1, en cuboides grises
-  cubo       un cuboide centrado, para verificar geometria y camara";
+  safe-interior-visible   nivel seguro sin el volumen de agua (159 primitivas).
+                          Es el preset canonico del benchmark: los rayos
+                          alcanzan el interior de la bahia.
+  safe-opaque-water       nivel seguro con el agua como cuboide opaco (160).
+                          Sirve para validar composicion, NO rendimiento:
+                          oculta 44 primitivas del interior.
+  blockout                composicion global del Blockout 1, en grises
+  cubo                    un cuboide centrado, para geometria y camara";
 
 struct Opciones {
     preset: String,
@@ -147,6 +154,24 @@ type Preset = (
 
 fn preset(nombre: &str, yaw: Option<f32>, elevation: Option<f32>) -> Result<Preset, String> {
     match nombre {
+        "safe-interior-visible" | "safe-opaque-water" => {
+            let water = if nombre == "safe-opaque-water" {
+                WaterPreset::OpaqueWater
+            } else {
+                WaterPreset::InteriorVisible
+            };
+
+            let nivel = safe_level(water);
+            let grados_yaw = yaw.unwrap_or(HERO_YAW_DEGREES);
+            let camera = match elevation {
+                Some(elev) => nivel.camera_at(grados_yaw, elev),
+                None => nivel.camera_at_yaw(grados_yaw),
+            };
+            let escala = nivel.scale;
+            let lights = luces_del_diorama(&nivel.anchors, &nivel.scale);
+
+            Ok((nivel.scene, nivel.accel, lights, camera, Some(escala)))
+        }
         "blockout" => {
             let blockout = blockout();
             let grados_yaw = yaw.unwrap_or(HERO_YAW_DEGREES);
