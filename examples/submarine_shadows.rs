@@ -22,6 +22,7 @@ use expedition33_continente_inacabado::ray::Ray;
 use expedition33_continente_inacabado::renderer::{cast_ray, render, Shading};
 use expedition33_continente_inacabado::reveal::RevealState;
 use expedition33_continente_inacabado::scene::SpatialGroupId;
+use expedition33_continente_inacabado::scene_builder::Blockout;
 use expedition33_continente_inacabado::scenes::flying_waters::caja_del_volumen;
 use expedition33_continente_inacabado::scenes::{anclas_del_diorama, safe_level_con, WaterPreset};
 use nalgebra_glm::Vec3;
@@ -33,17 +34,30 @@ fn brillo(color: Color) -> f32 {
     color.r + color.g + color.b
 }
 
+/// Carga el nivel seguro refractivo **con los assets**, o aborta.
+///
+/// Sin fallback a colores planos, a propósito. Un generador de evidencia
+/// que cae a la escena sin texturas sigue imprimiendo números y guardando
+/// PNG, pero de **otra escena** que la que la evidencia dice describir: los
+/// albedos no son los mismos, así que ninguna luminancia medida vale. Es un
+/// éxito silencioso, que es peor que un fallo.
+fn nivel_texturizado() -> Blockout {
+    let raiz = std::path::PathBuf::from(".");
+
+    match safe_level_con(WaterPreset::RefractiveWater, Some(&raiz)) {
+        Ok(nivel) => nivel,
+        Err(e) => {
+            eprintln!("error: {e}");
+            eprintln!("  este generador de evidencia exige los assets: las cifras");
+            eprintln!("  que imprime son luminancias, y sin texturas medirian otra escena.");
+            eprintln!("  generalos con: cargo run --release --bin generate_assets");
+            std::process::exit(1);
+        }
+    }
+}
+
 fn main() {
-    let raiz = PathBuf::from(".");
-    // Con texturas si están; si no, colores planos y se dice.
-    let (diorama, texturizado) = match safe_level_con(WaterPreset::RefractiveWater, Some(&raiz)) {
-        Ok(nivel) => (nivel, true),
-        Err(_) => (
-            safe_level_con(WaterPreset::RefractiveWater, None)
-                .expect("sin assets no hay error posible"),
-            false,
-        ),
-    };
+    let diorama = nivel_texturizado();
 
     let luces = luces_del_diorama(&diorama.anchors, &diorama.scale);
     let camara = diorama.hero_camera();
@@ -60,9 +74,9 @@ fn main() {
 
     println!("Sombras submarinas · Tarea 5.6");
     println!(
-        "  escena    nivel seguro refractivo, {} primitivas, texturas {}",
+        "  escena    nivel seguro refractivo, {} primitivas, {} texturas",
         diorama.scene.objects.len(),
-        if texturizado { "cargadas" } else { "AUSENTES" }
+        diorama.scene.textures.len()
     );
 
     // ------------------------------------------------ los puntos que se miden

@@ -36,14 +36,19 @@ pub const IOR_AIRE: f32 = 1.0;
 /// normal y se conserva la tangencial. De ahí sale, sin más, que el ángulo
 /// de salida iguale al de entrada.
 ///
-/// Con `incident` unitario el resultado también lo es. No se normaliza a la
-/// salida a propósito: normalizar por si acaso escondería un llamador que
-/// pasa una dirección sin normalizar, y ese error hay que verlo.
+/// # Precondición
+///
+/// `incident` y `normal` **unitarios**. Con ellos el resultado también lo
+/// es. No se normaliza a la salida a propósito: normalizar por si acaso
+/// escondería un llamador que pasa una dirección sin normalizar, y ese
+/// error hay que verlo.
 pub fn reflect(incident: &Vec3, normal: &Vec3) -> Vec3 {
     incident - normal * (2.0 * dot(incident, normal))
 }
 
 /// Razón de índices `n_incidente / n_transmitido` para este impacto.
+///
+/// No tiene precondición de vectores: solo depende del lado y del índice.
 ///
 /// Es el único lugar donde el lado importa, y por eso está separado: el
 /// mismo material da dos razones distintas según se entre o se salga, y
@@ -72,6 +77,13 @@ pub fn eta_for(front_face: bool, ior: f32) -> f32 {
 ///
 /// Solo ocurre saliendo de un medio más denso: con `eta < 1` el seno
 /// transmitido siempre cabe.
+///
+/// # Precondición
+///
+/// `incident` y `normal` **unitarios**. La ley de Snell se aplica sobre
+/// cosenos, y un vector sin normalizar los falsea sin que nada avise: el
+/// resultado sigue siendo un vector plausible, desviado el ángulo
+/// equivocado.
 pub fn refract(incident: &Vec3, normal: &Vec3, eta: f32) -> Option<Vec3> {
     // Positivo por la convención del módulo: la normal mira hacia el rayo.
     let cos_entrada = -dot(incident, normal);
@@ -123,6 +135,11 @@ pub fn fresnel_schlick(cos_theta: f32, ior: f32) -> f32 {
 /// Con esa corrección la función es **recíproca**: un rayo que entra a `θi`
 /// y el que sale por el camino inverso obtienen la misma reflectancia, que
 /// es lo que exige la física y lo que comprueba un test.
+///
+/// # Precondición
+///
+/// `incident` y `normal` **unitarios**, por la misma razón que `refract`:
+/// el coseno de entrada sale de su producto punto.
 pub fn fresnel(incident: &Vec3, normal: &Vec3, front_face: bool, ior: f32) -> f32 {
     let eta = eta_for(front_face, ior);
     let cos_entrada = (-dot(incident, normal)).clamp(0.0, 1.0);
@@ -214,12 +231,24 @@ impl EnergySplit {
 
 /// Aporte mínimo para que un rayo secundario se lance.
 ///
-/// `1/255` es el paso de un byte de color: por debajo de eso el aporte no
-/// puede mover el píxel ni en una unidad, así que el recorrido sería
-/// trabajo puro. Con los caps del inventario el umbral solo poda casos
-/// reales: el cristal pictórico, con `reflection_cap = 0.10`, cae por
-/// debajo cuando `F` baja de `0.039`.
-pub const SECONDARY_THRESHOLD: f32 = 1.0 / 255.0;
+/// # Por qué no es `1/255`
+///
+/// La primera versión usó `1/255` con el argumento de que es «el paso de un
+/// byte de color». El argumento estaba mal, y de una forma que solo se ve
+/// teniendo presente el pipeline de color: `1/255` es el paso de un byte en
+/// **sRGB**, y este umbral se compara contra un aporte en **lineal**.
+///
+/// La curva sRGB dedica mucho más código a los tonos oscuros, así que en la
+/// parte baja un byte vale muchísimo menos en lineal que en sRGB. El primer
+/// escalón —de byte `0` a byte `1`— mide `(1/255) / 12.92 ≈ 0.0003` en
+/// lineal, no `0.0039`. Un umbral de `0.0039` lineal descartaba aportes que
+/// podían mover el píxel hasta **catorce** bytes, y precisamente en las
+/// zonas oscuras, que es donde el ojo más nota una diferencia.
+///
+/// El valor correcto es el ancho lineal de ese primer escalón. Se escribe
+/// como la conversión y no como `0.0003` para que se lea de dónde sale: el
+/// tramo recto de la curva sRGB, que es el que aplica ahí abajo.
+pub const SECONDARY_THRESHOLD: f32 = (1.0 / 255.0) / 12.92;
 
 /// Ángulo crítico de un medio, en grados, o `None` si no tiene.
 ///
@@ -243,6 +272,11 @@ pub fn critical_angle_degrees(ior: f32) -> Option<f32> {
 /// origen se desplaza en ese sentido. Sin ese desplazamiento el rayo vuelve
 /// a impactar el punto del que sale por error de redondeo: el mismo acné
 /// que ya obligó a desplazar los rayos de sombra.
+///
+/// # Precondición
+///
+/// `incident` **unitario**. La normal la aporta `Hit`, que ya la entrega
+/// normalizada y orientada contra el rayo.
 pub fn reflected_ray(hit: &Hit, incident: &Vec3) -> Ray {
     Ray::new(
         hit.point + hit.normal * EPSILON,
@@ -258,6 +292,11 @@ pub fn reflected_ray(hit: &Hit, incident: &Vec3) -> Ray {
 /// `+normal`. Desplazarlo del lado equivocado lo deja del lado de entrada,
 /// donde vuelve a intersectar la misma cara de inmediato; en el volumen
 /// cerrado de Aguas eso se ve como una superficie que no deja pasar nada.
+///
+/// # Precondición
+///
+/// `incident` **unitario**, y `ior ≥ 1`, que es lo que garantizan los
+/// constructores de `Material`.
 pub fn refracted_ray(hit: &Hit, incident: &Vec3, ior: f32) -> Option<Ray> {
     let direction = refract(incident, &hit.normal, eta_for(hit.front_face, ior))?;
 
@@ -895,19 +934,56 @@ mod tests {
     }
 
     #[test]
-    fn el_umbral_poda_aportes_que_no_mueven_un_byte() {
-        // El umbral es el paso de un byte de color. Un aporte menor no
-        // puede cambiar el pixel, asi que el recorrido seria trabajo puro.
-        assert!((SECONDARY_THRESHOLD - 1.0 / 255.0).abs() < 1e-9);
+    fn el_umbral_es_el_ancho_lineal_del_primer_byte() {
+        use crate::color::srgb_to_linear;
 
-        // El cristal pictorico, con techo de reflexion 0.10, cae por debajo
-        // cuando F baja de 0.039.
-        let justo_abajo = EnergySplit::new(0.10, 0.25, 0.039);
-        let justo_arriba = EnergySplit::new(0.10, 0.25, 0.040);
+        // El umbral se compara contra un aporte **lineal**, asi que tiene
+        // que ser el ancho lineal del primer escalon de la curva sRGB, no el
+        // ancho sRGB. La diferencia es un factor de 12.92.
+        let primer_byte = srgb_to_linear(1.0 / 255.0);
 
-        assert!(!justo_abajo.worth_reflecting());
-        assert!(justo_arriba.worth_reflecting());
-        // La transmision, con techo mayor, sigue valiendo la pena.
-        assert!(justo_abajo.worth_refracting());
+        assert!(
+            (SECONDARY_THRESHOLD - primer_byte).abs() < 1e-9,
+            "{SECONDARY_THRESHOLD} contra {primer_byte}"
+        );
+
+        // Y es trece veces mas fino que el `1/255` que uso la primera
+        // version: aquel descartaba aportes capaces de mover catorce bytes.
+        // El cociente se calcula en tiempo de ejecucion a proposito: una
+        // comparacion entre dos constantes la resuelve el compilador y
+        // clippy la rechaza por no probar nada.
+        let anterior = 1.0 / 255.0;
+        assert!(
+            anterior / SECONDARY_THRESHOLD > 12.0,
+            "el umbral anterior era {} veces el actual",
+            anterior / SECONDARY_THRESHOLD
+        );
+    }
+
+    #[test]
+    fn el_umbral_poda_solo_lo_que_no_puede_mover_un_byte() {
+        // Un aporte por debajo del umbral no alcanza a cambiar el byte mas
+        // oscuro representable; uno por encima si.
+        use crate::color::linear_to_srgb;
+
+        // El umbral vale **exactamente** un byte del escalon mas oscuro:
+        // el cociente `aporte / SECONDARY_THRESHOLD` es el byte al que
+        // redondea ese aporte. Asi que lo unico que se apaga es lo que
+        // queda por debajo de medio byte.
+        assert_eq!(
+            (linear_to_srgb(SECONDARY_THRESHOLD) * 255.0).round() as u32,
+            1
+        );
+        assert_eq!(
+            (linear_to_srgb(SECONDARY_THRESHOLD * 0.4) * 255.0).round() as u32,
+            0
+        );
+        assert!((linear_to_srgb(SECONDARY_THRESHOLD * 4.0) * 255.0).round() as u32 >= 4);
+
+        // El cristal pictorico, con techo de reflexion 0.10, ahora lanza el
+        // rayo reflejado casi siempre: solo lo descarta a incidencia
+        // practicamente perpendicular y con F por debajo de 0.003.
+        assert!(!EnergySplit::new(0.10, 0.25, 0.0029).worth_reflecting());
+        assert!(EnergySplit::new(0.10, 0.25, 0.0031).worth_reflecting());
     }
 }

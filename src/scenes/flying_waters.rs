@@ -315,22 +315,26 @@ fn tenir(material: Material, factor: Color) -> Material {
 /// oscura, no de reflectancia. Sin textura el techo es `1.0` y la ganancia
 /// escala el color plano.
 ///
+/// El techo va **por canal**. Con un solo escalar las dos rutas dejan de
+/// coincidir en cuanto el recorte muerde: sin textura el recorte es por
+/// canal contra `1.0`, y con un pico común sería el mismo número para los
+/// tres. Se vio al subir la ganancia a `3.2`, donde un test empezó a
+/// reportar `0.8` contra `0.625` en el canal verde.
+///
 /// La misma ganancia produce el mismo aclarado en los dos modos, que es la
 /// propiedad que `tenir` ya garantizaba para la atenuación.
 fn ganancia_local(scene: &Scene, material: Material, factor: f32) -> Material {
     let pico = match material.albedo_texture {
-        Some(id) => scene.texture(id).max_channel(),
-        None => 1.0,
+        Some(id) => scene.texture(id).peak(),
+        None => Color::new(1.0, 1.0, 1.0),
     };
-    let techo = if pico > 0.0 { 1.0 / pico } else { 1.0 };
-    let subir = |canal: f32| (canal * factor).min(techo);
-
+    let techo = |p: f32| if p > 0.0 { 1.0 / p } else { f32::INFINITY };
     let albedo = material.albedo;
 
     material.with_tint(Color::new(
-        subir(albedo.r),
-        subir(albedo.g),
-        subir(albedo.b),
+        (albedo.r * factor).min(techo(pico.r)),
+        (albedo.g * factor).min(techo(pico.g)),
+        (albedo.b * factor).min(techo(pico.b)),
     ))
 }
 
@@ -338,7 +342,7 @@ fn ganancia_local(scene: &Scene, material: Material, factor: f32) -> Material {
 ///
 /// `1.8` sale de medir, no de probar a ojo: es lo que separa la luminancia
 /// del casco de la del agua que lo rodea. Ver la Tarea 5.8 en la evidencia.
-const GANANCIA_DEL_PECIO: f32 = 1.8;
+const GANANCIA_DEL_PECIO: f32 = 3.2;
 
 /// Grosor mínimo de las piezas de cadena y ancla.
 ///
@@ -399,6 +403,20 @@ fn metal_reusado(scene: &mut Scene, paleta: &Palette) -> MaterialId {
     scene.add_material(metal)
 }
 
+/// Comba de la cadena: cuanto cuelga por debajo de la recta que une sus
+/// extremos.
+///
+/// Bajo de `0.35` a `0.20` en la revision del gate de la Tarea 5.8. La
+/// muesca del borde roto dejo los bloques de enfrente en `2.22`, y la linea
+/// de vision de los tramos centrales pasaba a `2.20`: dos centesimas por
+/// debajo. Tensar la cadena los levanta lo justo, sin mover sus extremos ni
+/// despegar el ancla del lecho, que eran las otras dos palancas y las dos
+/// mas invasivas.
+///
+/// No puede ser cero: una cadena recta entre dos puntos se lee como una
+/// varilla, y hay un test que lo exige.
+const COMBA_DE_LA_CADENA: f32 = 0.20;
+
 /// `A-05` · ocho segmentos de cadena, del barco al ancla.
 ///
 /// Siguen una curva suave; no se modelan eslabones. El material es el metal
@@ -411,7 +429,7 @@ fn cadena(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
     for i in 0..8 {
         let t = (i as f32 + 0.5) / 8.0;
         // Comba: la cadena cuelga, no va recta.
-        let comba = -0.35 * (t * std::f32::consts::PI).sin();
+        let comba = -COMBA_DE_LA_CADENA * (t * std::f32::consts::PI).sin();
         let punto = arriba + (abajo - arriba) * t + Vec3::new(0.0, comba, 0.0);
 
         masa(
@@ -536,22 +554,65 @@ fn rocas(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
     }
 }
 
+/// Índices del borde roto que quedan en la línea de visión de la cadena
+/// desde la toma hero.
+///
+/// Medido, no supuesto. El gate de la Tarea 5.8 encontró la cadena y el
+/// ancla en `61` píxeles desde la hero contra `137` a `yaw 45°`, y el
+/// diagnóstico de `examples/chain_placement` identificó a los oclusores por
+/// número de objeto: el bloque `5`, de `3.05` de alto, tapaba nueve de las
+/// once piezas, y el `6` la restante.
+const MUESCA_DEL_BORDE: [usize; 2] = [5, 6];
+
 /// `A-11` · ocho cuboides de terreno en primer plano.
 ///
 /// Son ellos los que producen el borde rasgado, ocluyendo parcialmente la
 /// cara frontal del agua. Es terreno (`wet_basalt`), no agua.
+///
+/// # La muesca
+///
+/// Las ocho alturas salen del generador con semilla fija, y **el
+/// multiconjunto se conserva**: lo único que se reordena es a qué bloque le
+/// toca cuál, de modo que las dos más bajas caigan en
+/// `MUESCA_DEL_BORDE`. El borde sigue teniendo exactamente las mismas ocho
+/// alturas, la misma silueta rasgada y la misma cobertura aproximada de la
+/// cara frontal; lo que cambia es que la abertura queda **donde hay algo
+/// que mirar** en vez de donde el azar la puso.
+///
+/// Es más barato y menos invasivo que las alternativas: mover el conjunto
+/// cadena-ancla lo suficiente para salir de detrás del bloque alto exigía
+/// unas dos unidades en `x`, que lo metían debajo del casco, y levantarlo
+/// dejaba el ancla flotando sobre el lecho.
 fn borde_roto(scene: &mut Scene, paleta: &Palette, borde: Vec3) {
     let mut azar = Xorshift32::new(0x0B0D_DE00);
 
+    let mut anchos = [0.0_f32; 8];
+    let mut alturas = [0.0_f32; 8];
+    let mut deltas = [0.0_f32; 8];
+
+    for i in 0..8 {
+        anchos[i] = 0.85 + 0.5 * azar.siguiente();
+        alturas[i] = 2.2 + 1.0 * azar.siguiente();
+        deltas[i] = 0.28 * azar.simetrico();
+    }
+
+    // Las dos más bajas van a la muesca. Se intercambian, así que ninguna
+    // altura se pierde ni se inventa.
+    let mut orden: Vec<usize> = (0..8).collect();
+    orden.sort_by(|a, b| alturas[*a].partial_cmp(&alturas[*b]).expect("no hay NaN"));
+
+    for (destino, origen) in MUESCA_DEL_BORDE.iter().zip(orden) {
+        alturas.swap(*destino, origen);
+    }
+
     for i in 0..8 {
         let t = i as f32;
-        let ancho = 0.85 + 0.5 * azar.siguiente();
-        let altura = 2.2 + 1.0 * azar.siguiente();
+        let altura = alturas[i];
 
         masa(
             scene,
-            borde + Vec3::new(-3.5 + t * 1.0, -1.2 + altura * 0.5, 0.28 * azar.simetrico()),
-            Vec3::new(ancho, altura, 1.1),
+            borde + Vec3::new(-3.5 + t * 1.0, -1.2 + altura * 0.5, deltas[i]),
+            Vec3::new(anchos[i], altura, 1.1),
             paleta.canvas,
             paleta.wet_basalt,
             GRUPO,
@@ -1187,26 +1248,35 @@ mod tests {
         let mut scene = Scene::new();
 
         // Textura con un pico conocido.
+        // Picos distintos por canal a proposito: 0.4 en rojo, 0.5 en verde
+        // y 0.3 en azul.
         let textura = Texture::from_pixels(
             2,
             1,
-            vec![Color::new(0.1, 0.2, 0.05), Color::new(0.4, 0.5, 0.3)],
+            vec![Color::new(0.1, 0.5, 0.05), Color::new(0.4, 0.2, 0.3)],
         )
         .expect("2x1");
-        let pico = textura.max_channel();
+        let pico = textura.peak();
         let id = scene.add_texture(textura);
 
-        assert!((pico - 0.5).abs() < 1e-6, "el pico salio {pico}");
+        // El pico es por canal: el rojo llega a 0.4 y el azul solo a 0.3.
+        assert!((pico.r - 0.4).abs() < 1e-6, "pico rojo {}", pico.r);
+        assert!((pico.g - 0.5).abs() < 1e-6, "pico verde {}", pico.g);
+        assert!((pico.b - 0.3).abs() < 1e-6, "pico azul {}", pico.b);
 
-        // Una ganancia disparatada se recorta al techo.
+        // Una ganancia disparatada se recorta al techo de **cada** canal.
         let base = Material::new(Color::new(0.3, 0.3, 0.3)).with_texture(id);
         let ganada = ganancia_local(&scene, base, 50.0);
 
-        for canal in [ganada.albedo.r, ganada.albedo.g, ganada.albedo.b] {
+        for (canal, p, nombre) in [
+            (ganada.albedo.r, pico.r, "r"),
+            (ganada.albedo.g, pico.g, "g"),
+            (ganada.albedo.b, pico.b, "b"),
+        ] {
             assert!(
-                canal * pico <= 1.0 + 1e-6,
-                "el albedo efectivo llegaria a {}",
-                canal * pico
+                canal * p <= 1.0 + 1e-6,
+                "el albedo efectivo del canal {nombre} llegaria a {}",
+                canal * p
             );
         }
 
@@ -1217,7 +1287,7 @@ mod tests {
             "con textura la ganancia tiene que pasar de uno: {}",
             normal.albedo.r
         );
-        assert!(normal.albedo.r * pico <= 1.0 + 1e-6);
+        assert!(normal.albedo.r * pico.r <= 1.0 + 1e-6);
     }
 
     #[test]

@@ -18,13 +18,15 @@
 
 use expedition33_continente_inacabado::accel::TraversalStats;
 use expedition33_continente_inacabado::color::Color;
+use expedition33_continente_inacabado::framebuffer::Framebuffer;
 use expedition33_continente_inacabado::light::{diorama as luces_del_diorama, PointLight};
 use expedition33_continente_inacabado::ray::Ray;
-use expedition33_continente_inacabado::renderer::{cast_ray, Shading};
+use expedition33_continente_inacabado::renderer::{cast_ray, render, Shading};
 use expedition33_continente_inacabado::reveal::RevealState;
 use expedition33_continente_inacabado::scene::SpatialGroupId;
+use expedition33_continente_inacabado::scene_builder::Blockout;
 use expedition33_continente_inacabado::scenes::flying_waters::caja_del_volumen;
-use expedition33_continente_inacabado::scenes::{anclas_del_diorama, safe_level, WaterPreset};
+use expedition33_continente_inacabado::scenes::{anclas_del_diorama, safe_level_con, WaterPreset};
 use nalgebra_glm::Vec3;
 
 fn brillo(color: Color) -> f32 {
@@ -43,8 +45,34 @@ fn byte(canal: f32) -> u32 {
     (srgb * 255.0).round() as u32
 }
 
+/// Carga el nivel seguro refractivo **con los assets**, o aborta.
+///
+/// Sin fallback a colores planos, a propósito. Un generador de evidencia
+/// que cae a la escena sin texturas sigue imprimiendo números y guardando
+/// PNG, pero de **otra escena** que la que la evidencia dice describir: los
+/// albedos no son los mismos, así que ninguna luminancia medida vale. Es un
+/// éxito silencioso, que es peor que un fallo.
+fn nivel_texturizado() -> Blockout {
+    let raiz = std::path::PathBuf::from(".");
+
+    match safe_level_con(WaterPreset::RefractiveWater, Some(&raiz)) {
+        Ok(nivel) => nivel,
+        Err(e) => {
+            eprintln!("error: {e}");
+            eprintln!("  este generador de evidencia exige los assets: las cifras");
+            eprintln!("  que imprime son luminancias, y sin texturas medirian otra escena.");
+            eprintln!("  generalos con: cargo run --release --bin generate_assets");
+            std::process::exit(1);
+        }
+    }
+}
+
 fn main() {
-    let diorama = safe_level(WaterPreset::RefractiveWater);
+    // Con los assets, no sin ellos: el barrido de `E_boat` se lee en bytes
+    // sRGB del casco, y la madera texturizada no tiene el albedo de la
+    // madera plana. La primera versión de este ejemplo medía la escena sin
+    // texturas y calibraba contra un casco que no es el que se presenta.
+    let diorama = nivel_texturizado();
     let luces = luces_del_diorama(&diorama.anchors, &diorama.scale);
     let l02 = *luces
         .iter()
@@ -244,6 +272,50 @@ fn main() {
                 byte(media / 3.0),
                 byte(maxima)
             );
+        }
+    }
+
+    // ------------------------------------------- 5 · el antes y el despues
+    //
+    // Los dos renders salen de aqui y no de dos corridas separadas del
+    // binario, porque el «antes» **ya no se puede reproducir** de otra
+    // forma: los valores heredados no viven en ninguna parte del codigo.
+    // La primera version de esta evidencia apunto el antes a
+    // `safe-refractive-water.png`, y una remedicion posterior lo sobrescribio
+    // con la escena ya calibrada. El antes se habia perdido.
+    let heredada = PointLight {
+        intensity: 2.0,
+        range: 0.20 * s,
+        ..l02
+    };
+
+    let camara = diorama.hero_camera();
+    let otras: Vec<PointLight> = luces.iter().filter(|l| l.id != "L-02").copied().collect();
+
+    for (nombre, rig) in [
+        ("l02-antes", {
+            let mut v = otras.clone();
+            v.push(heredada);
+            v
+        }),
+        ("l02-despues", luces.clone()),
+    ] {
+        let mut framebuffer = Framebuffer::new(800, 600);
+        render(
+            &mut framebuffer,
+            &diorama.scene,
+            &diorama.accel,
+            &rig,
+            &RevealState::painted(),
+            &camara,
+            Shading::Material,
+        );
+
+        let destino = std::path::PathBuf::from("evidence/hito5").join(format!("{nombre}.png"));
+
+        match framebuffer.save_png(&destino) {
+            Ok(()) => println!("\n  {nombre:<12} {}", destino.display()),
+            Err(e) => eprintln!("  no se pudo escribir {}: {e}", destino.display()),
         }
     }
 }

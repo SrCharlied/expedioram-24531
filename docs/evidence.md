@@ -694,15 +694,18 @@ Medido a `800 × 600`, `reveal 1.0`, cinco repeticiones:
 | `safe-interior-visible` | `0.2223 s` | `28 936` | `26 068` |
 | `safe-opaque-water` | `0.2343 s` | `26 084` | `23 407` |
 
-**Estos tiempos quedaron obsoletos.** La Tarea 5.8 volvió a medir los tres
-presets en una sola sesión y salieron un `45 %` más bajos, con los mismos
-conteos de rayos: esta sesión corrió con la máquina más lenta. Las tres
-cifras siguen siendo comparables **entre sí**, pero para el gate valen las
-de la 5.8.
+**Estos tiempos son de una sesión más lenta.** Salieron un `45 %` por
+encima de los de la Tarea 5.8, con los mismos conteos de rayos. Siguen
+siendo comparables **entre sí** —el volumen cuesta un `30 %` sobre la
+referencia—, pero no con los del gate. Ver *Procedencia de las tres
+sesiones* en la Tarea 5.8.
 
 El volumen añade un **30 %** sobre la referencia sin refracción, y casi
-duplica los rayos secundarios. Contra los `0.0956 s` que el Hito 3 midió
-sin óptica alguna, la escena presentable cuesta hoy **3.0×**.
+duplica los rayos secundarios.
+
+La comparación con el Hito 3 se hace en la Tarea 5.8, con cifras de una sola
+sesión: **`2.09×`**. El `3.0×` que decía esta sección mezclaba dos sesiones
+distintas.
 
 Nótese que los contadores **no son del agua**: el cristal pictórico también
 transmite —`transmission_cap = 0.25`— y el Monolito ocupa buena parte del
@@ -1096,8 +1099,22 @@ Renders a `800 × 600`, mismo encuadre y mismo preset:
 
 | | Archivo |
 |---|---|
-| Antes | `evidence/hito5/safe-refractive-water.png` |
-| Después | `evidence/hito5/l02-calibrada.png` |
+| Antes | `evidence/hito5/l02-antes.png` |
+| Después | `evidence/hito5/l02-despues.png` |
+
+Los dos salen de `cargo run --release --example calibrate_l02`, que arma el
+rig heredado —`intensity 2.0`, `range 0.20 S`— junto al calibrado y renderiza
+los dos con la misma cámara.
+
+Los dos renders se toman con la geometría **actual**, así que aíslan el
+cambio de `L-02` y nada más: la muesca del borde y la ganancia del pecio
+están en las dos imágenes.
+
+Que los genere el propio ejemplo no es comodidad: el «antes» **no se puede
+reproducir de otra forma**, porque los valores heredados no viven en ninguna
+parte del código. La primera versión de esta evidencia apuntó el antes a
+`safe-refractive-water.png`, y una remedición posterior lo sobrescribió con
+la escena ya calibrada. El antes se había perdido y hubo que reconstruirlo.
 
 #### Una trampa del ancla que hubo que evitar
 
@@ -1140,30 +1157,51 @@ la imagen es `evidence/hito5/gate-hero.png`.
 | 1 · La superficie devuelve skybox | **Cumple** |
 | 2 · El borde frontal permite ver el barco | **Cumple** |
 | 3 · El highlight del agua se ve | **Cumple** |
-| 4 · Barco, cadena y ancla legibles | **Cumple tras corrección** — ver abajo |
+| 4 · Barco, cadena y ancla legibles | **Pendiente de verificación visual** |
 | 5 · Ni acné severo ni negro total | **Cumple** |
 | 6 · Tiempo en release registrado | **Registrado** |
 
+El criterio 4 se deja **pendiente a propósito**. Las medidas de abajo lo
+respaldan, pero un criterio de legibilidad lo cierra quien mira la imagen,
+no quien la mide. La primera versión de esta sección lo marcó como cumplido
+sin esa revisión; queda anotado como el error de proceso que fue.
+
 #### 6 · el tiempo
 
-Siete repeticiones, medidas en una sola sesión para que sean comparables
-entre sí:
+Siete repeticiones de cada preset, **corridas seguidas en una sola sesión**
+para que sean comparables entre sí:
 
 | Preset | Mediana | Primitivas |
 |---|---:|---:|
-| `safe-refractive-water` | `0.1930 s` | 160 |
-| `safe-interior-visible` | `0.1611 s` | 159 |
-| `safe-opaque-water` | `0.1611 s` | 160 |
+| `safe-refractive-water` | `0.1999 s` | 160 |
+| `safe-interior-visible` | `0.1603 s` | 159 |
+| `safe-opaque-water` | `0.1592 s` | 160 |
 
-El volumen refractivo cuesta un **20 %** sobre la referencia sin refracción.
-`480 000` rayos primarios, `174 427` de sombra, `48 199` reflejados y
-`40 850` refractados.
+El volumen refractivo cuesta un **25 %** sobre la referencia sin refracción
+—`0.1999 / 0.1603 = 1.247`—. `480 000` rayos primarios, `173 744` de sombra,
+`47 917` reflejados y `40 730` refractados.
 
-**Nota de higiene de medición.** Las cifras de la Tarea 5.4 salieron todas
-un `45 %` más altas que estas, con la misma escena y los mismos conteos de
-rayos: aquella sesión corrió con la máquina más lenta. Son comparables entre
-sí, no con estas. La lección es la que ya está en la regla del Hito 3: un
-tiempo solo significa algo junto a los que se midieron con él.
+##### Procedencia de las tres sesiones
+
+Hay tres tandas de medición del mismo trabajo en esta evidencia, y la
+diferencia entre ellas es la máquina, no la escena:
+
+| Sesión | `refractive` | `interior-visible` | Razón |
+|---|---:|---:|---:|
+| Tarea 5.4 | `0.2887 s` | `0.2223 s` | `1.30` |
+| Primera del gate | `0.1930 s` | `0.1611 s` | `1.20` |
+| Definitiva del gate | `0.1999 s` | `0.1603 s` | `1.25` |
+
+Los conteos de rayos son idénticos en las tres, así que la escena era la
+misma; la sesión de la 5.4 corrió con la máquina un `45 %` más lenta. **Solo
+las razones son comparables entre sesiones**, y las tres coinciden en que el
+volumen cuesta entre un `20 %` y un `30 %`.
+
+Por lo mismo, la comparación con el Hito 3 —`0.0956 s` sin óptica ni
+texturas— vale como orden de magnitud y no como factor exacto: `2.09×` con
+las cifras de esta sesión. La primera versión de esta evidencia dijo `3.0×`
+mezclando dos sesiones, que es exactamente el error que la regla del Hito 3
+advierte.
 
 No se fija un umbral de fps, por la decisión del Hito 3 de medir antes de
 imponer metas. Ninguna de las cinco mitigaciones del plan hizo falta: la
@@ -1175,190 +1213,191 @@ cristal conserva su reflexión.
 Medido apagando el cielo: se trazan las muestras de la superficie con el
 panorama real y con un cielo negro plano.
 
+La superficie ocupa `11 317` píxeles y se **submuestrea uno de cada siete**,
+`1 617` muestras. Las cifras de abajo son de la muestra, no del total:
+
 | | |
 |---|---:|
-| Píxeles que cambian al apagar el cielo | `985 / 1637` |
+| Muestras que cambian al apagar el cielo | `972 / 1 617` |
 | Aporte medio del cielo | `0.0091` |
 | Aporte máximo | `0.0797` |
 
-El `60 %` de la superficie cambia, así que el reflejo llega al píxel. Es
-**sutil a propósito y por geometría**: la cámara mira el agua a unos `58°`
-de su normal, donde Schlick da `F ≈ 0.043` y el techo deja `kr ≈ 0.039`. El
-máximo, nueve veces la media, está en los píxeles rasantes del borde
-lejano, que es exactamente donde Fresnel sube.
+El `60 %` de las muestras cambia, así que el reflejo llega al píxel. Es
+**sutil por geometría**: la cámara mira el agua a unos `58°` de su normal,
+donde Schlick da `F ≈ 0.043` y el techo deja `kr ≈ 0.039`. El máximo, nueve
+veces la media, cae en las muestras rasantes del borde lejano, que es
+exactamente donde Fresnel sube.
 
 #### 2 · el borde frontal permite ver el barco
 
+Recorrido completo del cuadro, sin submuestrear:
+
 | Qué alcanza el rayo primario | Píxeles |
 |---|---:|
-| Superficie del agua | `11 455`  (2.39 % del cuadro) |
-| Borde roto | `11 433` |
+| Superficie del agua | `11 317`  (2.36 % del cuadro) |
+| Borde roto | `11 571` |
 | Casco, directo | `147` |
-| Casco, a través de la superficie | `1 332` |
-| Cadena y ancla, a través | `30` |
-| Lecho, kelp, rocas y caras internas | `10 093` |
+| Casco, a través de la superficie | `1 327` |
+| Cadena y ancla, a través | `167` |
+| Lecho, kelp, rocas y caras internas | `9 823` |
 | Refractados que terminan en cielo | `0` |
 
-El casco suma **`1 479` píxeles** visibles y el borde roto no lo tapa. Que
+El casco suma **`1 474` píxeles** visibles y el borde roto no lo tapa. Que
 ningún rayo refractado termine en cielo confirma que `max_depth = 3` alcanza
 para cruzar el volumen: el interior siempre encuentra geometría.
 
 #### 3 · el highlight del agua
 
-Medido apagando el specular del material de agua:
+Medido apagando el specular del material de agua, sobre las mismas `1 617`
+muestras:
 
 | | |
 |---|---:|
-| Píxeles con aporte especular apreciable | `229 / 1637` |
-| Aporte máximo | `0.1365` |
+| Muestras con aporte especular apreciable | `227 / 1 617` |
+| Aporte máximo | `0.2068` |
 
-Un `14 %` de la superficie lleva highlight, con un máximo fuerte. El
-specular sobrevive porque **no entra en el reparto de Fresnel** —se suma
-después—; con `kl = 0.1` habría quedado al diez por ciento. Ver la Tarea
-5.3.
+Un `14 %` de las muestras lleva highlight, con un máximo fuerte. El specular
+sobrevive porque **no entra en el reparto de Fresnel** —se suma después—;
+con `kl = 0.1` habría quedado al diez por ciento. Ver la Tarea 5.3.
 
 #### 5 · limpieza
 
 | | |
 |---|---:|
 | Píxeles en negro absoluto | `0` |
-| Píxeles aislados más oscuros que **todos** sus vecinos | `7`  (`0.0015 %`) |
+| Píxeles aislados más oscuros que **todos** sus vecinos | `6`  (`0.0012 %`) |
 
-Siete píxeles sobre 480 000 no es acné: es el borde de una arista. El
+Seis píxeles sobre 480 000 no es acné: es el borde de una arista. El
 criterio de detección exige que el píxel sea menos de la mitad de luminoso
 que su vecino **más oscuro**, lo que descarta los bordes de sombra
 legítimos, que tienen vecinos oscuros a un lado.
 
-#### 4 · legibilidad — el criterio que estaba fallando
+#### 4 · legibilidad — el criterio que costó tres intentos
 
-Aquí el conteo de píxeles no alcanzaba, y la luminancia lo destapó:
-
-| Parte | Píxeles | Mín | **Media** | Máx |
+| Parte | Píxeles | Mín | Media | Máx |
 |---|---:|---:|---:|---:|
-| Superficie del agua | `11 455` | `0.0603` | **`0.3365`** | `0.8737` |
-| Casco visible | `1 479` | `0.0991` | **`0.3183`** | `0.4960` |
-| Cadena y ancla | `30` | `0.0833` | `0.2354` | `0.3509` |
-| Borde roto | `11 433` | `0.0272` | **`0.1280`** | `0.9717` |
+| Superficie del agua | `11 317` | `0.0639` | `0.3560` | `0.9683` |
+| Casco visible | `1 474` | `0.1909` | **`0.4524`** | `0.7370` |
+| Cadena y ancla | `167` | `0.1921` | **`0.3774`** | `0.6657` |
+| Borde roto | `11 571` | `0.0272` | `0.1293` | `0.9717` |
 
-**El casco está presente pero no contrasta.** Su luminancia media, `0.3183`,
-es prácticamente la del agua que lo rodea, `0.3365`: una razón de `0.95`. Hay
-1 479 píxeles de barco y casi ninguna diferencia de brillo contra el fondo.
-Lo que lo hace legible hoy es la **silueta** —el mástil y la popa rompiendo
-la superficie— y no el tono.
+El contraste **no se mide contra la media global de la superficie**. Esa
+media incluye el fondo de la bahía y los highlights del borde lejano, que no
+son «el agua que rodea al casco». Se mide contra el anillo de píxeles de
+superficie a menos de seis píxeles del casco, excluyendo los que muestran el
+casco **a través** del agua —esos son casco, no entorno, y contarlos hacía
+que el entorno subiera junto con la ganancia y el contraste no se moviera—:
 
-**La cadena y el ancla no son legibles.** `30` píxeles para once primitivas,
-unos `2.7` por pieza. Los eslabones miden `0.13` y a esta distancia una
-unidad de mundo son unos `18` píxeles: cada eslabón ocupa `2.4 x 2.4`. No es
-un problema de iluminación sino de tamaño angular.
+| | |
+|---|---:|
+| Casco | `0.4524` |
+| Agua que lo rodea, `1 363` píxeles de anillo | `0.3605` |
+| **Contraste** | **`1.25`** |
 
-**El borde roto es la masa más oscura del cuadro**, con media `0.1280`
-—menos de la mitad que el agua— y ocupa tanto como la bahía entera. Su cara
-frontal mira a la cámara y ninguna de las tres luces la alcanza: `L-01`
-viene de detrás y por la izquierda, y `L-02` está dentro de la bahía y por
-encima del agua.
+Con la media global el contraste habría salido `1.27`; con el anillo mal
+construido, `1.02`. El número honesto es el del anillo limpio.
 
-Subir `E_boat` no arregla el contraste del casco: `L-02` ilumina por igual
-al casco y al lecho que se ve a su lado, así que las dos luminancias suben
-juntas. Las opciones reales, todas dentro del límite de cinco materiales y
-del presupuesto de 58 primitivas:
+Color medio en bytes sRGB, que muestra por dónde se lee además del brillo:
 
-1. **Aceptar.** El barco se lee por silueta, que es lo que el inventario
-   declara como prioridad para `A-03`. La cadena queda como detalle de la
-   reserva del Hito 7.
-2. **Estrechar `range` y subir `E_boat`.** El casco está a `0.192 S` de
-   `L-02` y el lecho lejano a `0.428 S`: con `range = 0.20 S` el casco recibe
-   `2.90x` lo del fondo, contra `2.15x` con los `0.30 S` calibrados. Compra
-   contraste para el barco a cambio de oscurecer el fondo de la bahía.
-3. **Aclarar el casco con un tinte**, con el mismo idioma `tenir` que usan
-   la cadena y el kelp. Un pecio blanqueado por el sol contrasta contra el
-   agua sin tocar ninguna luz. Es la única opción que ataca el contraste
-   directamente.
-4. **Engrosar los eslabones** de `0.13` a `0.22`, que no cuesta ni una
-   primitiva y llevaría cada eslabón a unos `4` píxeles.
-
-#### Las correcciones aplicadas
-
-Aprobadas las opciones 3 y 4, con dos correcciones al planteamiento.
-
-**El casco necesita una ganancia, no un tinte.** El idioma `tenir` que
-proponía la opción 3 solo puede **quitar**: multiplica el albedo por un
-factor menor que uno. Sirve para el metal frío y para el kelp submarino, y
-no sirve aquí, porque el casco tenía que **subir**. Hay ahora una segunda
-función, `ganancia_local`, que es su contraria.
-
-El techo de la ganancia no es un número elegido: **sale de la textura**. El
-albedo efectivo de un material texturizado es `albedo × muestra`, así que la
-ganancia puede subir el albedo hasta `1 / pico`, donde `pico` es el canal
-más brillante de su textura, y con eso ni un píxel devuelve más luz de la
-que recibe. Hizo falta `Texture::max_channel`, que se calcula una vez al
-derivar el material y no por muestreo.
-
-Consecuencia que conviene tener presente: **con textura el albedo pasa de
-uno**. No es un error. Ahí el albedo ya no es una reflectancia sino un
-factor sobre una muestra oscura —`with_texture` lo pone en blanco por
-diseño—, y lo que se mantiene acotado es el producto. Sin textura el techo
-es `1.0` y la ganancia escala el color plano. Un test comprueba que las dos
-rutas den el mismo aclarado, igual que se hizo con `tenir`.
-
-`GANANCIA_DEL_PECIO = 1.8` se aplica al casco, al mástil, a la cadena y al
-ancla, todos por materiales **derivados**: `paleta.aged_wood` no se toca
-porque Praderas también lo usa.
-
-**El engrosamiento alcanza a las tres piezas del ancla, no solo a los
-eslabones.** `GROSOR_METAL = 0.22` sustituye los `0.13` del eslabón y los
-`0.10`–`0.12` de la caña, los brazos y el arganeo. Sube el **grosor** y no
-el largo: la caña conserva sus `0.7` y los brazos su envergadura de `0.72`,
-o dejaría de leerse como un ancla. Hay un test para cada cosa.
-
-#### Antes y después de las correcciones
-
-| Parte | Píxeles antes | Píxeles después | Luminancia antes | Luminancia después |
+| | R | G | B | Rojo / azul |
 |---|---:|---:|---:|---:|
-| Casco visible | `1 479` | `1 474` | `0.3183` | **`0.3752`** |
-| Cadena y ancla | `30` | **`61`** | `0.2354` | **`0.3161`** |
-| Superficie del agua | `11 455` | `11 455` | `0.3365` | `0.3431` |
+| Casco | `127.6` | `112.2` | `110.2` | `1.16` |
+| Agua que lo rodea | `71.7` | `95.5` | `116.6` | `0.61` |
 
-La razón casco / agua pasa de **`0.95` a `1.09`**: el casco dejó de tener la
-luminancia del agua que lo rodea y ahora es la parte más clara de la bahía.
-Es el número que el criterio 4 estaba fallando.
+El casco es más claro **y** más cálido que el agua. Las dos cosas suman.
 
-Los tiempos no se movieron: mediana `0.1911 s` contra `0.1930 s`, y los
-conteos de rayos son idénticos. Aclarar un material y engrosar once cajas no
-cuesta trabajo de trazado.
+#### Las tres correcciones que hicieron falta
 
-#### Y una causa que la corrección destapó
+**Uno · el casco necesitaba una ganancia, no un tinte.** El idioma `tenir`
+solo puede quitar. `ganancia_local` es su contraria, y su techo sale de la
+textura: el albedo efectivo es `albedo × muestra`, así que la ganancia puede
+subir el albedo hasta `1 / pico`. Con textura el albedo pasa de uno, que ahí
+no es una reflectancia sino un factor sobre una muestra oscura.
 
-La cadena y el ancla subieron a `61` píxeles, no a los `86` que predecía el
-área. La diferencia no era tamaño. Midiendo la visibilidad al orbitar:
+El techo va **por canal**. Con un solo escalar las dos rutas —con textura y
+sin ella— dejan de coincidir en cuanto el recorte muerde, y se vio al subir
+la ganancia: un test reportó `0.8` contra `0.625` en el canal verde. La
+madera del pecio tiene el rojo a `0.171` y el azul a `0.017`; un techo común
+los trataría igual.
+
+`GANANCIA_DEL_PECIO = 3.2`, contra un techo de `5.83`. El barrido:
+
+| Ganancia | Casco | Entorno | Contraste |
+|---:|---:|---:|---:|
+| `1.8` | `0.3752` | `0.3579` | `1.05` |
+| `2.6` | `0.4217` | `0.3595` | `1.17` |
+| **`3.2`** | **`0.4524`** | **`0.3605`** | **`1.25`** |
+| `3.8` | `0.4805` | `0.3615` | `1.33` |
+
+Se eligió `3.2` y no `3.8` porque a `3.8` el máximo del casco llega a `0.85`
+y empieza a quemarse. El entorno se mantiene plano en el barrido, que es la
+señal de que la ganancia hace lo que dice.
+
+**Dos · el engrosamiento alcanza a las tres piezas del ancla.**
+`GROSOR_METAL = 0.22` sustituye los `0.13` del eslabón y los `0.10`–`0.12`
+de la caña, los brazos y el arganeo. Sube el grosor y no el largo.
+
+**Tres · la muesca del borde roto.** Y esta es la que resolvió el problema
+de verdad. Engrosar llevó la cadena de `30` a `61` píxeles, no a los `86`
+que predecía el área, y el diagnóstico por número de objeto encontró la
+causa: **el bloque `5` del borde roto, de `3.05` de alto, tapaba nueve de
+las once piezas**, y el `6` la restante.
+
+Las ocho alturas del borde salen del generador con semilla fija. La
+corrección **conserva el multiconjunto** y solo reordena a qué bloque le
+toca cuál, de modo que las dos más bajas caigan frente a la cadena. El borde
+tiene exactamente las mismas ocho alturas y la misma silueta rasgada; lo que
+cambia es que la abertura queda donde hay algo que mirar.
+
+Con la muesca los bloques de enfrente bajaron a `2.22`, y la línea de visión
+de los tramos centrales pasaba a `2.20`: dos centésimas por debajo. Tensar
+la cadena —comba de `0.35` a `0.20`— los levantó lo justo, sin mover sus
+extremos ni despegar el ancla del lecho, que eran las otras dos palancas y
+las dos más invasivas.
+
+Resultado sobre la cadena y el ancla: `30 → 61 → 167` píxeles, y la
+luminancia media de `0.2354` a `0.3774`, por encima del agua que las rodea.
+
+#### Visibilidad al orbitar
 
 | `yaw` | Casco | Cadena y ancla |
 |---:|---:|---:|
-| `45°` | `1 201` | **`137`** |
-| `90°` (hero) | `1 474` | `61` |
-| `135°` | `1 236` | `89` |
-| `180°` | `793` | `21` |
+| `45°` | `1 201` | `154` |
+| `90°` (hero) | `1 474` | **`167`** |
+| `135°` | `1 236` | `98` |
+| `180°` | `793` | `22` |
 | `225°` | `111` | `1` |
 | `270°` | `6` | `24` |
-| `315°` | `643` | `41` |
+| `315°` | `643` | `50` |
 
-**Desde la toma hero el borde roto las tapa.** El rayo que va del ojo a la
-cadena cruza el plano del borde a `y ≈ 2.14`, y el bloque que hay ahí llega
-a `2.48`. A `yaw 45°` no hay nada delante y se ven `137` píxeles, el doble
-que en la hero.
+La muesca invirtió la relación: antes la cadena se veía mejor a `yaw 45°`
+que en la hero —`137` contra `61`—, y ahora la hero es la mejor vista de las
+siete. Los cuartos de atrás siguen tapados por el Monolito y las Praderas,
+que es correcto: la bahía está al frente.
 
-No es un defecto del engrosamiento, que hizo lo suyo —duplicó los píxeles y
-subió la luminancia un `34 %`—: es que la pieza está detrás de un elemento
-de primer plano puesto ahí a propósito. Levantar la cadena para que la
-línea de visión libre el borde dejaría el ancla flotando a `0.8` sobre el
-lecho, y bajar el bloque cambiaría la silueta rasgada que se aprobó al
-`88.7 %` de oclusión.
+#### Cierre del Hito 5
 
-Queda registrado como característica de la composición y no como pendiente:
-el diorama **orbita**, y la cadena se lee mejor desde los cuartos delanteros
-que desde la hero. Si más adelante se quiere en la hero, la palanca más
-barata es mover el conjunto cadena-ancla unas décimas en `x` hasta quedar
-detrás de uno de los bloques bajos del borde —los de `2.22` y `2.25`— en vez
-de detrás del de `2.48`.
+Gates finales, con el árbol en el estado de esta sección:
+
+```text
+cargo fmt -- --check                        OK
+cargo clippy --all-targets -- -D warnings   0 avisos
+cargo test                                  306 tests, 0 fallos
+cargo build --release                       OK
+cargo run                                   arranca, 160 primitivas, 8 texturas
+```
+
+Reparto de los 306: `276` de librería, `16` del generador de assets, `8` de
+humo del render y `6` de sombras submarinas.
+
+Dos imágenes del directorio quedaron **sin referencia** al reescribir esta
+sección: `l02-calibrada.png`, que el antes/después reemplazó, y
+`gate-hero-corregido.png`, que es byte a byte igual a `gate-hero.png` desde
+que el gate volvió a generarse. No se borraron; se anotan para que no se
+tomen por evidencia de otro estado.
+
+Quedan cerradas las ocho tareas del hito y las tres correcciones de la
+auditoría del gate. El criterio 4 espera revisión visual.
 
 ---
 

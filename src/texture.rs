@@ -157,17 +157,22 @@ impl Texture {
         self.height
     }
 
-    /// Canal más brillante de toda la textura, en lineal.
+    /// Valor más alto de **cada canal** en toda la textura, en lineal.
     ///
     /// Sirve para acotar una **ganancia**: el albedo efectivo de un material
     /// texturizado es `albedo × muestra`, así que subir el albedo por encima
     /// de `1 / pico` haría que algún píxel devolviera más luz de la que
     /// recibe. Se calcula una vez al derivar el material, no por muestreo.
-    pub fn max_channel(&self) -> f32 {
-        self.pixels
-            .iter()
-            .map(|c| c.r.max(c.g).max(c.b))
-            .fold(0.0_f32, f32::max)
+    ///
+    /// Por canal y no un solo escalar: un pico común acotaría el azul de una
+    /// textura rojiza contra el rojo, que es mucho más alto, y la ganancia
+    /// dejaría de coincidir con la del mismo material sin textura. El azul
+    /// de la madera del pecio llega a `0.017` y su rojo a `0.171`; un techo
+    /// común los trataría igual.
+    pub fn peak(&self) -> Color {
+        self.pixels.iter().fold(Color::black(), |acc, c| {
+            Color::new(acc.r.max(c.r), acc.g.max(c.g), acc.b.max(c.b))
+        })
     }
 
     /// Color en la coordenada `(u, v)`, con `v = 0` abajo.

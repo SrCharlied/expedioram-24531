@@ -39,6 +39,10 @@ const ANCHO: usize = 800;
 const ALTO: usize = 600;
 const REPETICIONES: usize = 7;
 
+fn raiz() -> std::path::PathBuf {
+    std::path::PathBuf::from(".")
+}
+
 /// Luminancia aproximada de un píxel ya codificado, en `0..=1`.
 fn luma(pixel: u32) -> f32 {
     let r = ((pixel >> 16) & 0xFF) as f32;
@@ -211,12 +215,15 @@ fn trazar(diorama: &Blockout, luces: &[PointLight], rayo: &Ray) -> Color {
 }
 
 fn main() {
-    let raiz = std::path::PathBuf::from(".");
-    let mut diorama = match safe_level_con(WaterPreset::RefractiveWater, Some(&raiz)) {
+    // Aborta si faltan los assets, y no cae a colores planos: las cifras
+    // de este gate son luminancias.
+    let mut diorama = match safe_level_con(WaterPreset::RefractiveWater, Some(&raiz())) {
         Ok(nivel) => nivel,
         Err(e) => {
-            eprintln!("{e}\n  genera los assets con: cargo run --release --bin generate_assets");
-            return;
+            eprintln!("error: {e}");
+            eprintln!("  el gate mide luminancias y sin texturas mediria otra escena.");
+            eprintln!("  generalos con: cargo run --release --bin generate_assets");
+            std::process::exit(1);
         }
     };
 
@@ -366,6 +373,121 @@ fn main() {
             maximo
         );
     }
+
+    // El agua que **rodea** al casco, no la media global de la superficie.
+    //
+    // La primera version comparo la luminancia del casco contra la media de
+    // los 11 000 pixeles de superficie del cuadro, que incluye el fondo de
+    // la bahia y los highlights del borde lejano. Eso no es «el agua que lo
+    // rodea»: es otra cosa. Aqui se dilata el conjunto de pixeles del casco
+    // y se promedian **solo** los de superficie que caen en el anillo.
+    let contorno_del_casco = {
+        let mut es_casco = vec![false; ANCHO * ALTO];
+        for p in &casco_px {
+            es_casco[*p] = true;
+        }
+
+        let mut es_superficie = vec![false; ANCHO * ALTO];
+        for p in &superficie_px {
+            es_superficie[*p] = true;
+        }
+
+        const RADIO: i32 = 6;
+        let mut anillo = Vec::new();
+
+        for y in 0..ALTO {
+            for x in 0..ANCHO {
+                let p = y * ANCHO + x;
+                // De superficie, y que **no** muestre el casco a traves del
+                // agua: esos pixeles son casco, no entorno, y contarlos
+                // hacia que el entorno subiera junto con la ganancia del
+                // casco y el contraste no se moviera.
+                if !es_superficie[p] || es_casco[p] {
+                    continue;
+                }
+
+                let mut vecino_del_casco = false;
+
+                for dy in -RADIO..=RADIO {
+                    for dx in -RADIO..=RADIO {
+                        let (vx, vy) = (x as i32 + dx, y as i32 + dy);
+
+                        if vx < 0 || vy < 0 || vx >= ANCHO as i32 || vy >= ALTO as i32 {
+                            continue;
+                        }
+                        if es_casco[vy as usize * ANCHO + vx as usize] {
+                            vecino_del_casco = true;
+                        }
+                    }
+                }
+
+                if vecino_del_casco {
+                    anillo.push(p);
+                }
+            }
+        }
+
+        anillo
+    };
+
+    let (_, media_contorno, _) = stats_de(&contorno_del_casco);
+    let (_, media_casco, _) = stats_de(&casco_px);
+
+    // Color medio, no solo luminancia: el contraste puede ser cromatico.
+    let color_medio = |pixeles: &[usize]| -> (f32, f32, f32) {
+        let mut suma = (0.0, 0.0, 0.0);
+
+        for p in pixeles {
+            let pixel = framebuffer.buffer[*p];
+
+            suma.0 += ((pixel >> 16) & 0xFF) as f32;
+            suma.1 += ((pixel >> 8) & 0xFF) as f32;
+            suma.2 += (pixel & 0xFF) as f32;
+        }
+
+        let n = pixeles.len().max(1) as f32;
+
+        (suma.0 / n, suma.1 / n, suma.2 / n)
+    };
+
+    let (cr, cg, cb) = color_medio(&casco_px);
+    let (ar, ag, ab) = color_medio(&contorno_del_casco);
+
+    println!("\n      color medio (bytes sRGB)");
+    println!(
+        "      casco             {cr:>6.1} {cg:>6.1} {cb:>6.1}   rojo/azul {:.2}",
+        cr / cb
+    );
+    println!(
+        "      agua que lo rodea {ar:>6.1} {ag:>6.1} {ab:>6.1}   rojo/azul {:.2}",
+        ar / ab
+    );
+
+    // Y la cabeza que deja la cota fisica de la ganancia.
+    let madera = diorama.scene.objects[partes.casco[0]].final_material;
+    let material = diorama.scene.material(madera);
+
+    if let Some(id) = material.albedo_texture {
+        let pico = diorama.scene.texture(id).peak();
+
+        println!(
+            "\n      textura del casco: pico rojo {:.4}, techo de ganancia {:.2}, albedo actual {:.2}",
+            pico.r,
+            1.0 / pico.r,
+            material.albedo.r
+        );
+    }
+
+    println!(
+        "\n      contraste casco / agua que lo rodea: {:.4} / {:.4} = {:.2}",
+        media_casco,
+        media_contorno,
+        media_casco / media_contorno
+    );
+    println!(
+        "      el anillo son {} pixeles de superficie a menos de 6 px del casco",
+        contorno_del_casco.len()
+    );
 
     // ------------------------------------------- 1 · la superficie devuelve cielo
     //

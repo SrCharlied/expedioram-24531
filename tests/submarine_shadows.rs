@@ -302,21 +302,44 @@ fn el_agua_no_bloquea_las_sombras_aunque_este_en_medio() {
 
 // --------------------------------------------------------- criterio 3
 
-/// Las seis rocas submarinas, localizadas por geometría y no por semilla.
+/// Las **seis** rocas submarinas, localizadas por sus propiedades y no por
+/// su tamaño.
 ///
-/// Son las únicas primitivas de Aguas Voladoras que caben **enteras**
-/// dentro del volumen de agua: el lecho es más ancho que él, el borde roto
-/// lo atraviesa, y el barco asoma por arriba.
+/// La primera versión de este selector filtraba «lo ancho que cabe dentro
+/// del volumen», con un umbral de `0.30`. Funcionó hasta que la corrección
+/// del gate engrosó la cadena y el ancla: los brazos del ancla miden `0.72`
+/// y el arganeo `0.34`, así que pasaron a colarse como rocas. Un selector
+/// que depende de un tamaño se rompe en cuanto ese tamaño cambia.
+///
+/// Ahora se filtra por lo que **son**, no por lo que miden:
+///
+/// - Dentro del volumen de agua en los tres ejes. Descarta el lecho, que es
+///   más ancho, y el borde roto, que lo atraviesa.
+/// - Apoyadas en el lecho, `min.y` por debajo de `1.0`. Descarta el casco.
+/// - Opacas a las sombras. Descarta el kelp, que lleva `ShadowMode::Ignore`.
+/// - Sin la escala UV del metal reusado. Descarta cadena y ancla.
+/// - **Equantes y no losas**: sus tres lados quedan dentro de un factor de
+///   `1.5`. Es lo que separa una roca —`lado`, `lado x 0.8`, `lado x 0.9`—
+///   de una masa del lecho, que es una losa de proporción `4.4`. También es
+///   una propiedad de forma y no un umbral de tamaño, así que no se rompe
+///   si las piezas cambian de escala.
+///
+/// El conteo se comprueba: si el selector volviera a atrapar otra cosa, el
+/// test falla en vez de medir la pieza equivocada.
 fn rocas_submarinas(diorama: &Blockout) -> Vec<(Vec3, f32)> {
     let (centro, tamano) = caja_del_volumen(anclas_del_diorama().flying_waters_anchor);
     let (minimo, maximo) = (centro - tamano * 0.5, centro + tamano * 0.5);
-    let casco = ancla_del_casco(anclas_del_diorama().flying_waters_anchor);
 
     diorama
         .scene
         .objects
         .iter()
         .filter(|o| o.spatial_group == SpatialGroupId::FlyingWaters)
+        .filter(|o| {
+            let material = diorama.scene.material(o.final_material);
+
+            material.blocks_shadows() && material.uv_scale != METAL_UV_SCALE
+        })
         .map(|o| o.primitive.bounds())
         .filter(|caja| {
             caja.min.x > minimo.x
@@ -326,12 +349,14 @@ fn rocas_submarinas(diorama: &Blockout) -> Vec<(Vec3, f32)> {
                 && caja.max.y < maximo.y
                 && caja.max.z < maximo.z
         })
-        // Fuera el barco, la cadena y el ancla: quedan las rocas y el kelp.
-        // Las rocas se apoyan en el lecho y son anchas; el kelp es una
-        // fronda de 0.14 de lado y la cadena eslabones de 0.13.
-        .filter(|caja| caja.max.x - caja.min.x > 0.30)
-        // Y las que estan bajo el casco no sirven de oclusor limpio.
-        .filter(|caja| (caja.min.x - casco.x).abs() > 1.2)
+        .filter(|caja| caja.min.y < 1.0)
+        .filter(|caja| {
+            let lados = caja.max - caja.min;
+            let mayor = lados.x.max(lados.y).max(lados.z);
+            let menor = lados.x.min(lados.y).min(lados.z);
+
+            mayor / menor < 1.5
+        })
         .map(|caja| {
             let centro = (caja.min + caja.max) * 0.5;
             let radio = (caja.max - caja.min).magnitude() * 0.5;
@@ -341,15 +366,21 @@ fn rocas_submarinas(diorama: &Blockout) -> Vec<(Vec3, f32)> {
         .collect()
 }
 
+/// Escala UV del metal reusado de la cadena y el ancla, que es lo único que
+/// los distingue del basalto sin mirar su `MaterialId`.
+const METAL_UV_SCALE: f32 = 12.0;
+
 #[test]
 fn las_rocas_opacas_si_producen_sombra() {
     let (diorama, luces) = nivel();
     let l02 = luz(&luces, "L-02");
     let rocas = rocas_submarinas(&diorama);
 
-    assert!(
-        !rocas.is_empty(),
-        "no se localizo ninguna roca submarina utilizable"
+    assert_eq!(
+        rocas.len(),
+        6,
+        "el selector de rocas atrapo {} objetos y `A-08` son seis",
+        rocas.len()
     );
 
     for (centro, radio) in &rocas {

@@ -959,12 +959,12 @@ type: point
 anchor: flying_waters_anchor
 offset: [0.0, 0.15 * scene_radius, 0.10 * scene_radius]
 color: cool_blue
-intensity: 2.0
-range: 0.20 * scene_radius
+intensity: 2.8211          # derivada, ver abajo
+range: 0.30 * scene_radius
 attenuation_model: normalized_quadratic
 affected_groups: [flying_waters]
 occluder_groups: [flying_waters]
-calibration: provisional_until_blockout_4
+calibration: calibrated_5_7
 casts_shadows: true
 purpose: mantener legible el barco y permanecer confinada a Aguas Voladoras
 ```
@@ -973,9 +973,27 @@ purpose: mantener legible el barco y permanecer confinada a Aguas Voladoras
 
 Es una decisión artística intencional. Con distancias provisionales de `0.15 × scene_radius` al barco y `0.45 × scene_radius` a Praderas, y `range = 0.20 × scene_radius`, la atenuación por sí sola deja a Praderas todavía en el `25.77%` de lo que recibe el barco — tinte azul claramente visible fuera de la bahía. El filtro de grupo la lleva a cero exacto. La atenuación controla la caída *dentro* de Aguas; el linking define el *borde* de Aguas.
 
+**Calibrada en la Tarea 5.7.** Los valores de arriba ya no son los
+iniciales. `range = 0.30 × scene_radius` e `intensity = 2.8211` salen de
+medir el blockout real; la intensidad no se escribe sino que se **deriva**
+en `light::l02_intensity` a partir de `E_boat = 2.0` y de la distancia
+medida al barco, así que sigue a la composición si esta se mueve. Las
+distancias y el barrido con el que se eligieron están en `docs/evidence.md`,
+sección de la Tarea 5.7:
+
+| Magnitud | Medida |
+|---|---:|
+| `distance_boat`, al centro **visible** del barco | `0.192 × scene_radius` |
+| `distance_farthest`, al obligatorio más lejano | `0.428 × scene_radius` |
+| Iluminación del más lejano respecto del barco | `46.5 %` |
+
 ### Calibración obligatoria de L-02 en Blockout 4
 
-Los valores `intensity: 2.0` y `range: 0.20 × scene_radius` son iniciales, no definitivos. Con el modelo declarado:
+Esta sección describe el procedimiento que se siguió; queda como registro
+de por qué los valores son los que son. Los valores `intensity: 2.0` y
+`range: 0.20 × scene_radius` fueron los **iniciales**, y la tabla de abajo
+es el ejemplo ilustrativo con el que se razonó antes de medir. Con el modelo
+declarado:
 
 | Rango | Iluminación a `0.15S` | Iluminación a `0.25S` | Caída relativa |
 |---:|---:|---:|---:|
@@ -996,6 +1014,9 @@ intensity = E_boat × (1 + (distance_boat / range)²)
 ```
 
 5. Registrar los valores medidos; no heredar `2.0/0.20S` sin validación.
+
+**Los cinco pasos se ejecutaron en la Tarea 5.7.** El resultado está arriba
+en el bloque de `L-02` y desarrollado en `docs/evidence.md`.
 
 ### L-03 · Acento del Monolito
 
@@ -1223,7 +1244,7 @@ El inventario queda listo para convertirse en plan técnico cuando:
 - [x] Grupos y clusters candidatos se recorren por `t_enter` ascendente con poda.
 - [ ] Las posiciones relativas se validaron en un blockout.
 - [ ] La cámara hero se validó en geometría 3D.
-- [ ] L-02 fue recalibrada con distancias medidas del blockout.
+- [x] L-02 fue recalibrada con distancias medidas del blockout.
 - [ ] El presupuesto se verificó mediante medición real del renderer.
 
 Los últimos cuatro puntos pertenecen a la fase de implementación y no bloquean el plan técnico.
