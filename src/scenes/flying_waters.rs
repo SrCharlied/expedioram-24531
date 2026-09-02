@@ -149,11 +149,21 @@ fn lecho(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
     }
 }
 
+/// Centro del casco, dada el ancla de la bahía.
+///
+/// Público por la misma razón que `caja_del_volumen`: la validación de
+/// sombras submanas de la Tarea 5.6 necesita apuntar a la cubierta, y un
+/// desplazamiento copiado en dos sitios se desincroniza en el primer
+/// ajuste de composición.
+pub fn ancla_del_casco(ancla: Vec3) -> Vec3 {
+    ancla + Vec3::new(-0.3, 2.05, 0.2)
+}
+
 /// `A-03` · casco del barco, doce primitivas.
 ///
 /// Se prioriza la silueta rota y suspendida, no la precisión naval.
 fn casco(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
-    let centro = ancla + Vec3::new(-0.3, 2.05, 0.2);
+    let centro = ancla_del_casco(ancla);
 
     // Cuerpo: cinco secciones que se estrechan hacia proa.
     for i in 0..5 {

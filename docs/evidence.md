@@ -878,6 +878,118 @@ canal, no un color elegido a ojo.
 
 ---
 
+### Tarea 5.6 — validación de sombras submarinas
+
+Configuración controlada: agua presente, barco dentro, y cuatro
+plataformas de luces sobre **la misma escena**, cambiando solo el rig.
+
+Los cuatro criterios viven como tests en `tests/submarine_shadows.rs`, no
+solo como render: un criterio cualitativo mirado a ojo no protege de una
+regresión. El render y los números salen de
+`cargo run --release --example submarine_shadows`.
+
+#### Criterio 1 — el barco no está negro
+
+Medido sobre **242 rayos** que dan en las doce piezas del casco, no sobre un
+punto. Brillo sumado de los tres canales:
+
+| Luces | Mínimo | Media | Máximo | Caras iluminadas |
+|---|---:|---:|---:|---:|
+| Rig completo | `0.0163` | `0.2064` | `0.4400` | 197 / 242 |
+| Solo `L-02` | `0.0054` | `0.1054` | `0.2496` | 178 / 242 |
+| Solo `L-01` | `0.0056` | `0.0984` | `0.2317` | 142 / 242 |
+| Sin luces | `0.0054` | `0.0104` | `0.0161` | 0 / 242 |
+
+«Iluminada» significa que supera tres veces su propio ambiente. Con `L-02`
+sola, la media del casco es **10.1 veces** el ambiente.
+
+`L-02` alcanza el 73.6 % de las caras y `L-01` el 58.7 %: se complementan,
+y juntas llegan al 81.4 %. No al 100 %, y eso es correcto —ver abajo—.
+
+#### Tres cosas que la medición corrigió
+
+**El pecio se hace sombra a sí mismo.** Con `L-01` sola, el punto central de
+la cubierta queda **negro**. El oclusor es el objeto 117: una de las tres
+costillas expuestas por la brecha del casco. No es un defecto: es lo que
+hace que las costillas se lean como volumen. Un criterio medido en un solo
+punto habría dado un falso negativo.
+
+**Una cara «superior» puede estar dentro de otra pieza.** El casco está
+apilado —cuerpo, cubierta, costillas—, así que un rayo lanzado desde la cara
+de arriba de una pieza nace **dentro** de la de encima, y el cuboide
+devuelve entonces su cara de salida: una superficie que mira hacia abajo y
+no ve ninguna luz. Sale negra con razón. Los rayos se disparan por eso desde
+justo debajo de la superficie del agua, que garantiza tocar una cara
+expuesta, la misma que ve la cámara.
+
+**El azul de `L-02` no vuelve azul a la madera.** El casco es marrón y
+absorbe azul: ni una luz azul pura lo pone azul, y el color final llega a
+tener más rojo que azul porque el ambiente marrón pesa. Lo comprobable no es
+el color final sino la **temperatura del aporte**: la razón azul/rojo de lo
+que `L-02` añade es más del doble que la del ambiente sobre la misma
+superficie. Si la luz fuera la cálida de `L-01`, esa razón no subiría.
+
+La cara más apagada del casco queda en `0.0084`, que es exactamente
+`albedo × AMBIENT` sobre la madera. Está ahí porque una costilla la tapa, y
+que exista ese suelo es la razón de que `AMBIENT` no sea cero: sin él, lo
+que una costilla tapa se vería negro absoluto y el pecio perdería su
+silueta interior.
+
+#### Criterio 2 — el agua no bloquea sombras
+
+El test comprueba **primero** que el volumen esté de verdad en medio: la
+superficie del agua, en `y = 2.60`, queda entre la cubierta (`y = 2.46`) y
+`L-02` (`y = 4.41`). Sin esa comprobación el criterio pasaría por vacío si
+alguien moviera la luz bajo el agua.
+
+Y aun con el volumen en medio, la cubierta no está en sombra:
+`ShadowMode::Ignore` de `A-01` funciona en la escena real, no solo en el
+test sintético del Hito 3.
+
+#### Criterio 3 — las rocas opacas sí producen sombra
+
+Las seis rocas se localizan **por geometría y no por semilla**: son las
+únicas primitivas de Aguas Voladoras que caben enteras dentro del volumen
+—el lecho es más ancho, el borde roto lo atraviesa, el barco asoma— y son
+anchas, lo que descarta kelp y eslabones.
+
+Para cada una, el punto de prueba se construye inmediatamente **detrás** de
+la roca, del lado opuesto a la luz, y no «sobre el lecho, bajo la roca»: a
+esta distancia la línea hacia `L-02` sube en diagonal, y un punto justo
+debajo podría salirse por el costado y dar un falso negativo.
+
+El test complementario muestrea el lecho en una rejilla de `9 × 9` y exige
+que haya sombra **y** luz: que existan sombras no puede significar que la
+bahía entera esté en penumbra.
+
+#### Criterio 4 — el Monolito conserva su sombra de contacto
+
+Se valida contra `L-01`, que es la única luz con sombras que lo alcanza.
+La huella del Monolito se mide de la escena, y el punto de prueba va al pie,
+del lado contrario a la luz y a ras del plinto.
+
+La comprobación no se queda en «hay sombra»: se traza el rayo de sombra y se
+verifica que **lo primero que encuentra pertenece al grupo `Monolith`**. Eso
+es lo que distingue una sombra de contacto de cualquier otra sombra del
+diorama cayendo en el mismo sitio.
+
+#### Los renders
+
+Cuatro imágenes a `800 × 600` en `evidence/hito5/`:
+
+| Archivo | Rayos de sombra |
+|---|---:|
+| `sombras-rig-completo.png` | `174 427` |
+| `sombras-solo-l02.png` | `44 106` |
+| `sombras-solo-l01.png` | `130 321` |
+| `sombras-sin-luces.png` | `0` |
+
+El render con solo `L-02` es además la evidencia visual del **light
+linking**: el resto del diorama cae a ambiente mientras la bahía queda
+iluminada. `L-02` afecta y ocluye únicamente a `FlyingWaters`, y se ve.
+
+---
+
 ## Pendientes de medición
 
 Ninguna de estas filas puede completarse por estimación. Cada hito llena la suya.
