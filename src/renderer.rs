@@ -141,6 +141,8 @@ fn en_sombra(
     light: &PointLight,
     stats: &mut TraversalStats,
 ) -> bool {
+    stats.shadow_rays += 1;
+
     let origen = hit.point + hit.normal * EPSILON;
     let rayo_de_sombra = Ray::new(origen, *hacia_luz);
 
@@ -174,6 +176,7 @@ pub fn render(
             // 6 tiene que usar exactamente la misma función para que un clic
             // caiga en el píxel que se ve.
             let ray = camera.ray_from_pixel(x, y, ancho, alto);
+            stats.primary_rays += 1;
 
             let color = cast_ray(&ray, scene, accel, lights, shading, &mut stats);
 
@@ -451,6 +454,8 @@ mod tests {
             Shading::Material,
         );
 
+        assert_eq!(stats.primary_rays, 16 * 12);
+        assert!(stats.shadow_rays > 0, "la luz proyecta sombras");
         assert!(stats.primitive_tests > 0);
         assert!(stats.group_bounds_tests > 0);
     }

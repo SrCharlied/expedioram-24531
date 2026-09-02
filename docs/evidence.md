@@ -264,6 +264,114 @@ apartado del preflight.
 
 ---
 
+## Hito 3 — Checkpoint de rendimiento (Tarea 3.8)
+
+**Fecha:** 1 de septiembre de 2026  
+**Perfil:** `release` (`opt-level = 3`, sin LTO)
+**Primera medición formal del proyecto.** Todo lo anterior estaba rotulado «informativo».
+
+### Hardware y toolchain
+
+| Dato | Valor |
+|---|---|
+| CPU | AMD Ryzen 7 6800H with Radeon Graphics |
+| Núcleos | 8 físicos, 16 lógicos |
+| Reloj máximo | 3201 MHz |
+| RAM | 15.2 GB |
+| Sistema | Windows 11 |
+| `rustc` | 1.97.0 (`2d8144b78`) |
+| Ejecución | monohilo; `rayon` no está habilitado |
+
+### Resultados a 800 × 600, cinco repeticiones
+
+| | `safe-interior-visible` | `safe-opaque-water` |
+|---|---:|---:|
+| Primitivas trazables | **159** | **160** |
+| Grupos / clusters | 7 / 10 | 7 / 10 |
+| Luces | 3, dos con sombra | 3, dos con sombra |
+| Rayos primarios | 480 000 | 480 000 |
+| Rayos de sombra | 98 561 | 104 713 |
+| Pruebas de primitiva | 7 100 123 | 7 468 505 |
+| Pruebas de bounds | 2 206 422 | 2 193 441 |
+| Pruebas de primitiva por rayo | 12.27 | 12.77 |
+| Tiempo mínimo | 0.0947 s | 0.0977 s |
+| **Tiempo mediana** | **0.0956 s** | **0.0981 s** |
+| Tiempo máximo | 0.0959 s | 0.0982 s |
+
+El gate de rendimiento es `safe-interior-visible`. `safe-opaque-water` es
+control visual y comparación de oclusión, nunca criterio de aprobación.
+
+### Lo que aporta la aceleración
+
+| Preset | Rayos | Pruebas sin jerarquía | Con jerarquía | Reducción |
+|---|---:|---:|---:|---:|
+| `safe-interior-visible` | 578 561 | 91 991 199 | 7 100 123 | **92.28 %** |
+| `safe-opaque-water` | 584 713 | 93 554 080 | 7 468 505 | **92.02 %** |
+
+La cota sin aceleración del inventario para el nivel seguro —76,8 millones
+de pruebas primarias— queda confirmada: `480 000 × 159 = 76.3` millones,
+más las de los rayos de sombra. La jerarquía evita nueve de cada diez.
+
+### Por qué el preset opaco no puede aprobar rendimiento
+
+El inventario lo advierte y la medición lo confirma, aunque no por donde
+podría esperarse.
+
+El agua opaca **no** abarata el recorrido: hace *más* pruebas de primitiva
+(7.47 contra 7.10 millones), porque añade un cuboide grande que muchos
+rayos atraviesan. Lo que oculta no es coste de intersección sino
+**visibilidad**: las 44 primitivas del interior —casco, mástil, cadena,
+ancla, kelp y rocas— dejan de verse.
+
+El riesgo real llega con la óptica del Hito 5. En cuanto el agua sea
+transparente, esas 44 primitivas volverán a la imagen y cada rayo que entre
+al volumen generará además reflexión y refracción. Un tiempo medido hoy con
+agua opaca serviría de línea base para una escena que va a costar bastante
+más. Por eso el preset canónico es el que ya mira dentro de la bahía.
+
+### Perfil interactivo (entrada de la Tarea 3.9)
+
+| Resolución | Mediana | FPS implícitos |
+|---|---:|---:|
+| 800 × 600 | 0.0956 s | 10.5 |
+| 400 × 300 | 0.0242 s | 41.3 |
+| 320 × 240 | 0.0157 s | 63.7 |
+
+**La mitigación 3.9 se dispara.** A 800 × 600 el loop va a 10.5 fps: eso es
+latencia perceptible al orbitar, y los Hitos 4 a 6 hay que poder probarlos
+de forma interactiva. A 400 × 300 el mismo trabajo baja a 0.0242 s, unos 41
+fps, con la resolución final reservada para el cuadro en reposo.
+
+**No se fija un objetivo de fps aquí.** El plan lo prohíbe expresamente
+antes de medir, y esta es la primera medición: los números de arriba son el
+punto de partida, no una meta.
+
+### Consecuencia para la Tarea 6.3
+
+Con `interactive_frame_time = 0.0242 s` a 400 × 300, quince cuadros de
+transición piden `0.363 s`, muy por debajo del piso de `1.5 s`. La
+`reveal_duration` quedaría en el piso y el gate de fluidez pasa con holgura.
+Es un cálculo provisional: la escena crecerá con texturas, reflexión y
+refracción, así que hay que volver a medirlo en el Hito 6 y no heredar este
+valor.
+
+### Reproducir
+
+```bash
+cargo run --release --bin render_scene -- \
+  --preset safe-interior-visible --width 800 --height 600 \
+  --benchmark 5 --output evidence/performance/safe-interior-visible.png
+
+cargo run --release --bin render_scene -- \
+  --preset safe-opaque-water --width 800 --height 600 \
+  --benchmark 5 --output evidence/performance/safe-opaque-water.png
+```
+
+Las imágenes quedan en `evidence/performance/`. Los contadores de rayos y
+de pruebas los emite el propio binario: no son estimaciones.
+
+---
+
 ## Pendientes de medición
 
 Ninguna de estas filas puede completarse por estimación. Cada hito llena la suya.
@@ -272,9 +380,9 @@ Ninguna de estas filas puede completarse por estimación. Cada hito llena la suy
 |---|---|---|
 | 2 | `scene_radius` y `monolith_height` medidos en el blockout | **Registrado** |
 | 2 | `orbit_radius` derivado por bisección, con `framing_margin` usado | **Registrado** |
-| 3 | Benchmark `safe-interior-visible` (159 primitivas) — mín/mediana/máx | Pendiente |
-| 3 | Benchmark `safe-opaque-water` (160 primitivas) — control de oclusión | Pendiente |
-| 3 | `interactive_frame_time` del perfil interactivo | Pendiente |
+| 3 | Benchmark `safe-interior-visible` (159 primitivas) — mín/mediana/máx | **Registrado** |
+| 3 | Benchmark `safe-opaque-water` (160 primitivas) — control de oclusión | **Registrado** |
+| 3 | `interactive_frame_time` del perfil interactivo | **Registrado** — pendiente de fijar el perfil en la Tarea 3.9 |
 | 5 | Calibración de `L-02`: `distance_boat`, `range`, `intensity` | Pendiente |
 | 6 | `reveal_duration` derivada de `interactive_frame_time` | Pendiente |
 | 7 | Matriz de rendimiento por preset | Pendiente |

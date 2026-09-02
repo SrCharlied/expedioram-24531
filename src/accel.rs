@@ -94,6 +94,11 @@ pub struct TraversalStats {
     pub group_bounds_tests: usize,
     pub cluster_bounds_tests: usize,
     pub primitive_tests: usize,
+    /// Rayos primarios lanzados desde la cámara.
+    pub primary_rays: usize,
+    /// Rayos de sombra lanzados. Separados de los primarios porque su coste
+    /// escala con el número de luces, no con la resolución.
+    pub shadow_rays: usize,
 }
 
 /// Conjunto compacto de primitivas con su propia caja.

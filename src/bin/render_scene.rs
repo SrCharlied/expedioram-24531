@@ -17,7 +17,7 @@ use std::time::Instant;
 
 use nalgebra_glm::Vec3;
 
-use expedition33_continente_inacabado::accel::SceneAccel;
+use expedition33_continente_inacabado::accel::{SceneAccel, TraversalStats};
 use expedition33_continente_inacabado::camera::{Camera, DEFAULT_VERTICAL_FOV};
 use expedition33_continente_inacabado::framebuffer::Framebuffer;
 use expedition33_continente_inacabado::light::{diorama as luces_del_diorama, PointLight};
@@ -36,6 +36,7 @@ Render sin ventana del Continente Inacabado.
   --yaw <grados>      angulo de orbita; por defecto el de la toma hero
   --elevation <grados> elevacion del ojo; por defecto 35 (la de la orbita)
   --shading <modo>    material | albedo | normals (por defecto: material)
+  --benchmark <n>     repite el render n veces y reporta min/mediana/max
   --output <ruta>     PNG de salida (por defecto: evidence/renders/hero.png)
   --help              esta ayuda
 
@@ -58,6 +59,8 @@ struct Opciones {
     yaw: Option<f32>,
     /// `None` usa la elevacion orbital estandar.
     elevation: Option<f32>,
+    /// Repeticiones cronometradas. Una sola pasada no es una medicion.
+    benchmark: usize,
     shading: Shading,
     output: PathBuf,
 }
@@ -70,6 +73,7 @@ impl Default for Opciones {
             height: 600,
             yaw: None,
             elevation: None,
+            benchmark: 1,
             shading: Shading::Material,
             output: PathBuf::from("evidence/renders/hero.png"),
         }
@@ -98,6 +102,9 @@ fn parsear(args: &[String]) -> Result<Option<Opciones>, String> {
             "--width" => opciones.width = numero(bandera, valor)?,
             "--height" => opciones.height = numero(bandera, valor)?,
             "--output" => opciones.output = PathBuf::from(valor),
+            "--benchmark" => {
+                opciones.benchmark = numero(bandera, valor)?.max(1);
+            }
             "--yaw" => {
                 opciones.yaw = Some(
                     valor
@@ -218,16 +225,25 @@ fn ejecutar(opciones: Opciones) -> Result<(), String> {
 
     let mut framebuffer = Framebuffer::new(opciones.width, opciones.height);
 
-    let inicio = Instant::now();
-    let stats = render(
-        &mut framebuffer,
-        &scene,
-        &accel,
-        &lights,
-        &camera,
-        opciones.shading,
-    );
-    let transcurrido = inicio.elapsed();
+    // Repetir y quedarse con la distribucion: una sola pasada mide tanto
+    // el estado de la cache como el renderer.
+    let mut tiempos = Vec::with_capacity(opciones.benchmark);
+    let mut stats = TraversalStats::default();
+
+    for _ in 0..opciones.benchmark {
+        let inicio = Instant::now();
+        stats = render(
+            &mut framebuffer,
+            &scene,
+            &accel,
+            &lights,
+            &camera,
+            opciones.shading,
+        );
+        tiempos.push(inicio.elapsed().as_secs_f64());
+    }
+
+    tiempos.sort_by(|a, b| a.partial_cmp(b).expect("los tiempos no son NaN"));
 
     framebuffer
         .save_png(&opciones.output)
@@ -244,9 +260,17 @@ fn ejecutar(opciones: Opciones) -> Result<(), String> {
         accel.groups.iter().map(|g| g.clusters.len()).sum::<usize>()
     );
     println!(
+        "rayos     {} primarios, {} de sombra",
+        stats.primary_rays, stats.shadow_rays
+    );
+    println!(
         "pruebas   {} de primitiva, {} de bounds",
         stats.primitive_tests,
         stats.group_bounds_tests + stats.cluster_bounds_tests
+    );
+    println!(
+        "por rayo  {:.2} pruebas de primitiva",
+        stats.primitive_tests as f64 / (stats.primary_rays + stats.shadow_rays) as f64
     );
 
     // Los parametros de escala son medidos, no elegidos. Imprimirlos aqui
@@ -273,12 +297,22 @@ fn ejecutar(opciones: Opciones) -> Result<(), String> {
             None => "el del preset".to_string(),
         }
     );
-    // Informativo, no una medicion: un solo render, sin repeticiones y sin
-    // registrar el hardware. Las mediciones formales llegan en el Hito 3.
-    println!(
-        "tiempo    {:.3} s (informativo)",
-        transcurrido.as_secs_f64()
-    );
+    if opciones.benchmark > 1 {
+        println!(
+            "tiempo    min {:.4} s | mediana {:.4} s | max {:.4} s  ({} repeticiones)",
+            tiempos[0],
+            tiempos[tiempos.len() / 2],
+            tiempos[tiempos.len() - 1],
+            opciones.benchmark
+        );
+    } else {
+        // Una sola pasada no es una medicion: sin repeticiones no se
+        // distingue el renderer del estado de la cache.
+        println!(
+            "tiempo    {:.4} s (informativo, sin repeticiones)",
+            tiempos[0]
+        );
+    }
     println!("salida    {}", opciones.output.display());
 
     Ok(())
