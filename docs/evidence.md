@@ -758,11 +758,22 @@ Ahora existe `metal_reusado`, que deriva del basalto y cambia tres cosas:
 
 | Propiedad | Basalto | Metal |
 |---|---:|---:|
-| Tinte | gris cálido | `#8C9299` gris frío |
+| Factor de tinte | — | `(0.70, 0.78, 1.00)` lineal |
 | Escala UV | `3.0` | `12.0` |
 | `shininess` | `96` | `220` |
 | `specular_strength` | `0.85` | `0.80` |
 | `reflection_cap` | `0.0` | `0.0` |
+
+Color resultante, que no es el factor sino el producto:
+
+| | Con texturas | Sin texturas |
+|---|---|---|
+| Roca | `#4C5058` | `#42454C` |
+| Metal | `#404758` | `#373D4C` |
+
+Acero oscuro y frío, no gris claro: el factor solo puede atenuar. La
+proporción azul/rojo sube de `1.38` en la roca a `1.93` en el metal, y eso
+es lo que se lee como acero y no como piedra.
 
 La distinción **no es un brillo más fuerte**. `wet_basalt` ya viene con
 `specular_strength = 0.85` porque la roca mojada brilla mucho, y competir
@@ -813,7 +824,57 @@ Aguas Voladoras cuyo objetivo declarado es el barco—.
 `A-07` (kelp) tiene el mismo defecto que tenía `A-05`: su doc dice
 «reutiliza `meadow` con tinte submarino» y el código pasa `paleta.meadow`
 sin teñir. No se tocó, porque es otra entrada del inventario y su tinte es
-una decisión visual que corresponde aprobar aparte.
+una decisión visual que corresponde aprobar aparte. **Corregida a continuación**, con
+autorización explícita.
+
+### `A-07` kelp — la misma corrección, y una trampa del tinte
+
+Autorizada aparte, antes de la Tarea 5.6. El kelp tenía el defecto idéntico
+al de la cadena: su doc prometía «`meadow` con tinte submarino» y el código
+pasaba `paleta.meadow` sin teñir.
+
+El tinte **corta el rojo** y conserva verde y azul, con factor
+`(0.30, 0.85, 1.00)` en lineal. No es una preferencia de paleta: es lo que
+hace el agua, que absorbe primero las longitudes de onda largas. A un metro
+de profundidad lo primero que se pierde es el rojo, y a un césped al que se
+le quita el rojo se le ve submarino sin necesidad de un sexto material.
+
+| | Con texturas | Sin texturas |
+|---|---|---|
+| Pradera | `#507C39` | `#4C853D` |
+| Kelp | `#2B7339` | `#297B3D` |
+
+Se le suma `ShadowMode::Ignore`. Son doce frondas delgadas dentro de la
+bahía: sombras duras proyectadas por doce palos motearían el lecho con un
+patrón que nadie lee como sombra de kelp, y costarían un rayo de sombra por
+fronda y por luz para producirlo.
+
+Dentro de la bahía quedan **45 primitivas que sí proyectan sombra** de las
+58: el volumen y las doce frondas son las dos excepciones. Lo que da
+profundidad al lecho son las rocas y el barco.
+
+#### La trampa: `with_tint` reemplaza, no multiplica
+
+El primer intento usó un tinte absoluto y el test lo tumbó: el kelp salía
+**más claro** que la pradera en vez de más oscuro.
+
+`Material::with_texture` pone el albedo en blanco a propósito, para no
+oscurecer dos veces. Sobre un material así, reemplazar el albedo equivale a
+multiplicar la muestra y todo funciona. Pero sobre un material de color
+plano, reemplazarlo sustituye el color entero y el «tinte» deja de teñir.
+
+Y el proyecto corre en los dos modos: con assets, y con `--no-textures`,
+que es como corren **todos los tests**. Un tinte absoluto daba dos
+materiales distintos según hubiera texturas cargadas.
+
+La corrección es un helper de tres líneas, `tenir(material, factor)`, que
+multiplica el albedo que el material ya tiene. Da el mismo color efectivo en
+los dos modos, y hay un test que lo comprueba muestreando una textura de un
+píxel contra un color plano equivalente. Los dos materiales derivados de
+Aguas Voladoras usan ese único idioma.
+
+El factor va en **lineal** a propósito: es una atenuación de energía por
+canal, no un color elegido a ojo.
 
 ---
 

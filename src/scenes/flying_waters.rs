@@ -242,15 +242,39 @@ fn mastil(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
     );
 }
 
+/// Aplica un factor multiplicativo al color de un material, conservando su
+/// textura.
+///
+/// Es la única forma de teñir que se comporta igual con textura y sin ella,
+/// y la distinción no es teórica: `with_tint` **reemplaza** el albedo.
+/// Sobre un material texturizado —cuyo albedo es blanco por diseño, para no
+/// oscurecer dos veces— reemplazar equivale a multiplicar la muestra. Pero
+/// sobre uno de color plano sustituye el color, y entonces el «tinte» deja
+/// de teñir: pasa a ser el color entero.
+///
+/// El proyecto corre en los dos modos —con assets y con `--no-textures`, que
+/// es lo que usan todos los tests—, así que un tinte absoluto daría dos
+/// materiales distintos según hubiera texturas cargadas. Multiplicar el
+/// albedo que el material ya tiene da el mismo resultado en los dos casos.
+///
+/// El factor va en **lineal**: es una atenuación de energía por canal, no un
+/// color elegido a ojo.
+fn tenir(material: Material, factor: Color) -> Material {
+    let albedo = material.albedo * factor;
+
+    material.with_tint(albedo)
+}
+
 /// Metal de la cadena y del ancla: `wet_basalt` **reusado**.
 ///
 /// El inventario lo pide así para no crear un sexto material final. Tres
 /// cosas lo separan del basalto del acantilado, y ninguna cuesta una
 /// entrada de paleta:
 ///
-/// - **Tinte gris frío** en vez del gris cálido de la roca. Sobre una
-///   textura, el tinte multiplica; el basalto texturizado tiene albedo
-///   blanco, así que el tinte es lo único que decide su color.
+/// - **Tinte frío**: atenúa el rojo y deja el azul intacto. El resultado es
+///   un gris de acero, algo más oscuro que la roca y claramente menos
+///   cálido. Va como factor multiplicativo, no como color absoluto; ver
+///   `tenir`.
 /// - **Escala UV de `12.0`**, cuatro veces la del basalto. Los eslabones
 ///   miden `0.13`: con la escala del acantilado la textura no alcanzaría a
 ///   repetir ni una vez sobre una cara y el metal se vería plano.
@@ -264,9 +288,8 @@ fn mastil(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
 /// y cada una reflejando costaría un nivel de recursión de los tres que
 /// hay, justo donde el rayo ya gastó dos en entrar.
 fn metal_reusado(scene: &mut Scene, paleta: &Palette) -> MaterialId {
-    let metal = scene
-        .material(paleta.wet_basalt)
-        .with_tint(Color::from_srgb(0.55, 0.57, 0.61))
+    let base = scene.material(paleta.wet_basalt);
+    let metal = tenir(base, Color::new(0.70, 0.78, 1.00))
         .with_uv_scale(12.0)
         .with_specular(0.80, 220.0);
 
@@ -337,11 +360,39 @@ fn ancla_del_barco(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
     );
 }
 
+/// Verde submarino del kelp: `meadow` **reusado**.
+///
+/// Igual que el metal de la cadena, y por la misma razón: el inventario
+/// limita el proyecto a cinco materiales finales.
+///
+/// El tinte **corta el rojo** y conserva verde y azul. Eso no es una
+/// preferencia de paleta, es lo que hace el agua: absorbe primero las
+/// longitudes de onda largas, así que a un metro de profundidad lo primero
+/// que se pierde es el rojo. Un césped al que se le quita el rojo se lee
+/// submarino sin necesidad de un material nuevo.
+///
+/// Ojo con la dirección del tinte: el factor solo puede **quitar**, nunca
+/// añadir. La textura de pradera tiene el azul como canal más bajo, y
+/// ningún factor azulado la volvería turquesa. Lo que sí funciona es
+/// atenuar el rojo hasta que el azul lo supere; ahí el verde vira solo.
+///
+/// `ShadowMode::Ignore`, además: son doce frondas delgadas dentro de la
+/// bahía, y sombras duras proyectadas por doce palos motearían el lecho con
+/// un patrón que nadie lee como sombra de kelp. Cuesta además un rayo de
+/// sombra por fronda y por luz para producir ese moteado.
+fn verde_submarino(scene: &mut Scene, paleta: &Palette) -> MaterialId {
+    let base = scene.material(paleta.meadow);
+    let kelp = tenir(base, Color::new(0.30, 0.85, 1.00)).with_shadow_mode(ShadowMode::Ignore);
+
+    scene.add_material(kelp)
+}
+
 /// `A-07` · doce grupos de kelp sobre el lecho.
 ///
-/// Reutiliza `meadow` con tinte submarino; no se crea un sexto material
-/// final solo para el kelp.
+/// Reutiliza `meadow` con el tinte submarino de `verde_submarino`; no se
+/// crea un sexto material final solo para el kelp.
 fn kelp(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
+    let verde = verde_submarino(scene, paleta);
     let mut azar = Xorshift32::new(0x4B45_4C50);
 
     for _ in 0..12 {
@@ -353,7 +404,7 @@ fn kelp(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
             ancla + offset + Vec3::new(0.0, 0.65 + alto * 0.5, 0.0),
             Vec3::new(0.14, alto, 0.14),
             paleta.canvas,
-            paleta.meadow,
+            verde,
             GRUPO,
             REVELA,
         );
@@ -805,6 +856,12 @@ mod tests {
 
                 // Lo que lo distingue.
                 assert_ne!(metal.albedo, basalto.albedo, "mismo tinte que la roca");
+                // Frio: el rojo se atenua mas que el azul, asi que la
+                // proporcion azul/rojo sube respecto de la roca.
+                assert!(
+                    metal.albedo.b / metal.albedo.r > basalto.albedo.b / basalto.albedo.r,
+                    "el metal no salio mas frio que la roca"
+                );
                 assert!(metal.uv_scale > basalto.uv_scale, "misma escala UV");
                 // El brillo no es mas fuerte, es mas **estrecho**: la roca
                 // mojada ya viene con specular 0.85, y competir en fuerza
@@ -915,5 +972,101 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn el_kelp_usa_verde_submarino_y_no_cesped_de_pradera() {
+        let (scene, paleta) = solo(kelp);
+        let pradera = scene.material(paleta.meadow);
+
+        assert_eq!(scene.objects.len(), 12, "A-07 son doce frondas");
+
+        for objeto in &scene.objects {
+            assert_ne!(
+                objeto.final_material, paleta.meadow,
+                "el kelp usa el cesped de la pradera tal cual"
+            );
+
+            let kelp = scene.material(objeto.final_material);
+
+            // El tinte corta el rojo y conserva verde y azul: es lo que
+            // hace el agua con la luz.
+            assert!(
+                kelp.albedo.r < pradera.albedo.r,
+                "el tinte no atenua el rojo"
+            );
+            assert!(
+                kelp.albedo.b > kelp.albedo.r,
+                "bajo el agua el azul tiene que superar al rojo: {:?}",
+                kelp.albedo
+            );
+            assert!(
+                kelp.albedo.g > kelp.albedo.r,
+                "el kelp dejo de ser verde: {:?}",
+                kelp.albedo
+            );
+
+            // Y no proyecta sombra: doce palos delgados motearian el lecho.
+            assert_eq!(kelp.shadow_mode, ShadowMode::Ignore);
+            assert!(!kelp.blocks_shadows());
+            assert!(kelp.is_valid());
+        }
+    }
+
+    #[test]
+    fn el_kelp_no_es_el_unico_que_ignora_las_sombras_dentro_de_la_bahia() {
+        // El volumen de agua tambien las ignora, por decision del
+        // inventario. Lo que sigue proyectando sombra dentro de la bahia
+        // son las rocas y el barco, que es lo que da profundidad al lecho.
+        let (scene, _) = construir(WaterPreset::RefractiveWater);
+
+        let opacos = scene
+            .objects
+            .iter()
+            .filter(|o| scene.material(o.final_material).blocks_shadows())
+            .count();
+
+        // 58 menos el volumen y menos las doce frondas.
+        assert_eq!(opacos, 58 - 1 - 12);
+    }
+
+    #[test]
+    fn tenir_da_el_mismo_resultado_con_textura_y_sin_ella() {
+        // El fallo que este test existe para atrapar: `with_tint` reemplaza
+        // el albedo. Con un tinte absoluto, el kelp sin texturas salia mas
+        // claro que la pradera en vez de mas oscuro, porque el tinte pasaba
+        // a ser el color entero. Y sin texturas es como corren los tests y
+        // como corre `--no-textures`.
+        use crate::texture::Texture;
+
+        let factor = Color::new(0.30, 0.85, 1.00);
+
+        // Material de color plano.
+        let plano = Material::new(Color::new(0.4, 0.6, 0.2));
+        let plano_tenido = tenir(plano, factor);
+
+        // El mismo material, texturizado: su albedo pasa a blanco y el
+        // color lo aporta la muestra.
+        let mut scene = Scene::new();
+        let textura = Texture::from_pixels(1, 1, vec![Color::new(0.4, 0.6, 0.2)]).expect("1x1");
+        let id = scene.add_texture(textura);
+        let texturizado = Material::new(Color::new(0.4, 0.6, 0.2)).with_texture(id);
+        let texturizado_tenido = tenir(texturizado, factor);
+
+        // El color efectivo de los dos, resuelto por la escena.
+        let uv = nalgebra_glm::Vec2::new(0.5, 0.5);
+        let a = scene.albedo_at(&plano_tenido, &uv);
+        let b = scene.albedo_at(&texturizado_tenido, &uv);
+
+        for (uno, otro, canal) in [(a.r, b.r, "r"), (a.g, b.g, "g"), (a.b, b.b, "b")] {
+            assert!(
+                (uno - otro).abs() < 1e-6,
+                "el canal {canal} difiere con textura y sin ella: {uno} contra {otro}"
+            );
+        }
+
+        // Y en los dos casos el factor **atenuo**: nunca aclara.
+        assert!(a.r < 0.4 && a.g < 0.6);
+        assert!(b.r < 0.4 && b.g < 0.6);
     }
 }
