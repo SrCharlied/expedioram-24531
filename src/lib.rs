@@ -15,6 +15,7 @@ pub mod framebuffer;
 pub mod hit;
 pub mod light;
 pub mod material;
+pub mod optics;
 pub mod primitive;
 pub mod ray;
 pub mod ray_intersect;
