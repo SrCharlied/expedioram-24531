@@ -694,6 +694,12 @@ Medido a `800 × 600`, `reveal 1.0`, cinco repeticiones:
 | `safe-interior-visible` | `0.2223 s` | `28 936` | `26 068` |
 | `safe-opaque-water` | `0.2343 s` | `26 084` | `23 407` |
 
+**Estos tiempos quedaron obsoletos.** La Tarea 5.8 volvió a medir los tres
+presets en una sola sesión y salieron un `45 %` más bajos, con los mismos
+conteos de rayos: esta sesión corrió con la máquina más lenta. Las tres
+cifras siguen siendo comparables **entre sí**, pero para el gate valen las
+de la 5.8.
+
 El volumen añade un **30 %** sobre la referencia sin refracción, y casi
 duplica los rayos secundarios. Contra los `0.0956 s` que el Hito 3 midió
 sin óptica alguna, la escena presentable cuesta hoy **3.0×**.
@@ -1122,6 +1128,155 @@ Las dos tablas ilustrativas del inventario —la de `0.55S` contra `0.20S` y
 la cifra del `25.77 %` que justifica el light linking— siguen comprobadas
 con luces sintéticas, así que la calibración no las invalida: documentan el
 modelo, no el rig.
+
+### Tarea 5.8 — gate de Aguas Voladoras
+
+Toma hero a `800 x 600`, preset `safe-refractive-water`, `reveal 1.0`.
+`cargo run --release --example gate_flying_waters` mide los seis criterios;
+la imagen es `evidence/hito5/gate-hero.png`.
+
+| Criterio | Veredicto |
+|---|---|
+| 1 · La superficie devuelve skybox | **Cumple** |
+| 2 · El borde frontal permite ver el barco | **Cumple** |
+| 3 · El highlight del agua se ve | **Cumple** |
+| 4 · Barco, cadena y ancla legibles | **Parcial** — ver abajo |
+| 5 · Ni acné severo ni negro total | **Cumple** |
+| 6 · Tiempo en release registrado | **Registrado** |
+
+#### 6 · el tiempo
+
+Siete repeticiones, medidas en una sola sesión para que sean comparables
+entre sí:
+
+| Preset | Mediana | Primitivas |
+|---|---:|---:|
+| `safe-refractive-water` | `0.1930 s` | 160 |
+| `safe-interior-visible` | `0.1611 s` | 159 |
+| `safe-opaque-water` | `0.1611 s` | 160 |
+
+El volumen refractivo cuesta un **20 %** sobre la referencia sin refracción.
+`480 000` rayos primarios, `174 427` de sombra, `48 199` reflejados y
+`40 850` refractados.
+
+**Nota de higiene de medición.** Las cifras de la Tarea 5.4 salieron todas
+un `45 %` más altas que estas, con la misma escena y los mismos conteos de
+rayos: aquella sesión corrió con la máquina más lenta. Son comparables entre
+sí, no con estas. La lección es la que ya está en la regla del Hito 3: un
+tiempo solo significa algo junto a los que se midieron con él.
+
+No se fija un umbral de fps, por la decisión del Hito 3 de medir antes de
+imponer metas. Ninguna de las cinco mitigaciones del plan hizo falta: la
+profundidad sigue en `3`, las 58 primitivas de Aguas están completas y el
+cristal conserva su reflexión.
+
+#### 1 · la superficie devuelve skybox
+
+Medido apagando el cielo: se trazan las muestras de la superficie con el
+panorama real y con un cielo negro plano.
+
+| | |
+|---|---:|
+| Píxeles que cambian al apagar el cielo | `985 / 1637` |
+| Aporte medio del cielo | `0.0091` |
+| Aporte máximo | `0.0797` |
+
+El `60 %` de la superficie cambia, así que el reflejo llega al píxel. Es
+**sutil a propósito y por geometría**: la cámara mira el agua a unos `58°`
+de su normal, donde Schlick da `F ≈ 0.043` y el techo deja `kr ≈ 0.039`. El
+máximo, nueve veces la media, está en los píxeles rasantes del borde
+lejano, que es exactamente donde Fresnel sube.
+
+#### 2 · el borde frontal permite ver el barco
+
+| Qué alcanza el rayo primario | Píxeles |
+|---|---:|
+| Superficie del agua | `11 455`  (2.39 % del cuadro) |
+| Borde roto | `11 433` |
+| Casco, directo | `147` |
+| Casco, a través de la superficie | `1 332` |
+| Cadena y ancla, a través | `30` |
+| Lecho, kelp, rocas y caras internas | `10 093` |
+| Refractados que terminan en cielo | `0` |
+
+El casco suma **`1 479` píxeles** visibles y el borde roto no lo tapa. Que
+ningún rayo refractado termine en cielo confirma que `max_depth = 3` alcanza
+para cruzar el volumen: el interior siempre encuentra geometría.
+
+#### 3 · el highlight del agua
+
+Medido apagando el specular del material de agua:
+
+| | |
+|---|---:|
+| Píxeles con aporte especular apreciable | `229 / 1637` |
+| Aporte máximo | `0.1365` |
+
+Un `14 %` de la superficie lleva highlight, con un máximo fuerte. El
+specular sobrevive porque **no entra en el reparto de Fresnel** —se suma
+después—; con `kl = 0.1` habría quedado al diez por ciento. Ver la Tarea
+5.3.
+
+#### 5 · limpieza
+
+| | |
+|---|---:|
+| Píxeles en negro absoluto | `0` |
+| Píxeles aislados más oscuros que **todos** sus vecinos | `7`  (`0.0015 %`) |
+
+Siete píxeles sobre 480 000 no es acné: es el borde de una arista. El
+criterio de detección exige que el píxel sea menos de la mitad de luminoso
+que su vecino **más oscuro**, lo que descarta los bordes de sombra
+legítimos, que tienen vecinos oscuros a un lado.
+
+#### 4 · legibilidad — el criterio que queda parcial
+
+Aquí el conteo de píxeles no alcanzaba, y la luminancia lo destapó:
+
+| Parte | Píxeles | Mín | **Media** | Máx |
+|---|---:|---:|---:|---:|
+| Superficie del agua | `11 455` | `0.0603` | **`0.3365`** | `0.8737` |
+| Casco visible | `1 479` | `0.0991` | **`0.3183`** | `0.4960` |
+| Cadena y ancla | `30` | `0.0833` | `0.2354` | `0.3509` |
+| Borde roto | `11 433` | `0.0272` | **`0.1280`** | `0.9717` |
+
+**El casco está presente pero no contrasta.** Su luminancia media, `0.3183`,
+es prácticamente la del agua que lo rodea, `0.3365`: una razón de `0.95`. Hay
+1 479 píxeles de barco y casi ninguna diferencia de brillo contra el fondo.
+Lo que lo hace legible hoy es la **silueta** —el mástil y la popa rompiendo
+la superficie— y no el tono.
+
+**La cadena y el ancla no son legibles.** `30` píxeles para once primitivas,
+unos `2.7` por pieza. Los eslabones miden `0.13` y a esta distancia una
+unidad de mundo son unos `18` píxeles: cada eslabón ocupa `2.4 x 2.4`. No es
+un problema de iluminación sino de tamaño angular.
+
+**El borde roto es la masa más oscura del cuadro**, con media `0.1280`
+—menos de la mitad que el agua— y ocupa tanto como la bahía entera. Su cara
+frontal mira a la cámara y ninguna de las tres luces la alcanza: `L-01`
+viene de detrás y por la izquierda, y `L-02` está dentro de la bahía y por
+encima del agua.
+
+Subir `E_boat` no arregla el contraste del casco: `L-02` ilumina por igual
+al casco y al lecho que se ve a su lado, así que las dos luminancias suben
+juntas. Las opciones reales, todas dentro del límite de cinco materiales y
+del presupuesto de 58 primitivas:
+
+1. **Aceptar.** El barco se lee por silueta, que es lo que el inventario
+   declara como prioridad para `A-03`. La cadena queda como detalle de la
+   reserva del Hito 7.
+2. **Estrechar `range` y subir `E_boat`.** El casco está a `0.192 S` de
+   `L-02` y el lecho lejano a `0.428 S`: con `range = 0.20 S` el casco recibe
+   `2.90x` lo del fondo, contra `2.15x` con los `0.30 S` calibrados. Compra
+   contraste para el barco a cambio de oscurecer el fondo de la bahía.
+3. **Aclarar el casco con un tinte**, con el mismo idioma `tenir` que usan
+   la cadena y el kelp. Un pecio blanqueado por el sol contrasta contra el
+   agua sin tocar ninguna luz. Es la única opción que ataca el contraste
+   directamente.
+4. **Engrosar los eslabones** de `0.13` a `0.22`, que no cuesta ni una
+   primitiva y llevaría cada eslabón a unos `4` píxeles.
+
+Ninguna se aplicó: son decisiones de composición.
 
 ---
 
