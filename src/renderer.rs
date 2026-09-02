@@ -110,13 +110,17 @@ pub fn cast_ray(
     let objeto = scene.objects[hit.object_index];
     let material = scene.material(objeto.final_material);
 
+    // El albedo se resuelve una vez por impacto, no una por luz: con
+    // textura implica un muestreo, y hay hasta tres luces por punto.
+    let albedo = scene.albedo_at(&material, &hit.uv);
+
     match shading {
         Shading::Normals => color_por_normal(&hit),
-        Shading::Albedo => material.albedo,
+        Shading::Albedo => albedo,
         Shading::Material => {
             // Ambiente: no es física, es el suelo que impide que lo no
             // iluminado quede en negro absoluto y pierda su silueta.
-            let mut color = material.albedo * AMBIENT;
+            let mut color = albedo * AMBIENT;
 
             // El ojo, no la luz: el specular depende de desde dónde se mira.
             let hacia_ojo = -ray.direction;
@@ -150,6 +154,7 @@ pub fn cast_ray(
 
                 color = color
                     + direct_light(
+                        albedo,
                         &material,
                         &hit.normal,
                         &direccion,

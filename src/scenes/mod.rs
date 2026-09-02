@@ -22,7 +22,9 @@ use crate::scene_builder::{
     derive_orbit_radius, eye_at_yaw, measure_scene_radius, Blockout, SceneAnchors, SceneScale,
     HERO_YAW_DEGREES, LOOK_AT_HEIGHT_FRACTION,
 };
+use crate::texture::{Texture, TextureError};
 use nalgebra_glm::Vec3;
+use std::path::Path;
 
 /// Generador pseudoaleatorio determinista, sin dependencias.
 ///
@@ -172,6 +174,54 @@ impl Palette {
     }
 }
 
+/// Rutas de las seis texturas de material, relativas a la raíz del
+/// proyecto. Las genera `cargo run --bin generate_assets`.
+pub const RUTAS_TEXTURAS: [(&str, &str); 6] = [
+    ("canvas", "assets/textures/canvas.png"),
+    ("water", "assets/textures/water.png"),
+    ("wet_basalt", "assets/textures/wet_basalt.png"),
+    ("aged_wood", "assets/textures/aged_wood.png"),
+    ("meadow", "assets/textures/meadow.png"),
+    ("pictorial_crystal", "assets/textures/pictorial_crystal.png"),
+];
+
+impl Palette {
+    /// Registra la paleta **con las texturas cargadas desde disco**.
+    ///
+    /// Devuelve error si falta alguna: el plan exige que un asset ausente se
+    /// note de inmediato y con su ruta, no que se sustituya en silencio por
+    /// un color plano que nadie distinguiría de un material mal ajustado.
+    ///
+    /// Las escalas UV salen del tamaño de las superficies: el lienzo del
+    /// plinto y el césped son grandes y necesitan repetir, mientras que el
+    /// casco del barco cabe en una sola aplicación.
+    pub fn registrar_con_texturas(scene: &mut Scene, raiz: &Path) -> Result<Palette, TextureError> {
+        let base = Palette::registrar(scene);
+
+        let mut ids = Vec::with_capacity(RUTAS_TEXTURAS.len());
+        for (_, ruta) in RUTAS_TEXTURAS {
+            let textura = Texture::load(&raiz.join(ruta))?;
+            ids.push(scene.add_texture(textura));
+        }
+
+        let escalas = [
+            (base.canvas, ids[0], 6.0),
+            (base.water, ids[1], 2.0),
+            (base.wet_basalt, ids[2], 3.0),
+            (base.aged_wood, ids[3], 1.0),
+            (base.meadow, ids[4], 4.0),
+            (base.pictorial_crystal, ids[5], 1.5),
+        ];
+
+        for (material_id, textura_id, escala) in escalas {
+            let material = scene.material(material_id);
+            scene.palette[material_id.0] = material.with_texture(textura_id).with_uv_scale(escala);
+        }
+
+        Ok(base)
+    }
+}
+
 /// Presupuesto de primitivas por región, según el inventario.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Presupuesto {
@@ -202,9 +252,26 @@ pub const SAFE: Presupuesto = Presupuesto {
 /// confiar en que cuadre: una entrada que se pase de largo desplazaría el
 /// total y el benchmark mediría otra escena distinta de la declarada.
 pub fn safe_level(water: WaterPreset) -> Blockout {
+    // Sin texturas no hay nada que cargar, asi que no puede fallar.
+    safe_level_con(water, None).expect("sin assets no hay error posible")
+}
+
+/// Igual que `safe_level`, pero cargando las texturas desde `raiz`.
+///
+/// Con `None` la escena queda con colores planos, que es lo que usan los
+/// tests: así `cargo test` no depende de que los assets estén generados.
+/// Los binarios pasan la raíz del proyecto y obtienen la versión
+/// texturizada, o un error con la ruta del asset que falte.
+pub fn safe_level_con(
+    water: WaterPreset,
+    raiz_assets: Option<&Path>,
+) -> Result<Blockout, TextureError> {
     let mut scene = Scene::new();
     let mut plan = ClusterPlan::new();
-    let paleta = Palette::registrar(&mut scene);
+    let paleta = match raiz_assets {
+        Some(raiz) => Palette::registrar_con_texturas(&mut scene, raiz)?,
+        None => Palette::registrar(&mut scene),
+    };
 
     let anchors_base = anclas_del_diorama();
 
@@ -259,7 +326,7 @@ pub fn safe_level(water: WaterPreset) -> Blockout {
     let accel =
         SceneAccel::build_from_plan(&scene, &plan).expect("el nivel seguro tiene geometria");
 
-    Blockout {
+    Ok(Blockout {
         scene,
         accel,
         anchors,
@@ -269,7 +336,7 @@ pub fn safe_level(water: WaterPreset) -> Blockout {
             water_surface_y,
             orbit_radius,
         },
-    }
+    })
 }
 
 fn verificar(region: &str, obtenido: usize, esperado: usize) {

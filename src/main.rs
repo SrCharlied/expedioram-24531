@@ -6,12 +6,14 @@
 
 use minifb::{Key, Window, WindowOptions};
 use std::f32::consts::PI;
+use std::path::PathBuf;
+use std::process::ExitCode;
 use std::time::Duration;
 
 use expedition33_continente_inacabado::framebuffer::Framebuffer;
 use expedition33_continente_inacabado::light::diorama as luces_del_diorama;
 use expedition33_continente_inacabado::renderer::{render, InteractiveProfile, Shading};
-use expedition33_continente_inacabado::scenes::{safe_level, WaterPreset};
+use expedition33_continente_inacabado::scenes::{safe_level_con, WaterPreset};
 
 const WIDTH: usize = 800;
 const HEIGHT: usize = 600;
@@ -31,7 +33,7 @@ const ZOOM_FRACTION: f32 = 0.06;
 /// solo se usa su signo.
 const WHEEL_STEPS: f32 = 1.0;
 
-fn main() {
+fn main() -> ExitCode {
     let frame_delay = Duration::from_millis(16);
 
     let mut framebuffer = Framebuffer::new(WIDTH, HEIGHT);
@@ -54,7 +56,18 @@ fn main() {
     // prohíbe expresamente fingir transparencia sin óptica. Mostrar el
     // interior es también lo que hace útil la ventana mientras se trabajan
     // los materiales de los Hitos 4 a 6.
-    let diorama = safe_level(WaterPreset::InteriorVisible);
+    // Las texturas se cargan desde la raíz del proyecto. Si falta alguna,
+    // se aborta con su ruta en vez de arrancar con colores planos que nadie
+    // distinguiría de un material mal ajustado.
+    let raiz = PathBuf::from(".");
+    let diorama = match safe_level_con(WaterPreset::InteriorVisible, Some(&raiz)) {
+        Ok(diorama) => diorama,
+        Err(e) => {
+            eprintln!("error: {e}");
+            eprintln!("  genera los assets con: cargo run --release --bin generate_assets");
+            return ExitCode::FAILURE;
+        }
+    };
     let lights = luces_del_diorama(&diorama.anchors, &diorama.scale);
 
     // Ya hay luces: el sombreado completo dice más que el albedo plano.
@@ -80,9 +93,10 @@ fn main() {
 
     println!("El Continente Inacabado");
     println!(
-        "  escena   nivel seguro, {} primitivas, {} luces",
+        "  escena   nivel seguro, {} primitivas, {} luces, {} texturas",
         scene.objects.len(),
-        lights.len()
+        lights.len(),
+        scene.textures.len()
     );
     println!(
         "  perfil   {} x {} en movimiento, {WIDTH} x {HEIGHT} en reposo",
@@ -153,4 +167,6 @@ fn main() {
 
         std::thread::sleep(frame_delay);
     }
+
+    ExitCode::SUCCESS
 }

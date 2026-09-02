@@ -6,7 +6,8 @@ use crate::material::Material;
 use crate::primitive::Primitive;
 use crate::ray::Ray;
 use crate::ray_intersect::RayIntersect;
-use nalgebra_glm::Vec3;
+use crate::texture::Texture;
+use nalgebra_glm::{Vec2, Vec3};
 
 /// Índice dentro de la paleta de materiales de la escena.
 ///
@@ -16,6 +17,14 @@ use nalgebra_glm::Vec3;
 /// misma tabla decenas de veces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MaterialId(pub usize);
+
+/// Índice dentro de la tabla de texturas de la escena.
+///
+/// Misma razón que `MaterialId`: `Material` es `Copy` y se lee en el camino
+/// caliente del renderer. Una `Texture` pesa cientos de kilobytes, así que
+/// el material guarda un índice y la escena posee los datos.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TextureId(pub usize);
 
 /// Grupo de aceleración al que pertenece el objeto. Son los siete nodos de
 /// nivel medio del árbol `escena → región → cluster → primitiva`.
@@ -107,6 +116,7 @@ pub struct SceneObject {
 pub struct Scene {
     pub objects: Vec<SceneObject>,
     pub palette: Vec<Material>,
+    pub textures: Vec<Texture>,
 }
 
 impl Scene {
@@ -125,8 +135,41 @@ impl Scene {
         self.objects.push(object);
     }
 
+    /// Registra una textura y devuelve su índice.
+    pub fn add_texture(&mut self, texture: Texture) -> TextureId {
+        self.textures.push(texture);
+
+        TextureId(self.textures.len() - 1)
+    }
+
     pub fn material(&self, id: MaterialId) -> Material {
         self.palette[id.0]
+    }
+
+    pub fn texture(&self, id: TextureId) -> &Texture {
+        &self.textures[id.0]
+    }
+
+    /// Albedo efectivo de un material en un punto de su superficie.
+    ///
+    /// Si el material tiene textura, el color sale de muestrearla y se
+    /// **modula por el albedo**, que actúa como tinte. Ese producto es lo
+    /// que permite lo que pide el inventario para la cadena del ancla:
+    /// reutilizar la textura de `wet_basalt` con otro tinte y otra escala
+    /// UV en vez de crear un sexto material final.
+    ///
+    /// Sin textura, el albedo es el color y punto.
+    pub fn albedo_at(&self, material: &Material, uv: &Vec2) -> Color {
+        match material.albedo_texture {
+            None => material.albedo,
+            Some(id) => {
+                let muestra = self
+                    .texture(id)
+                    .sample(uv.x * material.uv_scale, uv.y * material.uv_scale);
+
+                material.albedo * muestra
+            }
+        }
     }
 
     /// Caja envolvente de toda la geometría, o `None` si la escena está

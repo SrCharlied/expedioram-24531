@@ -16,6 +16,7 @@
 //! más y se reserva para agua y cristal.
 
 use crate::color::Color;
+use crate::scene::TextureId;
 use nalgebra_glm::{dot, Vec3};
 
 /// Cómo trata un objeto a los rayos de sombra.
@@ -53,7 +54,11 @@ pub enum ShadowMode {
 /// fuera obligaría a tocar cada constructor más adelante.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Material {
+    /// Color propio de la superficie. Con textura actúa como **tinte**: el
+    /// color final es el producto de los dos.
     pub albedo: Color,
+    /// Textura de albedo, si la tiene. `None` significa color plano.
+    pub albedo_texture: Option<TextureId>,
     /// Intensidad del brillo local, `0.0..=1.0`.
     pub specular_strength: f32,
     /// Exponente del brillo. Mayor exponente, brillo más concentrado.
@@ -82,6 +87,7 @@ impl Material {
     pub fn new(albedo: Color) -> Self {
         Material {
             albedo,
+            albedo_texture: None,
             specular_strength: 0.10,
             shininess: 32.0,
             reflection_cap: 0.0,
@@ -105,6 +111,62 @@ impl Material {
         }
     }
 
+    /// Asocia una textura de albedo.
+    ///
+    /// Pone el tinte en blanco a propósito: las texturas del proyecto ya
+    /// llevan el color del material, y multiplicarlas por un tinte de color
+    /// además lo oscurecería dos veces. Para las variantes que sí quieren
+    /// teñir —la cadena sobre la textura de basalto— está `with_tint`
+    /// después de esta.
+    pub fn with_texture(mut self, texture: TextureId) -> Self {
+        self.albedo_texture = Some(texture);
+        self.albedo = Color::new(1.0, 1.0, 1.0);
+        self
+    }
+
+    /// Tinte sobre la textura. Sin textura, es el color plano.
+    pub fn with_tint(mut self, tint: Color) -> Self {
+        self.albedo = tint;
+        self
+    }
+
+    /// Repetición de la textura sobre la cara. Valores mayores que uno
+    /// necesitan que la textura envuelva sin costura.
+    pub fn with_uv_scale(mut self, uv_scale: f32) -> Self {
+        self.uv_scale = uv_scale.max(0.0);
+        self
+    }
+
+    /// Techos ópticos, recortados a `0.0..=1.0`.
+    ///
+    /// El recorte no es cosmético: son fracciones de energía, y un techo
+    /// mayor que uno haría que una superficie devolviera más luz de la que
+    /// recibe. El reparto de Fresnel del Hito 5 da
+    /// `kr + kt = cap_r · F + cap_t · (1 - F)`, que con ambos techos en
+    /// rango nunca pasa de uno.
+    pub fn with_caps(mut self, reflection: f32, transmission: f32, ior: f32) -> Self {
+        self.reflection_cap = reflection.clamp(0.0, 1.0);
+        self.transmission_cap = transmission.clamp(0.0, 1.0);
+        self.ior = ior.max(1.0);
+        self
+    }
+
+    /// ¿Están todos los campos acotados dentro de su rango legal?
+    pub fn is_valid(&self) -> bool {
+        (0.0..=1.0).contains(&self.specular_strength)
+            && (0.0..=1.0).contains(&self.reflection_cap)
+            && (0.0..=1.0).contains(&self.transmission_cap)
+            && self.shininess > 0.0
+            && self.ior >= 1.0
+            && self.uv_scale >= 0.0
+    }
+
+    /// Energía máxima que puede devolver el reparto de Fresnel, sobre
+    /// cualquier ángulo. Nunca debería pasar de uno.
+    pub fn max_energy(&self) -> f32 {
+        self.reflection_cap.max(self.transmission_cap)
+    }
+
     pub fn with_shadow_mode(mut self, shadow_mode: ShadowMode) -> Self {
         self.shadow_mode = shadow_mode;
         self
@@ -116,8 +178,10 @@ impl Material {
     }
 
     pub fn with_specular(mut self, strength: f32, shininess: f32) -> Self {
-        self.specular_strength = strength;
-        self.shininess = shininess;
+        self.specular_strength = strength.clamp(0.0, 1.0);
+        // Un exponente nulo o negativo daría un brillo constante sobre toda
+        // la superficie, que no es un brillo.
+        self.shininess = shininess.max(1.0);
         self
     }
 
@@ -161,7 +225,12 @@ pub const AMBIENT: f32 = 0.06;
 /// No sabe nada de sombras ni de light linking: el renderer decide si esta
 /// luz llega a este objeto antes de llamar. Devolver solo el aporte
 /// mantiene la función pura y comprobable sin escena.
+///
+/// El `albedo` llega aparte y no se lee del material: con textura depende
+/// del punto de la superficie, y resolverlo requiere la tabla de texturas
+/// de la escena. Mantenerlo fuera deja esta función pura.
 pub fn direct_light(
+    albedo: Color,
     material: &Material,
     normal: &Vec3,
     to_light: &Vec3,
@@ -182,7 +251,7 @@ pub fn direct_light(
     // La difusa se tiñe con el albedo; el brillo no. Un highlight toma el
     // color de la luz, no el del objeto: es luz reflejada en la superficie,
     // no luz absorbida y reemitida.
-    material.albedo * luz * difusa + luz * (material.specular_strength * brillo)
+    albedo * luz * difusa + luz * (material.specular_strength * brillo)
 }
 
 #[cfg(test)]
@@ -272,9 +341,33 @@ mod tests {
         let material = Material::new(Color::new(1.0, 1.0, 1.0));
         let blanco = Color::new(1.0, 1.0, 1.0);
 
-        let plena = direct_light(&material, &arriba(), &arriba(), &arriba(), blanco, 1.0);
-        let media = direct_light(&material, &arriba(), &arriba(), &arriba(), blanco, 0.5);
-        let nula = direct_light(&material, &arriba(), &arriba(), &arriba(), blanco, 0.0);
+        let plena = direct_light(
+            material.albedo,
+            &material,
+            &arriba(),
+            &arriba(),
+            &arriba(),
+            blanco,
+            1.0,
+        );
+        let media = direct_light(
+            material.albedo,
+            &material,
+            &arriba(),
+            &arriba(),
+            &arriba(),
+            blanco,
+            0.5,
+        );
+        let nula = direct_light(
+            material.albedo,
+            &material,
+            &arriba(),
+            &arriba(),
+            &arriba(),
+            blanco,
+            0.0,
+        );
 
         assert!(media.r < plena.r && media.r > 0.0);
         assert!(cerca(media.r, plena.r * 0.5));
@@ -285,6 +378,7 @@ mod tests {
     fn una_superficie_de_espaldas_no_aporta_nada() {
         let material = Material::new(Color::new(1.0, 1.0, 1.0));
         let aporte = direct_light(
+            material.albedo,
             &material,
             &arriba(),
             &-arriba(),
@@ -302,6 +396,7 @@ mod tests {
         // aporta al canal rojo, pero el highlight es blanco.
         let material = Material::new(Color::new(1.0, 0.0, 0.0)).with_specular(1.0, 1.0);
         let aporte = direct_light(
+            material.albedo,
             &material,
             &arriba(),
             &arriba(),
@@ -331,6 +426,184 @@ mod tests {
             "no debe lanzar rayos secundarios"
         );
         assert!(!material.is_reflective_or_refractive());
+    }
+
+    #[test]
+    fn los_valores_por_defecto_son_validos_y_conservadores() {
+        let material = Material::new(Color::new(0.5, 0.5, 0.5));
+
+        assert!(material.is_valid());
+        assert_eq!(material.albedo_texture, None, "sin textura por defecto");
+        assert_eq!(material.reflection_cap, 0.0, "sin reflejo");
+        assert_eq!(material.transmission_cap, 0.0, "sin refraccion");
+        assert_eq!(material.ior, 1.0, "sin desviar el rayo");
+        assert_eq!(material.uv_scale, 1.0);
+        assert_eq!(material.shadow_mode, ShadowMode::Opaque);
+        assert!((0.0..=1.0).contains(&material.specular_strength));
+        assert!(material.shininess > 0.0);
+    }
+
+    #[test]
+    fn los_techos_se_recortan_al_rango_legal() {
+        let excesivo = Material::new(Color::black()).with_caps(1.7, -0.4, 0.3);
+
+        assert_eq!(excesivo.reflection_cap, 1.0);
+        assert_eq!(excesivo.transmission_cap, 0.0);
+        // El indice de refraccion nunca baja de uno: por debajo, el vacio
+        // seria mas denso que el medio y la refraccion se invertiria.
+        assert_eq!(excesivo.ior, 1.0);
+        assert!(excesivo.is_valid());
+    }
+
+    #[test]
+    fn el_specular_se_recorta_y_el_exponente_no_se_anula() {
+        let material = Material::new(Color::black()).with_specular(3.0, 0.0);
+
+        assert_eq!(material.specular_strength, 1.0);
+        // Un exponente nulo daria brillo constante en toda la superficie,
+        // que no es un brillo.
+        assert!(material.shininess >= 1.0);
+        assert!(material.is_valid());
+
+        let negativo = Material::new(Color::black()).with_specular(-2.0, -8.0);
+        assert_eq!(negativo.specular_strength, 0.0);
+        assert!(negativo.is_valid());
+    }
+
+    #[test]
+    fn la_escala_uv_no_puede_ser_negativa() {
+        assert_eq!(
+            Material::new(Color::black()).with_uv_scale(-3.0).uv_scale,
+            0.0
+        );
+        assert_eq!(
+            Material::new(Color::black()).with_uv_scale(6.0).uv_scale,
+            6.0
+        );
+    }
+
+    #[test]
+    fn ningun_material_del_proyecto_devuelve_mas_energia_de_la_que_recibe() {
+        // Los techos son fracciones de energia. Con ambos en rango, el
+        // reparto de Fresnel nunca pasa de uno para ningun angulo.
+        let materiales = [
+            Material::new(Color::black()),
+            Material::wet_basalt(Color::black()),
+            Material::new(Color::black()).with_caps(0.9, 0.9, 1.333),
+            Material::new(Color::black()).with_caps(0.35, 0.25, 1.45),
+        ];
+
+        for material in materiales {
+            assert!(material.is_valid());
+            assert!(
+                material.max_energy() <= 1.0,
+                "energia {} para {material:?}",
+                material.max_energy()
+            );
+
+            // Comprobacion directa del reparto, barriendo Fresnel.
+            for paso in 0..=20 {
+                let f = paso as f32 / 20.0;
+                let kr = material.reflection_cap * f;
+                let kt = material.transmission_cap * (1.0 - f);
+
+                assert!(kr + kt <= 1.0 + 1e-6, "kr + kt = {} con F = {f}", kr + kt);
+            }
+        }
+    }
+
+    #[test]
+    fn with_texture_pone_el_tinte_en_blanco() {
+        // Las texturas del proyecto ya llevan el color del material;
+        // multiplicarlas por un tinte de color lo oscureceria dos veces.
+        let material = Material::new(Color::from_srgb(0.3, 0.5, 0.2)).with_texture(TextureId(0));
+
+        assert_eq!(material.albedo_texture, Some(TextureId(0)));
+        assert_eq!(material.albedo, Color::new(1.0, 1.0, 1.0));
+    }
+
+    #[test]
+    fn with_tint_despues_de_with_texture_permite_variantes() {
+        // Es como el inventario resuelve la cadena del ancla: la textura de
+        // basalto con otro tinte y otra escala UV, sin un sexto material.
+        let cadena = Material::wet_basalt(Color::black())
+            .with_texture(TextureId(2))
+            .with_tint(Color::from_srgb(0.55, 0.56, 0.58))
+            .with_uv_scale(4.0);
+
+        assert_eq!(cadena.albedo_texture, Some(TextureId(2)));
+        assert_ne!(cadena.albedo, Color::new(1.0, 1.0, 1.0));
+        assert_eq!(cadena.uv_scale, 4.0);
+        // Y sigue sin reflejar: su brillo es local.
+        assert_eq!(cadena.reflection_cap, 0.0);
+    }
+
+    #[test]
+    fn el_albedo_texturizado_es_el_producto_del_tinte_y_la_muestra() {
+        use crate::scene::Scene;
+        use crate::texture::Texture;
+        use nalgebra_glm::Vec2;
+
+        let mut scene = Scene::new();
+        // Textura de un solo pixel, medio gris lineal.
+        let tex = Texture::from_pixels(1, 1, vec![Color::new(0.5, 0.5, 0.5)]).unwrap();
+        let id = scene.add_texture(tex);
+
+        // Sin tinte: el color es la muestra.
+        let plano = Material::new(Color::black()).with_texture(id);
+        let color = scene.albedo_at(&plano, &Vec2::new(0.3, 0.7));
+        assert!((color.r - 0.5).abs() < 1e-6);
+
+        // Con tinte a la mitad: el producto.
+        let tenido = plano.with_tint(Color::new(0.5, 1.0, 0.0));
+        let color = scene.albedo_at(&tenido, &Vec2::new(0.3, 0.7));
+        assert!((color.r - 0.25).abs() < 1e-6);
+        assert!((color.g - 0.5).abs() < 1e-6);
+        assert!((color.b - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn sin_textura_el_albedo_es_el_color_plano() {
+        use crate::scene::Scene;
+        use nalgebra_glm::Vec2;
+
+        let scene = Scene::new();
+        let material = Material::new(Color::new(0.2, 0.4, 0.6));
+
+        // La UV no influye cuando no hay textura.
+        for uv in [
+            Vec2::new(0.0, 0.0),
+            Vec2::new(0.7, 0.3),
+            Vec2::new(9.0, -2.0),
+        ] {
+            assert_eq!(scene.albedo_at(&material, &uv), material.albedo);
+        }
+    }
+
+    #[test]
+    fn la_escala_uv_repite_la_textura() {
+        use crate::scene::Scene;
+        use crate::texture::Texture;
+        use nalgebra_glm::Vec2;
+
+        let mut scene = Scene::new();
+        // Dos mitades bien distintas, en horizontal.
+        let tex = Texture::from_pixels(
+            2,
+            1,
+            vec![Color::new(1.0, 0.0, 0.0), Color::new(0.0, 0.0, 1.0)],
+        )
+        .unwrap();
+        let id = scene.add_texture(tex);
+
+        let una_vez = Material::new(Color::black()).with_texture(id);
+        let cuatro_veces = una_vez.with_uv_scale(4.0);
+
+        // A u = 0.3, una repeticion cae en la mitad izquierda; con escala 4
+        // cae en 1.2, que envuelve a 0.2: la misma mitad. A u = 0.15 con
+        // escala 4 cae en 0.6: la mitad derecha.
+        assert_eq!(scene.albedo_at(&una_vez, &Vec2::new(0.15, 0.5)).r, 1.0);
+        assert_eq!(scene.albedo_at(&cuatro_veces, &Vec2::new(0.15, 0.5)).b, 1.0);
     }
 
     #[test]

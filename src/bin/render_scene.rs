@@ -25,7 +25,7 @@ use expedition33_continente_inacabado::renderer::{render, Shading};
 use expedition33_continente_inacabado::scene::{cubo_de_prueba, Scene};
 use expedition33_continente_inacabado::scene_builder::{SceneScale, HERO_YAW_DEGREES};
 use expedition33_continente_inacabado::scenes::continent::blockout;
-use expedition33_continente_inacabado::scenes::{safe_level, WaterPreset};
+use expedition33_continente_inacabado::scenes::{safe_level_con, WaterPreset};
 
 const USO: &str = "\
 Render sin ventana del Continente Inacabado.
@@ -37,6 +37,7 @@ Render sin ventana del Continente Inacabado.
   --elevation <grados> elevacion del ojo; por defecto 35 (la de la orbita)
   --shading <modo>    material | albedo | normals (por defecto: material)
   --benchmark <n>     repite el render n veces y reporta min/mediana/max
+  --no-textures       color plano, sin cargar los assets de textura
   --output <ruta>     PNG de salida (por defecto: evidence/renders/hero.png)
   --help              esta ayuda
 
@@ -61,6 +62,8 @@ struct Opciones {
     elevation: Option<f32>,
     /// Repeticiones cronometradas. Una sola pasada no es una medicion.
     benchmark: usize,
+    /// Con texturas por defecto; se pueden desactivar para comparar.
+    texturas: bool,
     shading: Shading,
     output: PathBuf,
 }
@@ -74,6 +77,7 @@ impl Default for Opciones {
             yaw: None,
             elevation: None,
             benchmark: 1,
+            texturas: true,
             shading: Shading::Material,
             output: PathBuf::from("evidence/renders/hero.png"),
         }
@@ -91,6 +95,13 @@ fn parsear(args: &[String]) -> Result<Option<Opciones>, String> {
 
         if bandera == "--help" || bandera == "-h" {
             return Ok(None);
+        }
+
+        // Bandera sin valor: se consume sola.
+        if bandera == "--no-textures" {
+            opciones.texturas = false;
+            i += 1;
+            continue;
         }
 
         let valor = args
@@ -159,7 +170,12 @@ type Preset = (
     Option<SceneScale>,
 );
 
-fn preset(nombre: &str, yaw: Option<f32>, elevation: Option<f32>) -> Result<Preset, String> {
+fn preset(
+    nombre: &str,
+    yaw: Option<f32>,
+    elevation: Option<f32>,
+    texturas: bool,
+) -> Result<Preset, String> {
     match nombre {
         "safe-interior-visible" | "safe-opaque-water" => {
             let water = if nombre == "safe-opaque-water" {
@@ -168,7 +184,15 @@ fn preset(nombre: &str, yaw: Option<f32>, elevation: Option<f32>) -> Result<Pres
                 WaterPreset::InteriorVisible
             };
 
-            let nivel = safe_level(water);
+            // Con texturas, la raiz del proyecto es el directorio actual.
+            let raiz = std::path::PathBuf::from(".");
+            let nivel =
+                safe_level_con(water, if texturas { Some(&raiz) } else { None }).map_err(|e| {
+                    format!(
+                        "{e}
+  genera los assets con: cargo run --release --bin generate_assets"
+                    )
+                })?;
             let grados_yaw = yaw.unwrap_or(HERO_YAW_DEGREES);
             let camera = match elevation {
                 Some(elev) => nivel.camera_at(grados_yaw, elev),
@@ -220,8 +244,12 @@ fn preset(nombre: &str, yaw: Option<f32>, elevation: Option<f32>) -> Result<Pres
 }
 
 fn ejecutar(opciones: Opciones) -> Result<(), String> {
-    let (scene, accel, lights, camera, escala) =
-        preset(&opciones.preset, opciones.yaw, opciones.elevation)?;
+    let (scene, accel, lights, camera, escala) = preset(
+        &opciones.preset,
+        opciones.yaw,
+        opciones.elevation,
+        opciones.texturas,
+    )?;
 
     let mut framebuffer = Framebuffer::new(opciones.width, opciones.height);
 
@@ -254,6 +282,7 @@ fn ejecutar(opciones: Opciones) -> Result<(), String> {
     println!("shading   {:?}", opciones.shading);
     println!("objetos   {}", scene.objects.len());
     println!("luces     {}", lights.len());
+    println!("texturas  {}", scene.textures.len());
     println!(
         "grupos    {} ({} clusters)",
         accel.groups.len(),
