@@ -374,7 +374,7 @@ mod tests {
     use super::*;
     use crate::color::Color;
     use crate::cuboid::Cuboid;
-    use crate::ray_intersect::Material;
+    use crate::material::Material;
     use crate::scene::{RevealGroup, SceneObject};
     use nalgebra_glm::Vec3;
 

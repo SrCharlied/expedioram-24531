@@ -2,8 +2,8 @@
 //! de rayos que roza el arco. No es un benchmark de tiempo.
 use expedition33_continente_inacabado::accel::{ClusterPlan, SceneAccel, TraversalStats};
 use expedition33_continente_inacabado::color::Color;
+use expedition33_continente_inacabado::material::Material;
 use expedition33_continente_inacabado::ray::Ray;
-use expedition33_continente_inacabado::ray_intersect::Material;
 use expedition33_continente_inacabado::scene::Scene;
 use expedition33_continente_inacabado::scenes::breakwater::{generar, Arco, DetailLevel};
 use nalgebra_glm::Vec3;

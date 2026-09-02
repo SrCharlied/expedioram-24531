@@ -75,6 +75,21 @@ impl Mul<f32> for Color {
     }
 }
 
+/// Multiplicar dos colores es filtrar uno a través del otro: es lo que hace
+/// el albedo con la luz que recibe. Un objeto rojo bajo luz azul se ve casi
+/// negro, y eso sale solo de multiplicar canal a canal.
+impl Mul<Color> for Color {
+    type Output = Color;
+
+    fn mul(self, other: Color) -> Color {
+        Color {
+            r: self.r * other.r,
+            g: self.g * other.g,
+            b: self.b * other.b,
+        }
+    }
+}
+
 impl fmt::Display for Color {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Color(r: {}, g: {}, b: {})", self.r, self.g, self.b)
@@ -150,6 +165,27 @@ mod tests {
         for hex in [0x000000, 0xFFFFFF, 0x040C24, 0x6496C8] {
             assert_eq!(Color::from_hex(hex).to_hex(), hex);
         }
+    }
+
+    #[test]
+    fn el_producto_de_colores_filtra_canal_a_canal() {
+        let rojo = Color::new(1.0, 0.0, 0.0);
+        let luz_azul = Color::new(0.2, 0.4, 1.0);
+        let filtrado = rojo * luz_azul;
+
+        assert_close(filtrado.r, 0.2);
+        assert_close(filtrado.g, 0.0);
+        assert_close(filtrado.b, 0.0);
+    }
+
+    #[test]
+    fn el_blanco_es_el_neutro_del_producto() {
+        let color = Color::new(0.3, 0.6, 0.9);
+        let igual = color * Color::new(1.0, 1.0, 1.0);
+
+        assert_close(igual.r, color.r);
+        assert_close(igual.g, color.g);
+        assert_close(igual.b, color.b);
     }
 
     #[test]

@@ -19,6 +19,7 @@ use nalgebra_glm::Vec3;
 
 use expedition33_continente_inacabado::camera::{Camera, DEFAULT_VERTICAL_FOV};
 use expedition33_continente_inacabado::framebuffer::Framebuffer;
+use expedition33_continente_inacabado::light::{diorama as luces_del_diorama, PointLight};
 use expedition33_continente_inacabado::renderer::{render, Shading};
 use expedition33_continente_inacabado::scene::{cubo_de_prueba, Scene};
 use expedition33_continente_inacabado::scene_builder::{SceneScale, HERO_YAW_DEGREES};
@@ -32,7 +33,7 @@ Render sin ventana del Continente Inacabado.
   --height <n>        alto en pixeles (por defecto: 600)
   --yaw <grados>      angulo de orbita; por defecto el de la toma hero
   --elevation <grados> elevacion del ojo; por defecto 35 (la de la orbita)
-  --shading <modo>    material | normals (por defecto: material)
+  --shading <modo>    material | albedo | normals (por defecto: material)
   --output <ruta>     PNG de salida (por defecto: evidence/renders/hero.png)
   --help              esta ayuda
 
@@ -106,6 +107,7 @@ fn parsear(args: &[String]) -> Result<Option<Opciones>, String> {
             "--shading" => {
                 opciones.shading = match valor.as_str() {
                     "material" => Shading::Material,
+                    "albedo" => Shading::Albedo,
                     "normals" => Shading::Normals,
                     otro => return Err(format!("shading desconocido: {otro}")),
                 }
@@ -134,11 +136,9 @@ fn numero(bandera: &str, valor: &str) -> Result<usize, String> {
 ///
 /// El yaw explicito manda sobre el propio del preset: es lo que permite
 /// producir los cuatro angulos que valida la Tarea 2.5 sin recompilar.
-fn preset(
-    nombre: &str,
-    yaw: Option<f32>,
-    elevation: Option<f32>,
-) -> Result<(Scene, Camera, Option<SceneScale>), String> {
+type Preset = (Scene, Vec<PointLight>, Camera, Option<SceneScale>);
+
+fn preset(nombre: &str, yaw: Option<f32>, elevation: Option<f32>) -> Result<Preset, String> {
     match nombre {
         "blockout" => {
             let blockout = blockout();
@@ -148,8 +148,9 @@ fn preset(
                 None => blockout.camera_at_yaw(grados_yaw),
             };
             let escala = blockout.scale;
+            let lights = luces_del_diorama(&blockout.anchors, &blockout.scale);
 
-            Ok((blockout.scene, camera, Some(escala)))
+            Ok((blockout.scene, lights, camera, Some(escala)))
         }
         "cubo" => {
             let eye = match yaw {
@@ -168,19 +169,22 @@ fn preset(
                 DEFAULT_VERTICAL_FOV,
             );
 
-            Ok((cubo_de_prueba(), camera, None))
+            // El cubo de prueba no tiene luces propias: se ve por albedo
+            // o por normales.
+            Ok((cubo_de_prueba(), Vec::new(), camera, None))
         }
         otro => Err(format!("preset desconocido: {otro}")),
     }
 }
 
 fn ejecutar(opciones: Opciones) -> Result<(), String> {
-    let (scene, camera, escala) = preset(&opciones.preset, opciones.yaw, opciones.elevation)?;
+    let (scene, lights, camera, escala) =
+        preset(&opciones.preset, opciones.yaw, opciones.elevation)?;
 
     let mut framebuffer = Framebuffer::new(opciones.width, opciones.height);
 
     let inicio = Instant::now();
-    render(&mut framebuffer, &scene, &camera, opciones.shading);
+    render(&mut framebuffer, &scene, &lights, &camera, opciones.shading);
     let transcurrido = inicio.elapsed();
 
     framebuffer
@@ -191,6 +195,7 @@ fn ejecutar(opciones: Opciones) -> Result<(), String> {
     println!("tamano    {} x {}", opciones.width, opciones.height);
     println!("shading   {:?}", opciones.shading);
     println!("objetos   {}", scene.objects.len());
+    println!("luces     {}", lights.len());
 
     // Los parametros de escala son medidos, no elegidos. Imprimirlos aqui
     // es lo que permite copiarlos a docs/evidence.md sin transcribir a mano.

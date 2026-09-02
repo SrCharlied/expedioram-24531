@@ -7,8 +7,8 @@ use expedition33_continente_inacabado::camera::{Camera, DEFAULT_VERTICAL_FOV};
 use expedition33_continente_inacabado::color::Color;
 use expedition33_continente_inacabado::cuboid::Cuboid;
 use expedition33_continente_inacabado::framebuffer::Framebuffer;
+use expedition33_continente_inacabado::material::Material;
 use expedition33_continente_inacabado::ray::Ray;
-use expedition33_continente_inacabado::ray_intersect::Material;
 use expedition33_continente_inacabado::renderer::{cast_ray, render, Shading, BACKGROUND_COLOR};
 use expedition33_continente_inacabado::scene::{
     MaterialId, RevealGroup, Scene, SceneObject, SpatialGroupId,
@@ -48,7 +48,13 @@ fn render_pequeno_termina_y_llena_el_framebuffer() {
     let (scene, _) = escena_de_un_cubo();
     let mut framebuffer = Framebuffer::new(ANCHO, ALTO);
 
-    render(&mut framebuffer, &scene, &camara_hero(), Shading::Normals);
+    render(
+        &mut framebuffer,
+        &scene,
+        &[],
+        &camara_hero(),
+        Shading::Normals,
+    );
 
     assert_eq!(framebuffer.buffer.len(), ANCHO * ALTO);
 }
@@ -58,7 +64,13 @@ fn al_menos_un_pixel_no_es_el_fondo() {
     let (scene, _) = escena_de_un_cubo();
     let mut framebuffer = Framebuffer::new(ANCHO, ALTO);
 
-    render(&mut framebuffer, &scene, &camara_hero(), Shading::Normals);
+    render(
+        &mut framebuffer,
+        &scene,
+        &[],
+        &camara_hero(),
+        Shading::Normals,
+    );
 
     let del_cubo = framebuffer
         .buffer
@@ -89,8 +101,8 @@ fn ningun_pixel_produce_nan() {
             // Misma generacion de rayo que usa el render, no una copia.
             let ray = camera.ray_from_pixel(x, y, ANCHO, ALTO);
 
-            for shading in [Shading::Normals, Shading::Material] {
-                let color = cast_ray(&ray, &scene, shading);
+            for shading in [Shading::Normals, Shading::Albedo, Shading::Material] {
+                let color = cast_ray(&ray, &scene, &[], shading);
 
                 assert!(
                     color.r.is_finite() && color.g.is_finite() && color.b.is_finite(),
@@ -102,15 +114,15 @@ fn ningun_pixel_produce_nan() {
 }
 
 #[test]
-fn el_sombreado_por_material_resuelve_la_paleta() {
+fn el_sombreado_por_albedo_resuelve_la_paleta() {
     let (scene, piedra) = escena_de_un_cubo();
     let camera = camara_hero();
 
     // Rayo al centro del encuadre: pega de lleno en la cara frontal.
     let ray = Ray::new(camera.eye, Vec3::new(0.0, 0.0, -1.0));
-    let color = cast_ray(&ray, &scene, Shading::Material);
+    let color = cast_ray(&ray, &scene, &[], Shading::Albedo);
 
-    assert_eq!(color, scene.material(piedra).diffuse);
+    assert_eq!(color, scene.material(piedra).albedo);
 }
 
 #[test]
@@ -119,7 +131,7 @@ fn el_fondo_se_devuelve_cuando_el_rayo_no_toca_nada() {
 
     // Rayo que se aleja del cubo.
     let ray = Ray::new(Vec3::new(0.0, 0.0, 5.0), Vec3::new(0.0, 1.0, 0.0));
-    let color = cast_ray(&ray, &scene, Shading::Material);
+    let color = cast_ray(&ray, &scene, &[], Shading::Albedo);
 
     assert_eq!(color.to_hex(), BACKGROUND_COLOR);
 }
@@ -129,7 +141,13 @@ fn guarda_un_png_valido_y_decodificable() {
     let (scene, _) = escena_de_un_cubo();
     let mut framebuffer = Framebuffer::new(ANCHO, ALTO);
 
-    render(&mut framebuffer, &scene, &camara_hero(), Shading::Normals);
+    render(
+        &mut framebuffer,
+        &scene,
+        &[],
+        &camara_hero(),
+        Shading::Normals,
+    );
 
     // Directorio propio por ejecucion: los tests corren en paralelo y dos
     // que escriban el mismo archivo se pisarian.

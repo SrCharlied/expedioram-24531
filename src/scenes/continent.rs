@@ -12,7 +12,7 @@
 
 use crate::color::Color;
 use crate::cuboid::Cuboid;
-use crate::ray_intersect::Material;
+use crate::material::Material;
 use crate::scene::{MaterialId, RevealGroup, Scene, SceneObject, SpatialGroupId};
 use crate::scene_builder::{
     derive_orbit_radius, eye_at_yaw, measure_scene_radius, Blockout, SceneAnchors, SceneScale,

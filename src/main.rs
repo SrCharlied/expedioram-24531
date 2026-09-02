@@ -9,6 +9,7 @@ use std::f32::consts::PI;
 use std::time::Duration;
 
 use expedition33_continente_inacabado::framebuffer::Framebuffer;
+use expedition33_continente_inacabado::light::diorama as luces_del_diorama;
 use expedition33_continente_inacabado::renderer::{render, Shading};
 use expedition33_continente_inacabado::scenes::continent::blockout;
 
@@ -38,10 +39,11 @@ fn main() {
     let mut window = Window::new("Lakitu", WIDTH, HEIGHT, WindowOptions::default()).unwrap();
 
     let diorama = blockout();
+    let lights = luces_del_diorama(&diorama.anchors, &diorama.scale);
 
-    // Los grises del blockout se distinguen por región, así que el
-    // sombreado por material dice más que las normales para juzgar la
-    // composición. Las normales siguen disponibles en el binario headless.
+    // Ya hay luces: el sombreado completo dice mas que el albedo plano.
+    // `Shading::Albedo` reproduce las imagenes con las que se aprobo el
+    // Blockout 1, y `Normals` sigue disponible para revisar geometria.
     let shading = Shading::Material;
 
     // El encuadre queda por encima del eje de órbita, y el radio sale de la
@@ -95,7 +97,7 @@ fn main() {
         }
 
         if camera_moved {
-            render(&mut framebuffer, &scene, &camera, shading);
+            render(&mut framebuffer, &scene, &lights, &camera, shading);
             camera_moved = false;
         }
 

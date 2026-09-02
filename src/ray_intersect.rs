@@ -1,20 +1,5 @@
-use crate::color::Color;
 use crate::hit::Hit;
 use crate::ray::Ray;
-
-/// Propiedades de la superficie de un objeto. Por ahora solo el color
-/// difuso; la reflexión, la refracción y el brillo especular se agregan
-/// en las etapas siguientes.
-#[derive(Debug, Clone, Copy)]
-pub struct Material {
-    pub diffuse: Color,
-}
-
-impl Material {
-    pub fn new(diffuse: Color) -> Self {
-        Material { diffuse }
-    }
-}
 
 /// Lo que sabe hacer una primitiva trazable: decir si un rayo la toca y,
 /// si lo hace, describir el impacto.

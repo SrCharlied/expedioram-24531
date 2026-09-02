@@ -2,9 +2,10 @@ use crate::bounds::Aabb;
 use crate::color::Color;
 use crate::cuboid::Cuboid;
 use crate::hit::Hit;
+use crate::material::Material;
 use crate::primitive::Primitive;
 use crate::ray::Ray;
-use crate::ray_intersect::{Material, RayIntersect};
+use crate::ray_intersect::RayIntersect;
 use nalgebra_glm::Vec3;
 
 /// Índice dentro de la paleta de materiales de la escena.
@@ -255,8 +256,8 @@ mod tests {
         let objeto = scene.objects[hit.object_index];
 
         // El impacto no carga material; lo resuelve el índice del objeto.
-        assert_eq!(scene.material(objeto.initial_material).diffuse.r, 1.0);
-        assert_eq!(scene.material(objeto.final_material).diffuse.b, 1.0);
+        assert_eq!(scene.material(objeto.initial_material).albedo.r, 1.0);
+        assert_eq!(scene.material(objeto.final_material).albedo.b, 1.0);
     }
 
     #[test]

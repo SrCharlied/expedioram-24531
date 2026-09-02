@@ -205,7 +205,7 @@ mod tests {
     use crate::accel::SceneAccel;
     use crate::bounds::Aabb;
     use crate::color::Color;
-    use crate::ray_intersect::Material;
+    use crate::material::Material;
 
     fn generar_nivel(nivel: DetailLevel) -> (Scene, ClusterPlan, Formacion) {
         let mut scene = Scene::new();
