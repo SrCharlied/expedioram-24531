@@ -720,6 +720,91 @@ mod tests {
         let _ = std::fs::remove_dir_all(&raiz);
     }
 
+    /// Tono medio de una textura, promediando los bytes del PNG.
+    ///
+    /// Se promedia en **sRGB** y no en lineal a propósito: aquí no se está
+    /// sumando energía, se está estimando el tono que el ojo compara al
+    /// mirar dos materiales uno al lado del otro.
+    fn tono_medio(fb: &Framebuffer) -> (f32, f32, f32) {
+        let n = fb.buffer.len() as f32;
+        let mut suma = (0.0, 0.0, 0.0);
+
+        for pixel in &fb.buffer {
+            suma.0 += ((pixel >> 16) & 0xFF) as f32;
+            suma.1 += ((pixel >> 8) & 0xFF) as f32;
+            suma.2 += (pixel & 0xFF) as f32;
+        }
+
+        (suma.0 / n, suma.1 / n, suma.2 / n)
+    }
+
+    #[test]
+    fn los_seis_materiales_son_distinguibles_entre_si() {
+        // Criterio del gate del Hito 4: cinco materiales finales mas el
+        // lienzo, claramente distinguibles. Un par que se pareciera
+        // demasiado dejaria dos regiones del diorama con el mismo aspecto,
+        // y eso no se arregla mas tarde con iluminacion.
+        //
+        // Umbral en distancia L1 sobre bytes 0..255, o sea unos 20 puntos
+        // por canal. El par mas cercano medido es basalto contra pradera,
+        // a 79: azul grisaceo contra verde.
+        const MINIMO: f32 = 60.0;
+
+        let tonos: Vec<(&str, (f32, f32, f32))> = ASSETS
+            .iter()
+            .take(6)
+            .map(|asset| (asset.ruta, tono_medio(&(asset.construir)())))
+            .collect();
+
+        for (i, (ruta_a, a)) in tonos.iter().enumerate() {
+            for (ruta_b, b) in tonos.iter().skip(i + 1) {
+                let distancia = (a.0 - b.0).abs() + (a.1 - b.1).abs() + (a.2 - b.2).abs();
+
+                assert!(
+                    distancia > MINIMO,
+                    "{ruta_a} y {ruta_b} se parecen demasiado: L1 = {distancia:.1}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn el_lienzo_es_el_mas_claro_de_los_seis() {
+        // La revelacion va de lienzo a material pintado, asi que el lienzo
+        // tiene que ser el punto de partida claro del que todo se separa.
+        // Si un material final saliera mas claro, pintarlo se veria como
+        // aclarar y no como pintar.
+        let tonos: Vec<(&str, f32)> = ASSETS
+            .iter()
+            .take(6)
+            .map(|asset| {
+                let (r, g, b) = tono_medio(&(asset.construir)());
+
+                (asset.ruta, r + g + b)
+            })
+            .collect();
+
+        let (ruta_claro, brillo_claro) = tonos
+            .iter()
+            .copied()
+            .max_by(|a, b| a.1.partial_cmp(&b.1).expect("los tonos no son NaN"))
+            .expect("hay seis materiales");
+
+        assert_eq!(ruta_claro, "assets/textures/canvas.png");
+
+        // Y con margen: el segundo mas claro queda bien por debajo.
+        let segundo = tonos
+            .iter()
+            .filter(|(ruta, _)| *ruta != ruta_claro)
+            .map(|(_, brillo)| *brillo)
+            .fold(0.0_f32, f32::max);
+
+        assert!(
+            brillo_claro > segundo + 60.0,
+            "el lienzo no destaca: {brillo_claro:.1} contra {segundo:.1}"
+        );
+    }
+
     #[test]
     fn mezclar_en_lineal_no_oscurece_los_medios_tonos() {
         // La razon del pipeline de color: el punto medio entre negro y

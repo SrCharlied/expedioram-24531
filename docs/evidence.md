@@ -468,12 +468,14 @@ verificación visual humana: que el proceso viva no dice qué se ve.
 
 ---
 
-## Hito 4 — Skybox: la mitad del panorama que sí se ve
+## Hito 4 — Texturas, materiales y skybox
+
+### Skybox: la mitad del panorama que sí se ve
 
 Al integrar el muestreo equirectangular en la Tarea 4.5 se midió algo que
 la autoría de los panoramas, en la Tarea 4.2, había supuesto al revés.
 
-### La medición
+#### La medición
 
 La cámara hero orbita a `35°` de elevación, con la vista inclinada `31.94°`
 hacia abajo y medio FOV vertical de `30°`. Los rayos que fallan la
@@ -495,7 +497,7 @@ pero insuficiente: la mitad inferior se había resuelto como relleno neutro,
 con el argumento de que «ahí no hay cielo que describir». Resulta que ahí
 está todo el cielo que se ve.
 
-### La corrección
+#### La corrección
 
 Solo el hemisferio inferior de `skybox_painted`. Franja cálida breve —unos
 `5°`— que deja legible dónde está el horizonte, tránsito por malva, e
@@ -522,7 +524,7 @@ byte-idéntico, igual que las seis texturas de material, y las semillas del
 generador no cambiaron. El único asset modificado es
 `assets/skybox/painted.png`.
 
-### Qué queda amarrado con tests
+#### Qué queda amarrado con tests
 
 La calibración vive en cinco tests del generador, para que no se pierda en
 un retoque posterior: el fondo de la toma hero es azul y no cálido a `−15`,
@@ -536,6 +538,117 @@ cardinales contra UV esperada, el azimut atado al yaw de la cámara vía
 `eye_at_yaw`, la continuidad de la costura en `+X`, y el cenit exacto, que
 bajo `WrapMode::Repeat` envolvería a `v = 0` y devolvería el color del
 suelo a un rayo que mira recto hacia arriba.
+
+### Gate del Hito 4
+
+Dos criterios: render safe con lienzo y render final con cinco materiales
+claramente distinguibles, y todos los assets cargando desde un clon limpio.
+
+**Preset del gate: `safe-opaque-water`.** El agua es uno de los cinco
+materiales, y en `safe-interior-visible` el volumen no existe todavía —lo
+construye la Tarea 5.4—, así que la bahía queda como basalto sin iluminar.
+El preset opaco es el que puede mostrar los seis materiales a la vez. Sigue
+sin servir para aprobar rendimiento, por la razón ya registrada en el Hito
+3: oculta 44 primitivas del interior.
+
+| Render | Estado | Archivo |
+|---|---|---|
+| Lienzo | `reveal 0.0` | `evidence/hito4/gate_lienzo.png` |
+| Materiales | `reveal 1.0` | `evidence/hito4/gate_materiales.png` |
+| Materiales, sin luces | `reveal 1.0`, shading `albedo` | `evidence/hito4/gate_materiales_albedo.png` |
+
+`800 × 600`, preset `safe-opaque-water`, 160 primitivas, 8 texturas
+cargadas. La progresión completa de la revelación está en
+`reveal_000/033/066/100.png`, a `420 × 315`.
+
+#### Los seis materiales, medidos
+
+Tono medio de cada textura, promediando los bytes del PNG. Se promedia en
+sRGB y no en lineal porque aquí no se suma energía: se estima el tono que el
+ojo compara al ver dos materiales uno al lado del otro.
+
+| Material | Tono medio | Descripción |
+|---|---|---|
+| `canvas` | `#DFD7C3` | marfil |
+| `water` | `#3D7BA2` | azul medio |
+| `wet_basalt` | `#4C5058` | azul grisáceo oscuro |
+| `aged_wood` | `#583C26` | marrón cálido |
+| `meadow` | `#507C39` | verde |
+| `pictorial_crystal` | `#90C1CF` | cian pálido |
+
+Separación del par más cercano, en distancia L1 sobre bytes `0..255`:
+
+| Par | L1 |
+|---|---|
+| `wet_basalt` / `meadow` | `79.4` |
+| `wet_basalt` / `aged_wood` | `83.0` |
+| `aged_wood` / `meadow` | `91.6` |
+| `canvas` / `pictorial_crystal` | `113.1` |
+
+Los quince pares quedan por encima de `60`, unos 20 puntos por canal. El
+umbral vive en un test del generador, así que un retoque de textura que
+acerque dos materiales falla antes de llegar a un render.
+
+Un segundo test fija que el **lienzo sea el más claro de los seis**, con
+`633` de brillo sumado contra `544` del segundo. Si un material final
+saliera más claro que el lienzo, pintarlo se leería como aclarar en vez de
+como pintar.
+
+#### El estado sin pintar, comprobado del lado de la escena
+
+En `reveal 0.0` lo único que no es lienzo son las **seis piezas de `G-04`**
+—la paleta y el pincel—, y son inertes: la herramienta con la que se pinta
+no se pinta a sí misma. El test recorre los objetos de los dos presets y lo
+verifica contra el material del plinto.
+
+Ese test existe por un fallo real: el nivel seguro se construyó en la Tarea
+3.7, antes de que existiera la revelación, con el mismo material en los dos
+extremos de cada objeto. La interpolación funcionaba y no se veía nada.
+
+#### Clon limpio
+
+```text
+git clone . <temporal>
+cd <temporal>
+render_scene --preset safe-opaque-water --width 800 --height 600 --reveal 1.0
+```
+
+Ocho assets versionados, ocho texturas cargadas, y el PNG resultante
+**byte-idéntico** al del árbol de trabajo. La raíz de assets es el
+directorio actual, así que el binario ejecutado dentro del clon lee los
+archivos del clon y no los del repositorio original.
+
+El camino de error también se verificó, escondiendo un asset en el clon:
+
+```text
+error: no existe la textura .\assets/skybox/painted.png
+  genera los assets con: cargo run --release --bin generate_assets
+```
+
+Código de salida `1`, la ruta en el mensaje y ninguna sustitución
+silenciosa. Es lo que el plan exige: un asset ausente se descubre al
+arrancar, no mirando la imagen final.
+
+#### Checklist
+
+| Criterio | Estado |
+|---|---|
+| Render safe con lienzo | **Cumple** |
+| Cinco materiales finales distinguibles, más el lienzo | **Cumple** — quince pares por encima del umbral |
+| Todos los assets cargan desde un clon limpio | **Cumple** — render byte-idéntico |
+| Asset ausente da error con su ruta | **Cumple** |
+
+#### Lo que queda abierto y no es del Hito 4
+
+En `safe-interior-visible` el interior de la bahía se ve **negro**: sin
+volumen de agua no hay superficie que devuelva luz, y el basalto interior
+solo recibe ambiente. Lo resuelven la Tarea 5.4 —volumen cerrado y borde
+roto— y la 5.7 —calibración de `L-02`—. Se registra aquí para que no se
+confunda con un defecto de materiales.
+
+Los tiempos de estos renders son informativos, de una sola pasada
+—`0.17 s` a `0.25 s` a `800 × 600`—. Los benchmarks del proyecto se hacen
+con repeticiones y sobre `safe-interior-visible`, como en el Hito 3.
 
 ---
 

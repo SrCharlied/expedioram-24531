@@ -438,6 +438,45 @@ pub fn anclas_del_diorama() -> SceneAnchors {
 mod tests {
     use super::*;
 
+    /// En el estado sin pintar, lo unico que no es lienzo son las seis
+    /// piezas de `G-04`.
+    ///
+    /// Es el contrato de la revelacion visto del lado de la escena: si un
+    /// objeto naciera ya con su material final, pintarlo no cambiaria nada
+    /// y el fallo pasaria inadvertido hasta el Hito 6. Es exactamente lo
+    /// que ocurrio antes de partir `masa` en dos.
+    #[test]
+    fn sin_pintar_solo_la_paleta_escapa_del_lienzo() {
+        for water in [WaterPreset::InteriorVisible, WaterPreset::OpaqueWater] {
+            let diorama = safe_level(water);
+            let paleta_canvas = diorama.scene.objects[0].initial_material;
+
+            let ajenos: Vec<_> = diorama
+                .scene
+                .objects
+                .iter()
+                .filter(|objeto| objeto.initial_material != paleta_canvas)
+                .collect();
+
+            assert_eq!(
+                ajenos.len(),
+                6,
+                "{water:?}: {} objetos no nacen en lienzo",
+                ajenos.len()
+            );
+
+            for objeto in ajenos {
+                assert_eq!(
+                    objeto.spatial_group,
+                    SpatialGroupId::InteractionProps,
+                    "un objeto fuera de G-04 no nace en lienzo"
+                );
+                // Y son inertes: la herramienta no se pinta.
+                assert_eq!(objeto.initial_material, objeto.final_material);
+            }
+        }
+    }
+
     #[test]
     fn el_presupuesto_seguro_suma_160() {
         assert_eq!(SAFE.total(), 160);
