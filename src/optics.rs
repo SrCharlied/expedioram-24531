@@ -21,6 +21,7 @@
 //! del lado de `−normal`. Toda la aritmética de abajo depende de eso.
 
 use crate::hit::Hit;
+use crate::material::Material;
 use crate::ray::Ray;
 use crate::EPSILON;
 use nalgebra_glm::{dot, Vec3};
@@ -86,6 +87,139 @@ pub fn refract(incident: &Vec3, normal: &Vec3, eta: f32) -> Option<Vec3> {
 
     Some(incident * eta + normal * (eta * cos_entrada - cos_salida))
 }
+
+/// Reflectancia especular de Schlick, la aproximación estándar a Fresnel.
+///
+/// `R0` es la reflectancia a incidencia perpendicular, y sale del salto de
+/// índices contra el aire. Para el agua da `2.04 %`: mirando el agua de
+/// frente casi todo se transmite, y por eso una superficie de agua vista
+/// desde arriba deja ver el fondo mientras que vista de canto es un espejo.
+///
+/// `cos_theta` se mide **en el lado menos denso** de la interfaz. Esta
+/// función no lo sabe: recibe el coseno ya elegido. Quien resuelve eso es
+/// `fresnel`, y es la parte donde es fácil equivocarse.
+pub fn fresnel_schlick(cos_theta: f32, ior: f32) -> f32 {
+    let r0 = ((IOR_AIRE - ior) / (IOR_AIRE + ior)).powi(2);
+    let complemento = 1.0 - cos_theta.clamp(0.0, 1.0);
+
+    r0 + (1.0 - r0) * complemento.powi(5)
+}
+
+/// Reflectancia en un impacto concreto, resolviendo el lado y la reflexión
+/// total interna.
+///
+/// Dos cosas que `fresnel_schlick` no puede decidir sola:
+///
+/// - **En reflexión total interna devuelve `1.0`.** No es un caso límite
+///   que se pueda aproximar: pasado el ángulo crítico no se transmite nada,
+///   y toda la energía vuelve. Es lo que convierte la cara interna de la
+///   superficie del agua en un espejo visto desde abajo.
+/// - **El coseno se toma del lado menos denso.** Saliendo del agua, el
+///   ángulo interno es más cerrado que el externo, y evaluar Schlick con él
+///   daría una reflectancia mucho menor de la real justo antes del crítico.
+///   El resultado se vería como una superficie que se vuelve espejo de
+///   golpe en vez de progresivamente.
+///
+/// Con esa corrección la función es **recíproca**: un rayo que entra a `θi`
+/// y el que sale por el camino inverso obtienen la misma reflectancia, que
+/// es lo que exige la física y lo que comprueba un test.
+pub fn fresnel(incident: &Vec3, normal: &Vec3, front_face: bool, ior: f32) -> f32 {
+    let eta = eta_for(front_face, ior);
+    let cos_entrada = (-dot(incident, normal)).clamp(0.0, 1.0);
+    let sin2_salida = eta * eta * (1.0 - cos_entrada * cos_entrada);
+
+    if sin2_salida > 1.0 {
+        return 1.0;
+    }
+
+    let cos_menos_denso = if eta > 1.0 {
+        // Se sale hacia el medio menos denso: el ángulo que importa es el
+        // transmitido.
+        (1.0 - sin2_salida).sqrt()
+    } else {
+        cos_entrada
+    };
+
+    fresnel_schlick(cos_menos_denso, ior)
+}
+
+/// Reparto de la energía de un impacto entre sus tres destinos.
+///
+/// ```text
+/// kr = reflection_cap   × F
+/// kt = transmission_cap × (1 − F)
+/// kl = max(0, 1 − kr − kt)
+/// ```
+///
+/// Los techos son **techos y no contribuciones constantes**: acotan cuánto
+/// puede llegar a reflejar o transmitir un material, y Fresnel decide
+/// cuánto de ese margen se usa en cada ángulo.
+///
+/// `local` es lo que queda para el color propio de la superficie —ambiente
+/// y difusa—. Que exista es la razón de los caps `0.9 / 0.9` del agua: con
+/// `1.0 / 1.0` el reparto deja `kl = 0` y la textura del agua y su
+/// `uv_scale` quedarían muertos, sin aportar un solo píxel.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EnergySplit {
+    /// Fracción que se va por el rayo reflejado.
+    pub reflected: f32,
+    /// Fracción que se va por el rayo refractado.
+    pub transmitted: f32,
+    /// Fracción que porta el color propio de la superficie.
+    pub local: f32,
+}
+
+impl EnergySplit {
+    /// Reparte con los dos techos y una reflectancia ya calculada.
+    pub fn new(reflection_cap: f32, transmission_cap: f32, fresnel: f32) -> Self {
+        let f = fresnel.clamp(0.0, 1.0);
+        let reflected = reflection_cap.clamp(0.0, 1.0) * f;
+        let transmitted = transmission_cap.clamp(0.0, 1.0) * (1.0 - f);
+
+        EnergySplit {
+            reflected,
+            transmitted,
+            // El recorte a cero es defensivo y no debería activarse nunca:
+            // con los dos techos en rango, `kr + kt` no pasa de uno. Ver
+            // `Material::is_valid`.
+            local: (1.0 - reflected - transmitted).max(0.0),
+        }
+    }
+
+    /// El reparto de un material, leyendo sus techos.
+    pub fn for_material(material: &Material, fresnel: f32) -> Self {
+        EnergySplit::new(material.reflection_cap, material.transmission_cap, fresnel)
+    }
+
+    /// Suma de las tres fracciones. Vale uno salvo que los techos vinieran
+    /// fuera de rango, y entonces el recorte de `local` la deja por debajo.
+    pub fn total(&self) -> f32 {
+        self.reflected + self.transmitted + self.local
+    }
+
+    /// ¿Vale la pena lanzar el rayo reflejado?
+    ///
+    /// Un aporte por debajo del umbral no cambia el píxel y cuesta un
+    /// recorrido completo de la escena. El umbral vive aquí y no en el
+    /// renderer para que los dos secundarios usen el mismo criterio.
+    pub fn worth_reflecting(&self) -> bool {
+        self.reflected > SECONDARY_THRESHOLD
+    }
+
+    /// ¿Vale la pena lanzar el rayo refractado?
+    pub fn worth_refracting(&self) -> bool {
+        self.transmitted > SECONDARY_THRESHOLD
+    }
+}
+
+/// Aporte mínimo para que un rayo secundario se lance.
+///
+/// `1/255` es el paso de un byte de color: por debajo de eso el aporte no
+/// puede mover el píxel ni en una unidad, así que el recorrido sería
+/// trabajo puro. Con los caps del inventario el umbral solo poda casos
+/// reales: el cristal pictórico, con `reflection_cap = 0.10`, cae por
+/// debajo cuando `F` baja de `0.039`.
+pub const SECONDARY_THRESHOLD: f32 = 1.0 / 255.0;
 
 /// Ángulo crítico de un medio, en grados, o `None` si no tiene.
 ///
@@ -496,5 +630,284 @@ mod tests {
             (separacion - EPSILON).abs() < 1e-7,
             "separacion {separacion}"
         );
+    }
+
+    // ------------------------------------------------------- Fresnel
+
+    #[test]
+    fn a_incidencia_perpendicular_fresnel_da_r0() {
+        // El numero clasico del agua: 2.04 % de reflectancia de frente.
+        let r0 = ((1.0 - IOR_AGUA) / (1.0 + IOR_AGUA)).powi(2);
+
+        assert!((r0 - 0.020375).abs() < 1e-5, "R0 salio {r0}");
+        assert!((fresnel_schlick(1.0, IOR_AGUA) - r0).abs() < 1e-6);
+
+        // Y por el camino del impacto, que es el que usa el renderer.
+        let perpendicular = -arriba();
+        let f = fresnel(&perpendicular, &arriba(), true, IOR_AGUA);
+
+        assert!((f - r0).abs() < 1e-6, "fresnel perpendicular dio {f}");
+    }
+
+    #[test]
+    fn fresnel_crece_de_forma_monotona_hacia_el_rasante() {
+        let mut anterior = -1.0;
+
+        for grados in 0..=89 {
+            let entrada = incidencia(grados as f32);
+            let f = fresnel(&entrada, &arriba(), true, IOR_AGUA);
+
+            assert!(
+                (0.0..=1.0).contains(&f),
+                "a {grados} grados F salio de rango: {f}"
+            );
+            assert!(
+                f >= anterior - 1e-6,
+                "a {grados} grados F bajo: {f} contra {anterior}"
+            );
+            anterior = f;
+        }
+
+        // Y a rasante se acerca a uno: el agua de canto es un espejo.
+        let rasante = fresnel(&incidencia(89.5), &arriba(), true, IOR_AGUA);
+        assert!(rasante > 0.5, "a 89.5 grados F apenas llego a {rasante}");
+    }
+
+    #[test]
+    fn en_reflexion_total_interna_fresnel_vale_uno() {
+        let critico = critical_angle_degrees(IOR_AGUA).expect("el agua tiene critico");
+
+        // Justo por encima del critico ya no se transmite nada.
+        for grados in [critico + 0.5, 60.0, 75.0, 89.0] {
+            let entrada = -incidencia(grados);
+            let f = fresnel(&entrada, &-arriba(), false, IOR_AGUA);
+
+            assert_eq!(f, 1.0, "a {grados} grados desde dentro F dio {f}");
+        }
+    }
+
+    #[test]
+    fn fresnel_es_reciproco_entre_entrar_y_salir() {
+        // La correccion del lado menos denso: entrar a un angulo y salir
+        // por el camino inverso tiene que dar la misma reflectancia. Con el
+        // coseno interno la igualdad no se cumple, y la superficie se
+        // volveria espejo de golpe en vez de progresivamente.
+        for grados in [5.0_f32, 20.0, 40.0, 60.0, 80.0] {
+            let entrada = incidencia(grados);
+            let f_entrando = fresnel(&entrada, &arriba(), true, IOR_AGUA);
+
+            // El rayo que hace el camino inverso: sale del agua por donde
+            // el otro entro.
+            let dentro = refract(&entrada, &arriba(), eta_for(true, IOR_AGUA)).expect("entra");
+            let f_saliendo = fresnel(&dentro, &arriba(), false, IOR_AGUA);
+
+            assert!(
+                (f_entrando - f_saliendo).abs() < 1e-5,
+                "a {grados} grados: {f_entrando} entrando contra {f_saliendo} saliendo"
+            );
+        }
+    }
+
+    #[test]
+    fn con_ior_uno_schlick_degenera_y_hay_que_saberlo() {
+        // Schlick sube hacia el rasante **tambien** con R0 = 0: a 45 grados
+        // devuelve 0.0022 cuando lo fisico seria cero, porque sin salto de
+        // indice no hay interfaz que refleje. Es un artefacto conocido de la
+        // aproximacion, no un fallo del reparto, y se documenta aqui en vez
+        // de parchearse: forzar F = 0 con ior 1.0 dejaria sin reflexion a un
+        // material tipo espejo, que es el otro uso legitimo de ese caso.
+        assert_eq!(fresnel_schlick(1.0, IOR_AIRE), 0.0, "de frente si da cero");
+
+        let a_45 = fresnel(&incidencia(45.0), &arriba(), true, IOR_AIRE);
+        assert!(
+            (a_45 - 0.002155).abs() < 1e-5,
+            "el artefacto cambio de valor: {a_45}"
+        );
+
+        // Es inofensivo porque el artefacto se multiplica por el techo de
+        // reflexion, y con techo cero no llega a ningun pixel.
+        let reparto = EnergySplit::new(0.0, 0.0, a_45);
+
+        assert_eq!(reparto.reflected, 0.0);
+        assert!((reparto.local - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn ningun_material_del_proyecto_depende_de_ese_artefacto() {
+        // El invariante que hace inofensivo lo anterior, vigilado sobre la
+        // paleta real: un material con `ior = 1.0` y techo de reflexion
+        // mayor que cero reflejaria solo a angulos rasantes, con un perfil
+        // que no describe ni un dielectrico ni un espejo.
+        use crate::scene::Scene;
+        use crate::scenes::Palette;
+
+        let mut scene = Scene::new();
+        Palette::registrar(&mut scene);
+
+        for (indice, material) in scene.palette.iter().enumerate() {
+            assert!(
+                !(material.ior == IOR_AIRE && material.reflection_cap > 0.0),
+                "el material {indice} refleja con ior 1.0: techo {}",
+                material.reflection_cap
+            );
+        }
+    }
+
+    // ------------------------------------------------ reparto de energia
+
+    #[test]
+    fn el_reparto_suma_uno_en_todo_el_rango() {
+        // La invariante central: nada se pierde y nada se inventa.
+        let pares = [
+            (0.0, 0.0),
+            (0.9, 0.9),
+            (0.10, 0.25),
+            (1.0, 0.0),
+            (0.0, 1.0),
+            (0.35, 0.55),
+        ];
+
+        for (cap_r, cap_t) in pares {
+            for paso in 0..=40 {
+                let f = paso as f32 / 40.0;
+                let reparto = EnergySplit::new(cap_r, cap_t, f);
+
+                assert!(
+                    (reparto.total() - 1.0).abs() < 1e-6,
+                    "caps {cap_r}/{cap_t} con F = {f} sumaron {}",
+                    reparto.total()
+                );
+                assert!(reparto.local >= 0.0);
+            }
+        }
+    }
+
+    #[test]
+    fn los_caps_del_agua_dejan_exactamente_un_decimo_local() {
+        // La razon de elegir 0.9 / 0.9: con los dos techos iguales,
+        // `kr + kt = cap × (F + 1 − F) = cap` para cualquier angulo, asi
+        // que `kl` es constante y no depende de como se mire el agua.
+        // Con 1.0 / 1.0 seria cero y la textura del agua no aportaria nada.
+        for paso in 0..=100 {
+            let f = paso as f32 / 100.0;
+            let reparto = EnergySplit::new(0.9, 0.9, f);
+
+            assert!(
+                (reparto.local - 0.1).abs() < 1e-6,
+                "con F = {f} el local dio {}",
+                reparto.local
+            );
+        }
+
+        // Y sobre angulos reales, incluida la reflexion total interna.
+        for grados in [0.0_f32, 30.0, 60.0, 89.0] {
+            let f = fresnel(&incidencia(grados), &arriba(), true, IOR_AGUA);
+            let reparto = EnergySplit::new(0.9, 0.9, f);
+
+            assert!((reparto.local - 0.1).abs() < 1e-6);
+        }
+
+        let tir = EnergySplit::new(0.9, 0.9, 1.0);
+        assert!((tir.local - 0.1).abs() < 1e-6);
+        assert!((tir.reflected - 0.9).abs() < 1e-6);
+        assert_eq!(tir.transmitted, 0.0, "en TIR no se transmite nada");
+    }
+
+    #[test]
+    fn ningun_par_de_techos_devuelve_mas_energia_de_la_que_recibe() {
+        // Barrido sobre los dos techos y sobre el angulo. El recorte de los
+        // constructores de `Material` mantiene los techos en 0..1, y con
+        // eso `kr + kt` no puede pasar de uno para ningun F.
+        for i in 0..=10 {
+            for j in 0..=10 {
+                let (cap_r, cap_t) = (i as f32 / 10.0, j as f32 / 10.0);
+
+                for paso in 0..=20 {
+                    let f = paso as f32 / 20.0;
+                    let reparto = EnergySplit::new(cap_r, cap_t, f);
+                    let secundarios = reparto.reflected + reparto.transmitted;
+
+                    assert!(
+                        secundarios <= 1.0 + 1e-6,
+                        "caps {cap_r}/{cap_t} con F = {f} repartieron {secundarios}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn los_techos_fuera_de_rango_se_recortan_y_no_desbordan() {
+        let absurdo = EnergySplit::new(5.0, -2.0, 0.5);
+
+        assert!((absurdo.reflected - 0.5).abs() < 1e-6);
+        assert_eq!(absurdo.transmitted, 0.0);
+        assert!((absurdo.total() - 1.0).abs() < 1e-6);
+
+        // Y una reflectancia fuera de rango tampoco rompe el reparto.
+        for f in [-1.0, 2.0, f32::INFINITY] {
+            let reparto = EnergySplit::new(0.9, 0.9, f);
+
+            assert!((reparto.total() - 1.0).abs() < 1e-6, "F = {f}");
+        }
+    }
+
+    #[test]
+    fn un_material_opaco_deja_toda_la_energia_en_lo_local() {
+        // Es el caso de cuatro de los cinco materiales finales: sin
+        // reflexion ni transmision, el reparto no lanza secundarios.
+        let opaco = Material::wet_basalt(crate::color::Color::black());
+
+        for grados in [0.0_f32, 45.0, 89.0] {
+            let f = fresnel(&incidencia(grados), &arriba(), true, opaco.ior);
+            let reparto = EnergySplit::for_material(&opaco, f);
+
+            assert_eq!(reparto.reflected, 0.0);
+            assert_eq!(reparto.transmitted, 0.0);
+            assert!((reparto.local - 1.0).abs() < 1e-6);
+            assert!(!reparto.worth_reflecting());
+            assert!(!reparto.worth_refracting());
+        }
+    }
+
+    #[test]
+    fn el_agua_lanza_los_dos_secundarios_y_el_basalto_ninguno() {
+        use crate::color::Color;
+
+        let agua = Material::new(Color::black()).with_caps(0.9, 0.9, IOR_AGUA);
+        let basalto = Material::wet_basalt(Color::black());
+
+        // De frente el agua transmite casi todo, pero ya refleja lo
+        // suficiente para que valga la pena el rayo.
+        let f = fresnel(&-arriba(), &arriba(), true, agua.ior);
+        let reparto = EnergySplit::for_material(&agua, f);
+
+        assert!(reparto.worth_refracting(), "el agua tiene que transmitir");
+        assert!(
+            reparto.worth_reflecting(),
+            "0.9 x 0.0204 = {} deberia pasar el umbral",
+            reparto.reflected
+        );
+
+        let reparto_opaco = EnergySplit::for_material(&basalto, f);
+        assert!(!reparto_opaco.worth_reflecting());
+        assert!(!reparto_opaco.worth_refracting());
+    }
+
+    #[test]
+    fn el_umbral_poda_aportes_que_no_mueven_un_byte() {
+        // El umbral es el paso de un byte de color. Un aporte menor no
+        // puede cambiar el pixel, asi que el recorrido seria trabajo puro.
+        assert!((SECONDARY_THRESHOLD - 1.0 / 255.0).abs() < 1e-9);
+
+        // El cristal pictorico, con techo de reflexion 0.10, cae por debajo
+        // cuando F baja de 0.039.
+        let justo_abajo = EnergySplit::new(0.10, 0.25, 0.039);
+        let justo_arriba = EnergySplit::new(0.10, 0.25, 0.040);
+
+        assert!(!justo_abajo.worth_reflecting());
+        assert!(justo_arriba.worth_reflecting());
+        // La transmision, con techo mayor, sigue valiendo la pena.
+        assert!(justo_abajo.worth_refracting());
     }
 }
