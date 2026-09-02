@@ -17,6 +17,7 @@ use std::time::Instant;
 
 use nalgebra_glm::Vec3;
 
+use expedition33_continente_inacabado::accel::SceneAccel;
 use expedition33_continente_inacabado::camera::{Camera, DEFAULT_VERTICAL_FOV};
 use expedition33_continente_inacabado::framebuffer::Framebuffer;
 use expedition33_continente_inacabado::light::{diorama as luces_del_diorama, PointLight};
@@ -136,7 +137,13 @@ fn numero(bandera: &str, valor: &str) -> Result<usize, String> {
 ///
 /// El yaw explicito manda sobre el propio del preset: es lo que permite
 /// producir los cuatro angulos que valida la Tarea 2.5 sin recompilar.
-type Preset = (Scene, Vec<PointLight>, Camera, Option<SceneScale>);
+type Preset = (
+    Scene,
+    SceneAccel,
+    Vec<PointLight>,
+    Camera,
+    Option<SceneScale>,
+);
 
 fn preset(nombre: &str, yaw: Option<f32>, elevation: Option<f32>) -> Result<Preset, String> {
     match nombre {
@@ -150,7 +157,7 @@ fn preset(nombre: &str, yaw: Option<f32>, elevation: Option<f32>) -> Result<Pres
             let escala = blockout.scale;
             let lights = luces_del_diorama(&blockout.anchors, &blockout.scale);
 
-            Ok((blockout.scene, lights, camera, Some(escala)))
+            Ok((blockout.scene, blockout.accel, lights, camera, Some(escala)))
         }
         "cubo" => {
             let eye = match yaw {
@@ -171,20 +178,30 @@ fn preset(nombre: &str, yaw: Option<f32>, elevation: Option<f32>) -> Result<Pres
 
             // El cubo de prueba no tiene luces propias: se ve por albedo
             // o por normales.
-            Ok((cubo_de_prueba(), Vec::new(), camera, None))
+            let scene = cubo_de_prueba();
+            let accel = SceneAccel::build(&scene).expect("el cubo existe");
+
+            Ok((scene, accel, Vec::new(), camera, None))
         }
         otro => Err(format!("preset desconocido: {otro}")),
     }
 }
 
 fn ejecutar(opciones: Opciones) -> Result<(), String> {
-    let (scene, lights, camera, escala) =
+    let (scene, accel, lights, camera, escala) =
         preset(&opciones.preset, opciones.yaw, opciones.elevation)?;
 
     let mut framebuffer = Framebuffer::new(opciones.width, opciones.height);
 
     let inicio = Instant::now();
-    render(&mut framebuffer, &scene, &lights, &camera, opciones.shading);
+    let stats = render(
+        &mut framebuffer,
+        &scene,
+        &accel,
+        &lights,
+        &camera,
+        opciones.shading,
+    );
     let transcurrido = inicio.elapsed();
 
     framebuffer
@@ -196,6 +213,16 @@ fn ejecutar(opciones: Opciones) -> Result<(), String> {
     println!("shading   {:?}", opciones.shading);
     println!("objetos   {}", scene.objects.len());
     println!("luces     {}", lights.len());
+    println!(
+        "grupos    {} ({} clusters)",
+        accel.groups.len(),
+        accel.groups.iter().map(|g| g.clusters.len()).sum::<usize>()
+    );
+    println!(
+        "pruebas   {} de primitiva, {} de bounds",
+        stats.primitive_tests,
+        stats.group_bounds_tests + stats.cluster_bounds_tests
+    );
 
     // Los parametros de escala son medidos, no elegidos. Imprimirlos aqui
     // es lo que permite copiarlos a docs/evidence.md sin transcribir a mano.

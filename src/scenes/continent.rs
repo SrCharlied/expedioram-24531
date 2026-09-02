@@ -10,6 +10,7 @@
 //! composición se lea. Todo está expresado respecto de un ancla para que
 //! mover una región sea cambiar un vector, no veinte.
 
+use crate::accel::{ClusterPlan, SceneAccel};
 use crate::color::Color;
 use crate::cuboid::Cuboid;
 use crate::material::Material;
@@ -136,8 +137,15 @@ pub fn blockout() -> Blockout {
         orbit_radius,
     };
 
+    // La jerarquía se construye al final, con toda la geometría ya en su
+    // sitio. El Blockout 1 no tiene generadores, así que su plan de
+    // clusters está vacío y cada grupo queda con uno solo.
+    let plan = ClusterPlan::new();
+    let accel = SceneAccel::build_from_plan(&scene, &plan).expect("el blockout tiene geometria");
+
     Blockout {
         scene,
+        accel,
         anchors,
         scale,
     }

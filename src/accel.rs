@@ -18,6 +18,7 @@
 
 use crate::bounds::Aabb;
 use crate::hit::Hit;
+use crate::light::GroupMask;
 use crate::ray::Ray;
 use crate::ray_intersect::RayIntersect;
 use crate::scene::{Scene, SceneObject, SpatialGroupId};
@@ -328,13 +329,19 @@ impl SceneAccel {
     /// objeto situado *detrás* de la luz bloquearía una sombra que no le
     /// corresponde.
     ///
-    /// A partir de la Tarea 3.6 el filtro de `shadow_mode` decide qué
-    /// cuenta como bloqueador; hoy todo lo es.
+    /// `occluder_groups` es el *light linking* de las sombras. Se comprueba
+    /// **antes** que los bounds del grupo, así que un grupo excluido no
+    /// cuesta ni una prueba de caja: si `L-02` solo puede ser bloqueada por
+    /// Aguas Voladoras, el rayo de sombra ni mira Praderas.
+    ///
+    /// Solo `ShadowMode::Opaque` cuenta como bloqueador. El agua deja pasar
+    /// el rayo; sin eso el barco quedaría negro bajo su propio volumen.
     pub fn occluded(
         &self,
         scene: &Scene,
         ray: &Ray,
         t_max: f32,
+        occluder_groups: GroupMask,
         stats: &mut TraversalStats,
     ) -> bool {
         if self.bounds.hit(ray, EPSILON, t_max).is_none() {
@@ -342,6 +349,11 @@ impl SceneAccel {
         }
 
         for grupo in &self.groups {
+            // Filtro de grupo primero: es el mas barato de todos.
+            if !occluder_groups.contains(grupo.id) {
+                continue;
+            }
+
             stats.group_bounds_tests += 1;
             if grupo.bounds.hit(ray, EPSILON, t_max).is_none() {
                 continue;
@@ -354,9 +366,17 @@ impl SceneAccel {
                 }
 
                 for &objeto in &cluster.object_indices {
+                    let entrada = scene.objects[objeto];
+
+                    // El modo del material FINAL, no del inicial: la
+                    // revelación no interpola `shadow_mode`.
+                    if !scene.material(entrada.final_material).blocks_shadows() {
+                        continue;
+                    }
+
                     stats.primitive_tests += 1;
 
-                    if let Some(hit) = scene.objects[objeto].primitive.ray_intersect(ray) {
+                    if let Some(hit) = entrada.primitive.ray_intersect(ray) {
                         if hit.distance < t_max {
                             return true;
                         }
@@ -711,7 +731,7 @@ mod tests {
         let ray = Ray::new(Vec3::new(0.0, 0.0, 10.0), Vec3::new(0.0, 0.0, -1.0));
         let mut stats = TraversalStats::default();
 
-        assert!(accel.occluded(&scene, &ray, 100.0, &mut stats));
+        assert!(accel.occluded(&scene, &ray, 100.0, GroupMask::ALL, &mut stats));
         // Corta en cuanto encuentra uno; no recorre las cinco primitivas.
         assert!(
             stats.primitive_tests < scene.objects.len(),
@@ -729,10 +749,16 @@ mod tests {
         let mut stats = TraversalStats::default();
 
         assert!(
-            !accel.occluded(&scene, &ray, 5.0, &mut stats),
+            !accel.occluded(&scene, &ray, 5.0, GroupMask::ALL, &mut stats),
             "un objeto mas alla de t_max no debe bloquear"
         );
-        assert!(accel.occluded(&scene, &ray, 20.0, &mut TraversalStats::default()));
+        assert!(accel.occluded(
+            &scene,
+            &ray,
+            20.0,
+            GroupMask::ALL,
+            &mut TraversalStats::default()
+        ));
     }
 
     #[test]
@@ -745,11 +771,158 @@ mod tests {
                 let ray = Ray::new(Vec3::new(ox, 0.0, 10.0), Vec3::new(0.0, 0.0, -1.0));
 
                 let esperado = fuerza_bruta(&scene, &ray).is_some_and(|h| h.distance < t_max);
-                let obtenido = accel.occluded(&scene, &ray, t_max, &mut TraversalStats::default());
+                let obtenido = accel.occluded(
+                    &scene,
+                    &ray,
+                    t_max,
+                    GroupMask::ALL,
+                    &mut TraversalStats::default(),
+                );
 
                 assert_eq!(obtenido, esperado, "origen x={ox}, t_max={t_max}");
             }
         }
+    }
+
+    #[test]
+    fn el_agua_con_ignore_no_bloquea_pero_el_monolito_opaco_si() {
+        use crate::material::ShadowMode;
+
+        let mut scene = Scene::new();
+        let agua = scene.add_material(
+            Material::new(Color::new(0.2, 0.4, 0.8)).with_shadow_mode(ShadowMode::Ignore),
+        );
+        let cristal = scene.add_material(Material::new(Color::new(0.7, 0.9, 1.0)));
+
+        // Agua cerca, Monolito lejos, ambos sobre el mismo rayo.
+        for (centro, material, grupo) in [
+            (Vec3::new(0.0, 0.0, 4.0), agua, SpatialGroupId::FlyingWaters),
+            (Vec3::new(0.0, 0.0, 0.0), cristal, SpatialGroupId::Monolith),
+        ] {
+            scene.add_object(SceneObject {
+                primitive: Cuboid::centrado(centro, Vec3::new(2.0, 2.0, 2.0)).into(),
+                initial_material: material,
+                final_material: material,
+                spatial_group: grupo,
+                reveal_group: RevealGroup::Finale,
+            });
+        }
+
+        let accel = SceneAccel::build(&scene).expect("hay geometria");
+        let ray = Ray::new(Vec3::new(0.0, 0.0, 10.0), Vec3::new(0.0, 0.0, -1.0));
+
+        // Hasta antes del Monolito solo esta el agua: no bloquea.
+        assert!(!accel.occluded(
+            &scene,
+            &ray,
+            8.0,
+            GroupMask::ALL,
+            &mut TraversalStats::default()
+        ));
+
+        // Mas alla si aparece el Monolito, que es opaco.
+        assert!(accel.occluded(
+            &scene,
+            &ray,
+            20.0,
+            GroupMask::ALL,
+            &mut TraversalStats::default()
+        ));
+    }
+
+    #[test]
+    fn el_agua_ni_siquiera_se_prueba_como_bloqueador() {
+        use crate::material::ShadowMode;
+
+        let mut scene = Scene::new();
+        let agua = scene.add_material(
+            Material::new(Color::new(0.2, 0.4, 0.8)).with_shadow_mode(ShadowMode::Ignore),
+        );
+
+        scene.add_object(SceneObject {
+            primitive: Cuboid::centrado(Vec3::zeros(), Vec3::new(2.0, 2.0, 2.0)).into(),
+            initial_material: agua,
+            final_material: agua,
+            spatial_group: SpatialGroupId::FlyingWaters,
+            reveal_group: RevealGroup::FlyingWaters,
+        });
+
+        let accel = SceneAccel::build(&scene).expect("hay geometria");
+        let ray = Ray::new(Vec3::new(0.0, 0.0, 10.0), Vec3::new(0.0, 0.0, -1.0));
+        let mut stats = TraversalStats::default();
+
+        assert!(!accel.occluded(&scene, &ray, 50.0, GroupMask::ALL, &mut stats));
+        assert_eq!(
+            stats.primitive_tests, 0,
+            "un material que no bloquea no deberia costar una prueba"
+        );
+    }
+
+    #[test]
+    fn el_modo_de_sombra_sale_del_material_final_no_del_inicial() {
+        use crate::material::ShadowMode;
+
+        // Decision cerrada: `shadow_mode` no se interpola durante la
+        // revelacion. Un objeto cuyo material inicial es opaco pero cuyo
+        // final ignora sombras, no bloquea desde el primer momento.
+        let mut scene = Scene::new();
+        let lienzo = scene.add_material(Material::new(Color::new(0.9, 0.9, 0.85)));
+        let agua = scene.add_material(
+            Material::new(Color::new(0.2, 0.4, 0.8)).with_shadow_mode(ShadowMode::Ignore),
+        );
+
+        scene.add_object(SceneObject {
+            primitive: Cuboid::centrado(Vec3::zeros(), Vec3::new(2.0, 2.0, 2.0)).into(),
+            initial_material: lienzo,
+            final_material: agua,
+            spatial_group: SpatialGroupId::FlyingWaters,
+            reveal_group: RevealGroup::FlyingWaters,
+        });
+
+        let accel = SceneAccel::build(&scene).expect("hay geometria");
+        let ray = Ray::new(Vec3::new(0.0, 0.0, 10.0), Vec3::new(0.0, 0.0, -1.0));
+
+        assert!(!accel.occluded(
+            &scene,
+            &ray,
+            50.0,
+            GroupMask::ALL,
+            &mut TraversalStats::default()
+        ));
+    }
+
+    #[test]
+    fn la_mascara_de_oclusores_descarta_grupos_sin_probar_sus_bounds() {
+        let scene = escena();
+        let accel = SceneAccel::build(&scene).expect("hay geometria");
+
+        // Rayo que atraviesa el Monolito, en el origen.
+        let ray = Ray::new(Vec3::new(0.0, 0.0, 10.0), Vec3::new(0.0, 0.0, -1.0));
+
+        // Con la mascara limitada a Praderas, el Monolito no puede bloquear.
+        let mut solo_praderas = TraversalStats::default();
+        assert!(!accel.occluded(
+            &scene,
+            &ray,
+            50.0,
+            GroupMask::only(&[SpatialGroupId::Meadows]),
+            &mut solo_praderas
+        ));
+
+        // Y el filtro actua antes de los bounds: solo se probo un grupo.
+        assert_eq!(
+            solo_praderas.group_bounds_tests, 1,
+            "el filtro de grupo deberia ahorrarse hasta las pruebas de caja: {solo_praderas:?}"
+        );
+
+        // Con el Monolito habilitado, si bloquea.
+        assert!(accel.occluded(
+            &scene,
+            &ray,
+            50.0,
+            GroupMask::only(&[SpatialGroupId::Monolith]),
+            &mut TraversalStats::default()
+        ));
     }
 
     #[test]

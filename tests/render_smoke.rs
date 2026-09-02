@@ -3,6 +3,7 @@
 //! No abre ventana: renderiza un framebuffer diminuto y comprueba que el
 //! resultado sea una imagen y no basura, incluido el PNG en disco.
 
+use expedition33_continente_inacabado::accel::{SceneAccel, TraversalStats};
 use expedition33_continente_inacabado::camera::{Camera, DEFAULT_VERTICAL_FOV};
 use expedition33_continente_inacabado::color::Color;
 use expedition33_continente_inacabado::cuboid::Cuboid;
@@ -17,6 +18,13 @@ use nalgebra_glm::Vec3;
 
 const ANCHO: usize = 32;
 const ALTO: usize = 24;
+
+fn escena_y_accel() -> (Scene, SceneAccel, MaterialId) {
+    let (scene, material) = escena_de_un_cubo();
+    let accel = SceneAccel::build(&scene).expect("hay geometria");
+
+    (scene, accel, material)
+}
 
 fn escena_de_un_cubo() -> (Scene, MaterialId) {
     let mut scene = Scene::new();
@@ -45,12 +53,13 @@ fn camara_hero() -> Camera {
 
 #[test]
 fn render_pequeno_termina_y_llena_el_framebuffer() {
-    let (scene, _) = escena_de_un_cubo();
+    let (scene, accel, _) = escena_y_accel();
     let mut framebuffer = Framebuffer::new(ANCHO, ALTO);
 
     render(
         &mut framebuffer,
         &scene,
+        &accel,
         &[],
         &camara_hero(),
         Shading::Normals,
@@ -61,12 +70,13 @@ fn render_pequeno_termina_y_llena_el_framebuffer() {
 
 #[test]
 fn al_menos_un_pixel_no_es_el_fondo() {
-    let (scene, _) = escena_de_un_cubo();
+    let (scene, accel, _) = escena_y_accel();
     let mut framebuffer = Framebuffer::new(ANCHO, ALTO);
 
     render(
         &mut framebuffer,
         &scene,
+        &accel,
         &[],
         &camara_hero(),
         Shading::Normals,
@@ -90,7 +100,7 @@ fn al_menos_un_pixel_no_es_el_fondo() {
 
 #[test]
 fn ningun_pixel_produce_nan() {
-    let (scene, _) = escena_de_un_cubo();
+    let (scene, accel, _) = escena_y_accel();
     let camera = camara_hero();
 
     // Se comprueba sobre el Color y no sobre el framebuffer: al empacar a
@@ -102,7 +112,14 @@ fn ningun_pixel_produce_nan() {
             let ray = camera.ray_from_pixel(x, y, ANCHO, ALTO);
 
             for shading in [Shading::Normals, Shading::Albedo, Shading::Material] {
-                let color = cast_ray(&ray, &scene, &[], shading);
+                let color = cast_ray(
+                    &ray,
+                    &scene,
+                    &accel,
+                    &[],
+                    shading,
+                    &mut TraversalStats::default(),
+                );
 
                 assert!(
                     color.r.is_finite() && color.g.is_finite() && color.b.is_finite(),
@@ -115,35 +132,50 @@ fn ningun_pixel_produce_nan() {
 
 #[test]
 fn el_sombreado_por_albedo_resuelve_la_paleta() {
-    let (scene, piedra) = escena_de_un_cubo();
+    let (scene, accel, piedra) = escena_y_accel();
     let camera = camara_hero();
 
     // Rayo al centro del encuadre: pega de lleno en la cara frontal.
     let ray = Ray::new(camera.eye, Vec3::new(0.0, 0.0, -1.0));
-    let color = cast_ray(&ray, &scene, &[], Shading::Albedo);
+    let color = cast_ray(
+        &ray,
+        &scene,
+        &accel,
+        &[],
+        Shading::Albedo,
+        &mut TraversalStats::default(),
+    );
 
     assert_eq!(color, scene.material(piedra).albedo);
 }
 
 #[test]
 fn el_fondo_se_devuelve_cuando_el_rayo_no_toca_nada() {
-    let (scene, _) = escena_de_un_cubo();
+    let (scene, accel, _) = escena_y_accel();
 
     // Rayo que se aleja del cubo.
     let ray = Ray::new(Vec3::new(0.0, 0.0, 5.0), Vec3::new(0.0, 1.0, 0.0));
-    let color = cast_ray(&ray, &scene, &[], Shading::Albedo);
+    let color = cast_ray(
+        &ray,
+        &scene,
+        &accel,
+        &[],
+        Shading::Albedo,
+        &mut TraversalStats::default(),
+    );
 
     assert_eq!(color.to_hex(), BACKGROUND_COLOR);
 }
 
 #[test]
 fn guarda_un_png_valido_y_decodificable() {
-    let (scene, _) = escena_de_un_cubo();
+    let (scene, accel, _) = escena_y_accel();
     let mut framebuffer = Framebuffer::new(ANCHO, ALTO);
 
     render(
         &mut framebuffer,
         &scene,
+        &accel,
         &[],
         &camara_hero(),
         Shading::Normals,

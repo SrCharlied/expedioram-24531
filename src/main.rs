@@ -53,6 +53,7 @@ fn main() {
     // La cámara se construye antes de consumir el blockout: `hero_camera`
     // necesita las anclas y la escala, que viven junto a la escena.
     let scene = diorama.scene;
+    let accel = diorama.accel;
 
     // Renderizar cuesta 480 000 rayos. Mientras la cámara esté quieta la
     // imagen es la misma, así que solo se vuelve a calcular cuando algo
@@ -97,7 +98,7 @@ fn main() {
         }
 
         if camera_moved {
-            render(&mut framebuffer, &scene, &lights, &camera, shading);
+            render(&mut framebuffer, &scene, &accel, &lights, &camera, shading);
             camera_moved = false;
         }
 

@@ -18,6 +18,34 @@
 use crate::color::Color;
 use nalgebra_glm::{dot, Vec3};
 
+/// Cómo trata un objeto a los rayos de sombra.
+///
+/// Es el **único** campo de sombras del objeto. Antes convivía con un
+/// `casts_shadow` booleano y los dos competían por la misma
+/// responsabilidad, lo que garantizaba que tarde o temprano el renderer
+/// eligiera mal; `Ignore` sustituye exactamente al antiguo `casts_shadow`
+/// en falso. El `casts_shadows` de las **luces** es otra cosa y sí existe:
+/// dice si la luz llega a generar rayos de sombra.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ShadowMode {
+    /// Bloquea por completo. Es el caso normal.
+    #[default]
+    Opaque,
+    /// El rayo lo atraviesa como si no estuviera.
+    ///
+    /// Es lo que usa el agua. Sin esto, el volumen de la bahía se
+    /// interpondría entre el barco y toda luz exterior, y el barco —el
+    /// objeto estrella del diorama— se vería negro.
+    Ignore,
+    /// Atenúa en vez de bloquear. **Fuera del MVP.**
+    ///
+    /// Requiere seguir buscando intersecciones en vez de cortar en el
+    /// primer bloqueador, así que no es tan barato como un any-hit opaco.
+    /// Si se implementa, la visibilidad se multiplica por
+    /// `transmission_cap`, **no** por `1 - transmission_cap`.
+    Attenuate,
+}
+
 /// Propiedades de superficie de un objeto.
 ///
 /// Los techos `reflection_cap` y `transmission_cap` ya existen aunque el
@@ -38,6 +66,14 @@ pub struct Material {
     pub ior: f32,
     /// Repetición de textura. La usa el Hito 4.
     pub uv_scale: f32,
+    /// Qué hace este material ante un rayo de sombra.
+    ///
+    /// **No se interpola durante la revelación.** El modo del material
+    /// final rige desde `progress = 0.0`: el agua no bloquea sombras ni
+    /// siquiera mientras todavía se ve como lienzo. Interpolarlo haría que
+    /// el barco parpadeara entre iluminado y negro justo durante la
+    /// transición estrella del diorama.
+    pub shadow_mode: ShadowMode,
 }
 
 impl Material {
@@ -52,6 +88,7 @@ impl Material {
             transmission_cap: 0.0,
             ior: 1.0,
             uv_scale: 1.0,
+            shadow_mode: ShadowMode::Opaque,
         }
     }
 
@@ -66,6 +103,16 @@ impl Material {
             shininess: 96.0,
             ..Material::new(albedo)
         }
+    }
+
+    pub fn with_shadow_mode(mut self, shadow_mode: ShadowMode) -> Self {
+        self.shadow_mode = shadow_mode;
+        self
+    }
+
+    /// ¿Este material detiene un rayo de sombra?
+    pub fn blocks_shadows(&self) -> bool {
+        matches!(self.shadow_mode, ShadowMode::Opaque)
     }
 
     pub fn with_specular(mut self, strength: f32, shininess: f32) -> Self {
@@ -284,6 +331,26 @@ mod tests {
             "no debe lanzar rayos secundarios"
         );
         assert!(!material.is_reflective_or_refractive());
+    }
+
+    #[test]
+    fn por_defecto_un_material_es_opaco_a_las_sombras() {
+        let material = Material::new(Color::new(0.5, 0.5, 0.5));
+
+        assert_eq!(material.shadow_mode, ShadowMode::Opaque);
+        assert!(material.blocks_shadows());
+    }
+
+    #[test]
+    fn ignore_no_bloquea_y_attenuate_tampoco_corta() {
+        let agua = Material::new(Color::new(0.2, 0.4, 0.8)).with_shadow_mode(ShadowMode::Ignore);
+        assert!(!agua.blocks_shadows());
+
+        // Attenuate esta declarado pero fuera del MVP: no es un bloqueador
+        // opaco, asi que el any-hit no puede cortar en el.
+        let atenuante =
+            Material::new(Color::new(0.5, 0.5, 0.5)).with_shadow_mode(ShadowMode::Attenuate);
+        assert!(!atenuante.blocks_shadows());
     }
 
     #[test]

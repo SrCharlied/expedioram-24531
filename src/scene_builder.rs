@@ -8,6 +8,7 @@
 //! ya construida. `scene_radius` sale de la envolvente, `monolith_height`
 //! de la altura real del Monolito, y `orbit_radius` se deriva de ambos.
 
+use crate::accel::SceneAccel;
 use crate::camera::Camera;
 use crate::scene::Scene;
 use nalgebra_glm::Vec3;
@@ -170,9 +171,15 @@ pub fn eye_at(
     orbit_center + Vec3::new(horizontal * theta.cos(), altura, horizontal * theta.sin())
 }
 
-/// El blockout completo: geometría, anclas y escala medida.
+/// El blockout completo: geometría, anclas, escala medida y la jerarquía
+/// de aceleración ya construida.
+///
+/// La jerarquía viaja con la escena porque se construye una sola vez y no
+/// se invalida jamás: la geometría es estática y pintar solo cambia un
+/// escalar. Separarlas invitaría a olvidar reconstruirla.
 pub struct Blockout {
     pub scene: Scene,
+    pub accel: SceneAccel,
     pub anchors: SceneAnchors,
     pub scale: SceneScale,
 }

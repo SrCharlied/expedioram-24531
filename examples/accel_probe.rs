@@ -1,13 +1,13 @@
 //! Sonda de poda: compara pruebas de primitiva con y sin jerarquia sobre el
 //! blockout real, a resolucion reducida. No es un benchmark de tiempo.
-use expedition33_continente_inacabado::accel::{SceneAccel, TraversalStats};
+use expedition33_continente_inacabado::accel::TraversalStats;
 use expedition33_continente_inacabado::scenes::continent::blockout;
 
 fn main() {
     let diorama = blockout();
     let camera = diorama.hero_camera();
     let scene = diorama.scene;
-    let accel = SceneAccel::build(&scene).expect("hay geometria");
+    let accel = diorama.accel;
 
     let (ancho, alto) = (160usize, 120usize);
     let mut stats = TraversalStats::default();
