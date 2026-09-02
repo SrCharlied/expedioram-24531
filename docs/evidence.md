@@ -404,6 +404,70 @@ de pruebas los emite el propio binario: no son estimaciones.
 
 ---
 
+## Cierre del Hito 3
+
+**Fecha:** 1 de septiembre de 2026  
+**Commit:** `9dfaa5b`  
+**Árbol `src/`:** `43ce5b1ccea9e752e0b94e5730e816c563bdcee3`
+
+La Tarea 3.9 quedó en `d382aca`; el commit de cierre es posterior porque
+incluye dos arreglos que salieron después: el `default-run` de `Cargo.toml`
+y el cambio de la ventana al nivel seguro.
+
+### Gate
+
+- `cargo fmt -- --check` — OK, sin diferencias
+- `cargo clippy --all-targets -- -D warnings` — OK, sin warnings
+- `cargo test` — 160 tests en 5 targets: 154 unitarios y 6 de integración, 0 fallos
+- `cargo build --release` — OK
+- `cargo run` — arranca y se mantiene en ejecución
+
+### Tarea 3.10 — `rayon`
+
+**Estado: evaluada, no activada.**
+
+Su disparador dice evaluarla *solo si la resolución interactiva y la
+aceleración estática no bastan*, y no es el caso:
+
+- La aceleración estática evita alrededor del **92 %** de las pruebas de
+  primitiva.
+- El perfil `MEDIA` entrega unos **40 fps** durante el movimiento.
+- Al detenerse se produce un **único** cuadro final de unos **96 ms**.
+
+Añadir paralelismo ahora traería una dependencia, una feature y un camino de
+código nuevo sin resolver ningún problema observado.
+
+`rayon` queda como **reserva de los Hitos 5 a 7**.
+
+### Disparador futuro de `rayon`
+
+Reconsiderar `rayon` si, después de incorporar reflexión y refracción, el
+perfil `MEDIA` deja de ser suficientemente cómodo **y** el perfil `BAJA`
+tampoco permite desarrollar o verificar la interacción con fluidez.
+
+**No se fija un umbral numérico** —ni 30 ni 60 fps— a propósito: el plan ya
+decidió medir antes de imponer metas, y poner una cifra ahora sería
+exactamente la clase de objetivo inventado que ese criterio prohíbe. La
+condición es cualitativa por diseño, y la medición que la resuelva será la
+del Hito 5, cuando el volumen de agua empiece a generar rayos secundarios.
+
+### Un fallo detectado al cerrar
+
+`cargo run` a secas dejó de funcionar en la Tarea 2.3, al crear
+`src/bin/render_scene.rs`: con dos binarios en el paquete, Cargo se niega a
+elegir. Se arregló con `default-run` en `Cargo.toml`.
+
+Pasó tres tareas inadvertido porque **ninguno de los cuatro gates ejecuta
+`cargo run`**: `fmt`, `clippy`, `test` y `build` no tocan ese camino. Habría
+reventado en la Tarea 8.6, que verifica ese comando exacto en un clon
+limpio.
+
+A partir de aquí, la comprobación de que el binario de ventana arranca se
+hace en cada cierre de tarea, con un timeout. Sigue siendo necesaria la
+verificación visual humana: que el proceso viva no dice qué se ve.
+
+---
+
 ## Pendientes de medición
 
 Ninguna de estas filas puede completarse por estimación. Cada hito llena la suya.
