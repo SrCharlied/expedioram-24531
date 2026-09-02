@@ -157,6 +157,19 @@ impl Texture {
         self.height
     }
 
+    /// Canal más brillante de toda la textura, en lineal.
+    ///
+    /// Sirve para acotar una **ganancia**: el albedo efectivo de un material
+    /// texturizado es `albedo × muestra`, así que subir el albedo por encima
+    /// de `1 / pico` haría que algún píxel devolviera más luz de la que
+    /// recibe. Se calcula una vez al derivar el material, no por muestreo.
+    pub fn max_channel(&self) -> f32 {
+        self.pixels
+            .iter()
+            .map(|c| c.r.max(c.g).max(c.b))
+            .fold(0.0_f32, f32::max)
+    }
+
     /// Color en la coordenada `(u, v)`, con `v = 0` abajo.
     pub fn sample(&self, u: f32, v: f32) -> Color {
         // Una coordenada NaN no debe indexar fuera de rango; se trata como

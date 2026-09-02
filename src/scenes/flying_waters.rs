@@ -183,6 +183,7 @@ pub fn centro_visible_del_barco(ancla: Vec3) -> Vec3 {
 ///
 /// Se prioriza la silueta rota y suspendida, no la precisión naval.
 fn casco(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
+    let madera = madera_del_pecio(scene, paleta);
     let centro = ancla_del_casco(ancla);
 
     // Cuerpo: cinco secciones que se estrechan hacia proa.
@@ -195,7 +196,7 @@ fn casco(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
             centro + Vec3::new(-1.5 + t * 0.75, 0.02 * t, 0.0),
             Vec3::new(0.78, 0.52 - 0.04 * t, ancho),
             paleta.canvas,
-            paleta.aged_wood,
+            madera,
             GRUPO,
             REVELA,
         );
@@ -208,7 +209,7 @@ fn casco(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
             centro + Vec3::new(dx, 0.34, 0.0),
             Vec3::new(largo, 0.14, 0.92),
             paleta.canvas,
-            paleta.aged_wood,
+            madera,
             GRUPO,
             REVELA,
         );
@@ -221,7 +222,7 @@ fn casco(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
             centro + Vec3::new(-0.55 + i as f32 * 0.38, 0.30, 0.0),
             Vec3::new(0.09, 0.46, 0.86),
             paleta.canvas,
-            paleta.aged_wood,
+            madera,
             GRUPO,
             REVELA,
         );
@@ -233,7 +234,7 @@ fn casco(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
         centro + Vec3::new(-1.95, 0.28, 0.0),
         Vec3::new(0.42, 0.86, 0.95),
         paleta.canvas,
-        paleta.aged_wood,
+        madera,
         GRUPO,
         REVELA,
     );
@@ -241,6 +242,7 @@ fn casco(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
 
 /// `A-04` · mástil y sus dos soportes.
 fn mastil(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
+    let madera = madera_del_pecio(scene, paleta);
     let base = ancla + Vec3::new(-0.6, 2.35, 0.2);
 
     masa(
@@ -248,7 +250,7 @@ fn mastil(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
         base + Vec3::new(0.0, 1.15, 0.0),
         Vec3::new(0.16, 2.3, 0.16),
         paleta.canvas,
-        paleta.aged_wood,
+        madera,
         GRUPO,
         REVELA,
     );
@@ -257,7 +259,7 @@ fn mastil(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
         base + Vec3::new(0.0, 1.95, 0.0),
         Vec3::new(1.5, 0.11, 0.11),
         paleta.canvas,
-        paleta.aged_wood,
+        madera,
         GRUPO,
         REVELA,
     );
@@ -266,7 +268,7 @@ fn mastil(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
         base + Vec3::new(0.35, 0.45, 0.0),
         Vec3::new(0.7, 0.09, 0.09),
         paleta.canvas,
-        paleta.aged_wood,
+        madera,
         GRUPO,
         REVELA,
     );
@@ -295,6 +297,72 @@ fn tenir(material: Material, factor: Color) -> Material {
     material.with_tint(albedo)
 }
 
+/// **Ganancia local**: aclara un material sin salirse de la reflectancia
+/// física.
+///
+/// Es lo contrario de `tenir`, y hacen falta las dos. Un tinte
+/// multiplicativo solo puede **quitar**: sirve para el metal frío y para el
+/// kelp submarino, y no sirve para el casco, que necesita subir. El gate de
+/// la Tarea 5.8 midió el casco a `0.3183` de luminancia contra `0.3365` del
+/// agua que lo rodea —una razón de `0.95`— y atenuarlo lo habría hundido
+/// más.
+///
+/// El techo no es un número elegido: sale de la textura. El albedo efectivo
+/// es `albedo × muestra`, así que la ganancia puede subir el albedo hasta
+/// `1 / pico` y ni un píxel devuelve más luz de la que recibe. Con textura
+/// el albedo es blanco por diseño y la ganancia lo empuja **por encima de
+/// uno**, que es correcto: ahí el albedo actúa de factor sobre una muestra
+/// oscura, no de reflectancia. Sin textura el techo es `1.0` y la ganancia
+/// escala el color plano.
+///
+/// La misma ganancia produce el mismo aclarado en los dos modos, que es la
+/// propiedad que `tenir` ya garantizaba para la atenuación.
+fn ganancia_local(scene: &Scene, material: Material, factor: f32) -> Material {
+    let pico = match material.albedo_texture {
+        Some(id) => scene.texture(id).max_channel(),
+        None => 1.0,
+    };
+    let techo = if pico > 0.0 { 1.0 / pico } else { 1.0 };
+    let subir = |canal: f32| (canal * factor).min(techo);
+
+    let albedo = material.albedo;
+
+    material.with_tint(Color::new(
+        subir(albedo.r),
+        subir(albedo.g),
+        subir(albedo.b),
+    ))
+}
+
+/// Ganancia del casco, la cadena y el ancla del pecio.
+///
+/// `1.8` sale de medir, no de probar a ojo: es lo que separa la luminancia
+/// del casco de la del agua que lo rodea. Ver la Tarea 5.8 en la evidencia.
+const GANANCIA_DEL_PECIO: f32 = 1.8;
+
+/// Grosor mínimo de las piezas de cadena y ancla.
+///
+/// A la distancia de la toma hero una unidad de mundo son unos `18`
+/// píxeles, así que los `0.13` originales de un eslabón daban `2.4 × 2.4`
+/// píxeles y el gate de la Tarea 5.8 midió **30 píxeles para once
+/// primitivas**. Con `0.22` cada pieza pasa de `4` píxeles de lado.
+///
+/// Sube el grosor, no el largo: la caña del ancla conserva sus `0.7` y los
+/// brazos sus `0.72`, o dejaría de leerse como un ancla.
+const GROSOR_METAL: f32 = 0.22;
+
+/// Madera del pecio: `aged_wood` con **ganancia local**.
+///
+/// No se toca `paleta.aged_wood` porque Praderas también lo usa; el pecio
+/// necesita su propia variante. Como el metal y el kelp, es un material
+/// derivado y no un sexto material final.
+fn madera_del_pecio(scene: &mut Scene, paleta: &Palette) -> MaterialId {
+    let base = scene.material(paleta.aged_wood);
+    let clara = ganancia_local(scene, base, GANANCIA_DEL_PECIO);
+
+    scene.add_material(clara)
+}
+
 /// Metal de la cadena y del ancla: `wet_basalt` **reusado**.
 ///
 /// El inventario lo pide así para no crear un sexto material final. Tres
@@ -319,9 +387,14 @@ fn tenir(material: Material, factor: Color) -> Material {
 /// hay, justo donde el rayo ya gastó dos en entrar.
 fn metal_reusado(scene: &mut Scene, paleta: &Palette) -> MaterialId {
     let base = scene.material(paleta.wet_basalt);
-    let metal = tenir(base, Color::new(0.70, 0.78, 1.00))
+    let frio = tenir(base, Color::new(0.70, 0.78, 1.00))
         .with_uv_scale(12.0)
         .with_specular(0.80, 220.0);
+
+    // La misma ganancia que el casco: engrosar las piezas les da tamaño,
+    // pero el gate midió la cadena a `0.2354` de luminancia contra `0.3365`
+    // del agua, así que también necesitaban subir. Son parte del pecio.
+    let metal = ganancia_local(scene, frio, GANANCIA_DEL_PECIO);
 
     scene.add_material(metal)
 }
@@ -344,7 +417,7 @@ fn cadena(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
         masa(
             scene,
             punto,
-            Vec3::new(0.13, 0.13, 0.13),
+            Vec3::new(GROSOR_METAL, GROSOR_METAL, GROSOR_METAL),
             paleta.canvas,
             metal,
             GRUPO,
@@ -361,10 +434,12 @@ fn ancla_del_barco(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
     let metal = metal_reusado(scene, paleta);
     let base = ancla + Vec3::new(2.2, 0.95, 0.95);
 
+    // Solo el grosor sube; el largo de la caña y la envergadura de los
+    // brazos se conservan, o dejaría de leerse como un ancla.
     masa(
         scene,
         base,
-        Vec3::new(0.12, 0.7, 0.12),
+        Vec3::new(GROSOR_METAL, 0.7, GROSOR_METAL),
         paleta.canvas,
         metal,
         GRUPO,
@@ -373,7 +448,7 @@ fn ancla_del_barco(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
     masa(
         scene,
         base + Vec3::new(0.0, -0.3, 0.0),
-        Vec3::new(0.72, 0.11, 0.11),
+        Vec3::new(0.72, GROSOR_METAL, GROSOR_METAL),
         paleta.canvas,
         metal,
         GRUPO,
@@ -382,7 +457,7 @@ fn ancla_del_barco(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
     masa(
         scene,
         base + Vec3::new(0.0, 0.3, 0.0),
-        Vec3::new(0.34, 0.10, 0.10),
+        Vec3::new(0.34, GROSOR_METAL * 0.9, GROSOR_METAL * 0.9),
         paleta.canvas,
         metal,
         GRUPO,
@@ -1098,5 +1173,192 @@ mod tests {
         // Y en los dos casos el factor **atenuo**: nunca aclara.
         assert!(a.r < 0.4 && a.g < 0.6);
         assert!(b.r < 0.4 && b.g < 0.6);
+    }
+
+    #[test]
+    fn la_ganancia_no_deja_que_un_pixel_devuelva_mas_luz_de_la_que_recibe() {
+        // La propiedad que hace legitima una ganancia mayor que uno: con
+        // textura el albedo pasa de blanco a `1.8`, que **no** es una
+        // reflectancia sino un factor sobre una muestra oscura. El techo
+        // sale de la muestra mas brillante de la textura, asi que el albedo
+        // efectivo —`albedo x muestra`— no puede pasar de uno.
+        use crate::texture::Texture;
+
+        let mut scene = Scene::new();
+
+        // Textura con un pico conocido.
+        let textura = Texture::from_pixels(
+            2,
+            1,
+            vec![Color::new(0.1, 0.2, 0.05), Color::new(0.4, 0.5, 0.3)],
+        )
+        .expect("2x1");
+        let pico = textura.max_channel();
+        let id = scene.add_texture(textura);
+
+        assert!((pico - 0.5).abs() < 1e-6, "el pico salio {pico}");
+
+        // Una ganancia disparatada se recorta al techo.
+        let base = Material::new(Color::new(0.3, 0.3, 0.3)).with_texture(id);
+        let ganada = ganancia_local(&scene, base, 50.0);
+
+        for canal in [ganada.albedo.r, ganada.albedo.g, ganada.albedo.b] {
+            assert!(
+                canal * pico <= 1.0 + 1e-6,
+                "el albedo efectivo llegaria a {}",
+                canal * pico
+            );
+        }
+
+        // Y una ganancia razonable sube de verdad, por encima de uno.
+        let normal = ganancia_local(&scene, base, GANANCIA_DEL_PECIO);
+        assert!(
+            normal.albedo.r > 1.0,
+            "con textura la ganancia tiene que pasar de uno: {}",
+            normal.albedo.r
+        );
+        assert!(normal.albedo.r * pico <= 1.0 + 1e-6);
+    }
+
+    #[test]
+    fn la_ganancia_aclara_igual_con_textura_y_sin_ella() {
+        // La misma propiedad que `tenir`, en el otro sentido: el proyecto
+        // corre con assets y con `--no-textures`, y la ganancia no puede dar
+        // dos materiales distintos segun eso.
+        use crate::texture::Texture;
+
+        let color = Color::new(0.4, 0.25, 0.1);
+        let mut scene = Scene::new();
+        let id = scene.add_texture(Texture::from_pixels(1, 1, vec![color]).expect("1x1"));
+
+        let plano = ganancia_local(&scene, Material::new(color), GANANCIA_DEL_PECIO);
+        let texturizado = ganancia_local(
+            &scene,
+            Material::new(color).with_texture(id),
+            GANANCIA_DEL_PECIO,
+        );
+
+        let uv = nalgebra_glm::Vec2::new(0.5, 0.5);
+        let a = scene.albedo_at(&plano, &uv);
+        let b = scene.albedo_at(&texturizado, &uv);
+
+        for (uno, otro, canal) in [(a.r, b.r, "r"), (a.g, b.g, "g"), (a.b, b.b, "b")] {
+            assert!(
+                (uno - otro).abs() < 1e-6,
+                "el canal {canal} difiere: {uno} contra {otro}"
+            );
+        }
+
+        // Y **aclaro**: es lo contrario de `tenir`.
+        assert!(
+            a.r > color.r,
+            "la ganancia oscurecio: {} vs {}",
+            a.r,
+            color.r
+        );
+    }
+
+    #[test]
+    fn la_madera_del_pecio_es_mas_clara_que_la_de_praderas() {
+        // El gate de la Tarea 5.8 midio el casco a la misma luminancia que
+        // el agua que lo rodea. La ganancia lo separa, y sin tocar
+        // `paleta.aged_wood`, que Praderas tambien usa.
+        let mut scene = Scene::new();
+        let paleta = Palette::registrar(&mut scene);
+        let id = madera_del_pecio(&mut scene, &paleta);
+
+        let pecio = scene.material(id);
+        let praderas = scene.material(paleta.aged_wood);
+
+        assert_ne!(id, paleta.aged_wood);
+        assert!(
+            pecio.albedo.r > praderas.albedo.r,
+            "el casco no se aclaro: {:?} contra {:?}",
+            pecio.albedo,
+            praderas.albedo
+        );
+
+        // Sin textura la ganancia no puede pasar de reflectancia uno.
+        for canal in [pecio.albedo.r, pecio.albedo.g, pecio.albedo.b] {
+            assert!(canal <= 1.0 + 1e-6, "albedo plano fuera de rango: {canal}");
+        }
+    }
+
+    #[test]
+    fn el_casco_y_el_mastil_usan_la_madera_del_pecio() {
+        let mut scene = Scene::new();
+        let paleta = Palette::registrar(&mut scene);
+        casco(&mut scene, &paleta, ANCLA);
+        mastil(&mut scene, &paleta, ANCLA);
+
+        for objeto in &scene.objects {
+            assert_ne!(
+                objeto.final_material, paleta.aged_wood,
+                "una pieza del pecio usa la madera de Praderas sin ganancia"
+            );
+        }
+    }
+
+    #[test]
+    fn el_engrosamiento_alcanza_a_la_cadena_y_al_ancla() {
+        // La correccion del gate no era solo para los eslabones: las tres
+        // piezas del ancla eran igual de delgadas.
+        let (escena_cadena, _) = solo(cadena);
+
+        for objeto in &escena_cadena.objects {
+            let caja = objeto.primitive.bounds();
+            let lados = caja.max - caja.min;
+
+            for lado in [lados.x, lados.y, lados.z] {
+                assert!(
+                    (lado - GROSOR_METAL).abs() < 1e-5,
+                    "un eslabon quedo en {lado} y el grosor es {GROSOR_METAL}"
+                );
+            }
+        }
+
+        let (escena_ancla, _) = solo(ancla_del_barco);
+
+        for objeto in &escena_ancla.objects {
+            let caja = objeto.primitive.bounds();
+            let lados = caja.max - caja.min;
+            // El lado mas corto de cada pieza es su grosor.
+            let mas_corto = lados.x.min(lados.y).min(lados.z);
+
+            assert!(
+                mas_corto >= GROSOR_METAL * 0.9 - 1e-5,
+                "una pieza del ancla quedo en {mas_corto}"
+            );
+        }
+    }
+
+    #[test]
+    fn engrosar_no_alarga_el_ancla() {
+        // La cana conserva sus 0.7 y los brazos su envergadura de 0.72: si
+        // el engrosamiento escalara la pieza entera dejaria de leerse como
+        // un ancla.
+        let (scene, _) = solo(ancla_del_barco);
+        let lados: Vec<f32> = scene
+            .objects
+            .iter()
+            .map(|o| {
+                let caja = o.primitive.bounds();
+                let l = caja.max - caja.min;
+
+                l.x.max(l.y).max(l.z)
+            })
+            .collect();
+
+        assert!((lados[0] - 0.7).abs() < 1e-5, "la cana mide {}", lados[0]);
+        assert!(
+            (lados[1] - 0.72).abs() < 1e-5,
+            "los brazos miden {}",
+            lados[1]
+        );
+        assert!(
+            (lados[2] - 0.34).abs() < 1e-5,
+            "el arganeo mide {}",
+            lados[2]
+        );
     }
 }

@@ -1140,7 +1140,7 @@ la imagen es `evidence/hito5/gate-hero.png`.
 | 1 · La superficie devuelve skybox | **Cumple** |
 | 2 · El borde frontal permite ver el barco | **Cumple** |
 | 3 · El highlight del agua se ve | **Cumple** |
-| 4 · Barco, cadena y ancla legibles | **Parcial** — ver abajo |
+| 4 · Barco, cadena y ancla legibles | **Cumple tras corrección** — ver abajo |
 | 5 · Ni acné severo ni negro total | **Cumple** |
 | 6 · Tiempo en release registrado | **Registrado** |
 
@@ -1229,7 +1229,7 @@ criterio de detección exige que el píxel sea menos de la mitad de luminoso
 que su vecino **más oscuro**, lo que descarta los bordes de sombra
 legítimos, que tienen vecinos oscuros a un lado.
 
-#### 4 · legibilidad — el criterio que queda parcial
+#### 4 · legibilidad — el criterio que estaba fallando
 
 Aquí el conteo de píxeles no alcanzaba, y la luminancia lo destapó:
 
@@ -1276,7 +1276,89 @@ del presupuesto de 58 primitivas:
 4. **Engrosar los eslabones** de `0.13` a `0.22`, que no cuesta ni una
    primitiva y llevaría cada eslabón a unos `4` píxeles.
 
-Ninguna se aplicó: son decisiones de composición.
+#### Las correcciones aplicadas
+
+Aprobadas las opciones 3 y 4, con dos correcciones al planteamiento.
+
+**El casco necesita una ganancia, no un tinte.** El idioma `tenir` que
+proponía la opción 3 solo puede **quitar**: multiplica el albedo por un
+factor menor que uno. Sirve para el metal frío y para el kelp submarino, y
+no sirve aquí, porque el casco tenía que **subir**. Hay ahora una segunda
+función, `ganancia_local`, que es su contraria.
+
+El techo de la ganancia no es un número elegido: **sale de la textura**. El
+albedo efectivo de un material texturizado es `albedo × muestra`, así que la
+ganancia puede subir el albedo hasta `1 / pico`, donde `pico` es el canal
+más brillante de su textura, y con eso ni un píxel devuelve más luz de la
+que recibe. Hizo falta `Texture::max_channel`, que se calcula una vez al
+derivar el material y no por muestreo.
+
+Consecuencia que conviene tener presente: **con textura el albedo pasa de
+uno**. No es un error. Ahí el albedo ya no es una reflectancia sino un
+factor sobre una muestra oscura —`with_texture` lo pone en blanco por
+diseño—, y lo que se mantiene acotado es el producto. Sin textura el techo
+es `1.0` y la ganancia escala el color plano. Un test comprueba que las dos
+rutas den el mismo aclarado, igual que se hizo con `tenir`.
+
+`GANANCIA_DEL_PECIO = 1.8` se aplica al casco, al mástil, a la cadena y al
+ancla, todos por materiales **derivados**: `paleta.aged_wood` no se toca
+porque Praderas también lo usa.
+
+**El engrosamiento alcanza a las tres piezas del ancla, no solo a los
+eslabones.** `GROSOR_METAL = 0.22` sustituye los `0.13` del eslabón y los
+`0.10`–`0.12` de la caña, los brazos y el arganeo. Sube el **grosor** y no
+el largo: la caña conserva sus `0.7` y los brazos su envergadura de `0.72`,
+o dejaría de leerse como un ancla. Hay un test para cada cosa.
+
+#### Antes y después de las correcciones
+
+| Parte | Píxeles antes | Píxeles después | Luminancia antes | Luminancia después |
+|---|---:|---:|---:|---:|
+| Casco visible | `1 479` | `1 474` | `0.3183` | **`0.3752`** |
+| Cadena y ancla | `30` | **`61`** | `0.2354` | **`0.3161`** |
+| Superficie del agua | `11 455` | `11 455` | `0.3365` | `0.3431` |
+
+La razón casco / agua pasa de **`0.95` a `1.09`**: el casco dejó de tener la
+luminancia del agua que lo rodea y ahora es la parte más clara de la bahía.
+Es el número que el criterio 4 estaba fallando.
+
+Los tiempos no se movieron: mediana `0.1911 s` contra `0.1930 s`, y los
+conteos de rayos son idénticos. Aclarar un material y engrosar once cajas no
+cuesta trabajo de trazado.
+
+#### Y una causa que la corrección destapó
+
+La cadena y el ancla subieron a `61` píxeles, no a los `86` que predecía el
+área. La diferencia no era tamaño. Midiendo la visibilidad al orbitar:
+
+| `yaw` | Casco | Cadena y ancla |
+|---:|---:|---:|
+| `45°` | `1 201` | **`137`** |
+| `90°` (hero) | `1 474` | `61` |
+| `135°` | `1 236` | `89` |
+| `180°` | `793` | `21` |
+| `225°` | `111` | `1` |
+| `270°` | `6` | `24` |
+| `315°` | `643` | `41` |
+
+**Desde la toma hero el borde roto las tapa.** El rayo que va del ojo a la
+cadena cruza el plano del borde a `y ≈ 2.14`, y el bloque que hay ahí llega
+a `2.48`. A `yaw 45°` no hay nada delante y se ven `137` píxeles, el doble
+que en la hero.
+
+No es un defecto del engrosamiento, que hizo lo suyo —duplicó los píxeles y
+subió la luminancia un `34 %`—: es que la pieza está detrás de un elemento
+de primer plano puesto ahí a propósito. Levantar la cadena para que la
+línea de visión libre el borde dejaría el ancla flotando a `0.8` sobre el
+lecho, y bajar el bloque cambiaría la silueta rasgada que se aprobó al
+`88.7 %` de oclusión.
+
+Queda registrado como característica de la composición y no como pendiente:
+el diorama **orbita**, y la cadena se lee mejor desde los cuartos delanteros
+que desde la hero. Si más adelante se quiere en la hero, la palanca más
+barata es mover el conjunto cadena-ancla unas décimas en `x` hasta quedar
+detrás de uno de los bloques bajos del borde —los de `2.22` y `2.25`— en vez
+de detrás del de `2.48`.
 
 ---
 

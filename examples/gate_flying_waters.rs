@@ -490,5 +490,28 @@ fn main() {
         "      pixeles aislados mas oscuros que todos sus vecinos   {moteados}  ({:.4} %)",
         100.0 * moteados as f32 / total as f32
     );
+    // ------------------------- el barco y el metal desde otros yaw
+    //
+    // El diorama es orbital: si una pieza queda tapada desde la toma hero
+    // no esta perdida, y conviene saber si el problema es de tamano o de
+    // oclusion. Son dos arreglos distintos.
+    println!("\n  visibilidad al orbitar (px que alcanzan cada parte)");
+    println!(
+        "      {:>6} {:>10} {:>16}",
+        "yaw", "casco", "cadena y ancla"
+    );
+
+    for yaw in [45.0_f32, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0] {
+        let camara_yaw = diorama.camera_at_yaw(yaw);
+        let vista = recorrer(&diorama, &camara_yaw, &partes);
+
+        println!(
+            "      {:>6.0} {:>10} {:>16}",
+            yaw,
+            vista.casco_directo.len() + vista.casco_refractado.len(),
+            vista.metal_directo.len() + vista.metal_refractado.len()
+        );
+    }
+
     println!("\n  render     {}", destino.display());
 }
