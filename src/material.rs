@@ -237,20 +237,64 @@ pub fn direct_light(
     light_color: Color,
     attenuation: f32,
 ) -> Color {
+    direct_diffuse(material, normal, to_light, light_color, attenuation)
+        + direct_specular(
+            material,
+            normal,
+            to_light,
+            to_view,
+            light_color,
+            attenuation,
+        )
+}
+
+/// Componente **difusa** de una luz, ya teñida por el albedo.
+///
+/// Está separada del brillo porque el reparto de Fresnel las trata
+/// distinto: la difusa es color propio de la superficie y se escala por
+/// `kl`, mientras que el brillo se suma después del reparto. Ver el orden
+/// de `renderer::cast_ray`.
+pub fn direct_diffuse(
+    material: &Material,
+    normal: &Vec3,
+    to_light: &Vec3,
+    light_color: Color,
+    attenuation: f32,
+) -> Color {
     let difusa = lambert(normal, to_light);
 
     if difusa <= 0.0 {
         return Color::black();
     }
 
+    material.albedo * (light_color * attenuation) * difusa
+}
+
+/// Componente **especular** de una luz.
+///
+/// No se tiñe con el albedo: un highlight toma el color de la luz, no el
+/// del objeto, porque es luz reflejada en la superficie y no luz absorbida
+/// y reemitida.
+///
+/// Tampoco se escala por `kl`. Con los caps `0.9 / 0.9` del agua eso lo
+/// dejaría al diez por ciento, y el gate de Aguas Voladoras exige que el
+/// highlight del agua se vea. El specular directo es, precisamente, la
+/// parte de la reflexión que se resuelve sin lanzar un rayo.
+pub fn direct_specular(
+    material: &Material,
+    normal: &Vec3,
+    to_light: &Vec3,
+    to_view: &Vec3,
+    light_color: Color,
+    attenuation: f32,
+) -> Color {
+    if lambert(normal, to_light) <= 0.0 {
+        return Color::black();
+    }
+
     let brillo = blinn_phong(normal, to_light, to_view, material.shininess);
 
-    let luz = light_color * attenuation;
-
-    // La difusa se tiñe con el albedo; el brillo no. Un highlight toma el
-    // color de la luz, no el del objeto: es luz reflejada en la superficie,
-    // no luz absorbida y reemitida.
-    material.albedo * luz * difusa + luz * (material.specular_strength * brillo)
+    (light_color * attenuation) * (material.specular_strength * brillo)
 }
 
 #[cfg(test)]

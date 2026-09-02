@@ -318,6 +318,12 @@ fn ejecutar(opciones: Opciones) -> Result<(), String> {
         stats.primary_rays, stats.shadow_rays
     );
     println!(
+        "          {} reflejados, {} refractados (profundidad {})",
+        stats.reflection_rays,
+        stats.refraction_rays,
+        expedition33_continente_inacabado::renderer::MAX_DEPTH
+    );
+    println!(
         "pruebas   {} de primitiva, {} de bounds",
         stats.primitive_tests,
         stats.group_bounds_tests + stats.cluster_bounds_tests

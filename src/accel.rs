@@ -99,6 +99,12 @@ pub struct TraversalStats {
     /// Rayos de sombra lanzados. Separados de los primarios porque su coste
     /// escala con el número de luces, no con la resolución.
     pub shadow_rays: usize,
+    /// Rayos reflejados lanzados. Separados de los refractados porque las
+    /// dos mitigaciones del plan son distintas: bajar la profundidad afecta
+    /// a los dos, desactivar la reflexión del cristal solo a estos.
+    pub reflection_rays: usize,
+    /// Rayos refractados lanzados.
+    pub refraction_rays: usize,
 }
 
 /// Conjunto compacto de primitivas con su propia caja.

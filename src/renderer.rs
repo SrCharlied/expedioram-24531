@@ -10,7 +10,8 @@ use crate::color::Color;
 use crate::framebuffer::Framebuffer;
 use crate::hit::Hit;
 use crate::light::PointLight;
-use crate::material::{direct_light, AMBIENT};
+use crate::material::{direct_diffuse, direct_specular, AMBIENT};
+use crate::optics::{fresnel, reflected_ray, refracted_ray, EnergySplit};
 use crate::ray::Ray;
 use crate::reveal::{resolve, RevealState};
 use crate::scene::Scene;
@@ -97,12 +98,22 @@ pub fn color_por_normal(hit: &Hit) -> Color {
     )
 }
 
+/// Profundidad de recursión inicial.
+///
+/// **Tres, no dos.** Un rayo primario que entra al volumen cerrado de
+/// Aguas gasta un nivel al refractar en la cara frontal; si no impacta el
+/// barco, gasta el segundo en la cara interna trasera y necesita el tercero
+/// para llegar al lecho, las rocas o el cielo del otro lado. Con dos, todo
+/// lo que está **detrás** del volumen se pierde.
+///
+/// Bajarlo a dos es la mitigación número 2 del gate de Aguas Voladoras, y
+/// solo si la medición lo exige, registrando qué se pierde.
+pub const MAX_DEPTH: u32 = 3;
+
 /// Devuelve el color del objeto más cercano que toca el rayo.
 ///
-/// El material se resuelve por `object_index` contra la paleta de la
-/// escena; el impacto nunca lo carga. Por ahora usa `final_material`
-/// directamente: la interpolación desde `canvas_unpainted` llega en la
-/// Tarea 4.4, cuando exista `RevealState`.
+/// Entra con `MAX_DEPTH` y acota el resultado al final. Es la puerta que
+/// usan la cámara y el picking; la recursión vive en `trace`.
 pub fn cast_ray(
     ray: &Ray,
     scene: &Scene,
@@ -112,11 +123,67 @@ pub fn cast_ray(
     shading: Shading,
     stats: &mut TraversalStats,
 ) -> Color {
+    cast_ray_depth(ray, scene, accel, lights, reveal, shading, MAX_DEPTH, stats)
+}
+
+/// Igual que `cast_ray`, con la profundidad explícita.
+///
+/// Existe para poder medir qué se pierde al bajarla: el plan exige
+/// documentar esa comparación antes de aceptar `max_depth = 2`, y eso no se
+/// puede hacer con la profundidad clavada en una constante.
+#[allow(clippy::too_many_arguments)]
+pub fn cast_ray_depth(
+    ray: &Ray,
+    scene: &Scene,
+    accel: &SceneAccel,
+    lights: &[PointLight],
+    reveal: &RevealState,
+    shading: Shading,
+    max_depth: u32,
+    stats: &mut TraversalStats,
+) -> Color {
+    // Paso 6 del orden: acotar. Se hace **una vez**, aquí arriba, y no en
+    // cada nivel de la recursión. Recortar dentro descartaría energía antes
+    // de que el padre la pese por `kr` o `kt`, y un reflejo brillante se
+    // vería apagado por una razón que no está en ninguna parte del modelo.
+    acotar(trace(
+        ray, scene, accel, lights, reveal, shading, max_depth, stats,
+    ))
+}
+
+/// El trazado recursivo.
+///
+/// `depth` es el número de superficies que **todavía** se pueden sombrear.
+/// Al llegar a cero el rayo devuelve el cielo en su dirección, nunca negro:
+/// con `kl = 0.1` no hay color local suficiente para disimular un terminal
+/// oscuro, y se vería como manchas dentro del agua.
+///
+/// El orden de las contribuciones es el del plan:
+///
+/// 1. Impacto.
+/// 2. Iluminación directa difusa, con sombras y light linking.
+/// 3. Specular directo.
+/// 4. Reparto de Fresnel y rayo reflejado si vale la pena.
+/// 5. Rayo refractado si vale la pena.
+/// 6. Acotado, que hace `cast_ray_depth` una sola vez.
+#[allow(clippy::too_many_arguments)]
+fn trace(
+    ray: &Ray,
+    scene: &Scene,
+    accel: &SceneAccel,
+    lights: &[PointLight],
+    reveal: &RevealState,
+    shading: Shading,
+    depth: u32,
+    stats: &mut TraversalStats,
+) -> Color {
+    if depth == 0 {
+        return scene.skybox.sample(scene, &ray.direction, reveal);
+    }
+
     let Some(hit) = accel.intersect(scene, ray, stats) else {
         // Un miss no devuelve un color fijo: devuelve el cielo en la
-        // dirección del rayo. Es también el terminal que el plan reserva
-        // para un rayo que agote `max_depth` en el Hito 5, así que la
-        // profundidad agotada no necesitará un color propio.
+        // dirección del rayo.
         return scene.skybox.sample(scene, &ray.direction, reveal);
     };
 
@@ -133,8 +200,10 @@ pub fn cast_ray(
         Shading::Albedo => material.albedo,
         Shading::Material => {
             // Ambiente: no es física, es el suelo que impide que lo no
-            // iluminado quede en negro absoluto y pierda su silueta.
-            let mut color = material.albedo * AMBIENT;
+            // iluminado quede en negro absoluto y pierda su silueta. Cuenta
+            // como color propio, así que va dentro de lo local.
+            let mut local = material.albedo * AMBIENT;
+            let mut especular = Color::black();
 
             // El ojo, no la luz: el specular depende de desde dónde se mira.
             let hacia_ojo = -ray.direction;
@@ -166,8 +235,10 @@ pub fn cast_ray(
                     continue;
                 }
 
-                color = color
-                    + direct_light(
+                local = local
+                    + direct_diffuse(&material, &hit.normal, &direccion, light.color, atenuacion);
+                especular = especular
+                    + direct_specular(
                         &material,
                         &hit.normal,
                         &direccion,
@@ -177,9 +248,76 @@ pub fn cast_ray(
                     );
             }
 
+            // Reparto de Fresnel. `fresnel` resuelve el lado por
+            // `front_face` y devuelve exactamente `1.0` en reflexión total
+            // interna, lo que deja `kt = 0` y manda toda la energía al rayo
+            // reflejado sin que aquí haga falta un caso especial.
+            let f = fresnel(&ray.direction, &hit.normal, hit.front_face, material.ior);
+            let reparto = EnergySplit::for_material(&material, f);
+
+            // Lo local se pesa por `kl`; el brillo se suma después, sin
+            // pesar. Ver `material::direct_specular`.
+            let mut color = local * reparto.local + especular;
+
+            if reparto.worth_reflecting() {
+                stats.reflection_rays += 1;
+
+                let secundario = reflected_ray(&hit, &ray.direction);
+                let aporte = trace(
+                    &secundario,
+                    scene,
+                    accel,
+                    lights,
+                    reveal,
+                    shading,
+                    depth - 1,
+                    stats,
+                );
+
+                color = color + aporte * reparto.reflected;
+            }
+
+            if reparto.worth_refracting() {
+                // `refracted_ray` no puede fallar aquí: `kt > 0` implica
+                // `F < 1`, que es la misma condición que descarta la
+                // reflexión total. Se escribe con `if let` y no con
+                // `expect` porque las dos comprobaciones son aritmética de
+                // punto flotante y un `panic` en el camino caliente sería
+                // una forma pésima de descubrir que difieren.
+                if let Some(secundario) = refracted_ray(&hit, &ray.direction, material.ior) {
+                    stats.refraction_rays += 1;
+
+                    let aporte = trace(
+                        &secundario,
+                        scene,
+                        accel,
+                        lights,
+                        reveal,
+                        shading,
+                        depth - 1,
+                        stats,
+                    );
+
+                    color = color + aporte * reparto.transmitted;
+                }
+            }
+
             color
         }
     }
+}
+
+/// Acota el color al rango representable.
+///
+/// No es tone mapping filmico: es un recorte. Un `NaN` se vuelve negro y no
+/// un byte cualquiera, y un desborde se satura en blanco. `Color::to_hex`
+/// ya hace lo mismo al escribir el píxel; esto existe para que el valor que
+/// devuelve `cast_ray` —el que consultan los tests y el picking— ya venga
+/// acotado, y no solo el que llega al framebuffer.
+fn acotar(color: Color) -> Color {
+    let canal = |v: f32| if v.is_nan() { 0.0 } else { v.clamp(0.0, 1.0) };
+
+    Color::new(canal(color.r), canal(color.g), canal(color.b))
 }
 
 /// ¿Hay algo entre el punto y la luz?
@@ -631,5 +769,414 @@ mod tests {
         assert!(stats.shadow_rays > 0, "la luz proyecta sombras");
         assert!(stats.primitive_tests > 0);
         assert!(stats.group_bounds_tests > 0);
+    }
+
+    // ------------------------------------------------ recursion limitada
+
+    /// Espejo horizontal en `y = 0`, con albedo negro para que lo único que
+    /// aporte sea el reflejo, y un cielo de dos franjas.
+    ///
+    /// `ior = 20` no describe ningún material real: es lo que hace que
+    /// Schlick dé `R0 = 0.82` y el espejo refleje de verdad también de
+    /// frente. Con `ior = 1.0` la reflectancia sería cero a incidencia
+    /// perpendicular —ver `optics::con_ior_uno_schlick_degenera_y_hay_que_saberlo`—
+    /// y no habría espejo que probar.
+    fn espejo_con_cielo() -> (Scene, SceneAccel, Color) {
+        let mut scene = Scene::new();
+        let espejo = scene.add_material(Material::new(Color::black()).with_caps(1.0, 0.0, 20.0));
+
+        scene.add_object(SceneObject {
+            primitive: Cuboid::centrado(Vec3::new(0.0, -0.5, 0.0), Vec3::new(40.0, 1.0, 40.0))
+                .into(),
+            initial_material: espejo,
+            final_material: espejo,
+            spatial_group: SpatialGroupId::Global,
+            reveal_group: RevealGroup::Finale,
+        });
+
+        let (claro, _) = cielo_de_dos_franjas(&mut scene);
+        let accel = SceneAccel::build(&scene).expect("hay geometria");
+
+        (scene, accel, claro)
+    }
+
+    /// Losa de agua de `y = -1` a `y = 1`, con un objeto rojo dentro.
+    ///
+    /// Con `transparente` en falso el mismo material queda con los techos
+    /// en cero: es el control que aísla la refracción del resto.
+    fn agua_con_objeto_dentro(transparente: bool) -> (Scene, SceneAccel) {
+        let mut scene = Scene::new();
+
+        let base = Material::new(Color::new(0.0, 0.2, 0.5));
+        let agua = scene.add_material(if transparente {
+            base.with_caps(0.9, 0.9, 1.333)
+                .with_shadow_mode(ShadowMode::Ignore)
+        } else {
+            base
+        });
+        let rojo = scene.add_material(Material::new(Color::new(1.0, 0.0, 0.0)));
+
+        scene.add_object(SceneObject {
+            primitive: Cuboid::centrado(Vec3::zeros(), Vec3::new(10.0, 2.0, 10.0)).into(),
+            initial_material: agua,
+            final_material: agua,
+            spatial_group: SpatialGroupId::FlyingWaters,
+            reveal_group: RevealGroup::FlyingWaters,
+        });
+        scene.add_object(SceneObject {
+            primitive: Cuboid::centrado(Vec3::new(0.0, -0.3, 0.0), Vec3::new(2.0, 0.6, 2.0)).into(),
+            initial_material: rojo,
+            final_material: rojo,
+            spatial_group: SpatialGroupId::FlyingWaters,
+            reveal_group: RevealGroup::FlyingWaters,
+        });
+
+        scene.skybox = Skybox::Flat(Color::black());
+        let accel = SceneAccel::build(&scene).expect("hay geometria");
+
+        (scene, accel)
+    }
+
+    /// Volumen cerrado de agua con un lecho **detrás**, y cielo magenta.
+    ///
+    /// Es la geometría de la que sale la decisión `max_depth = 3`: cruzar el
+    /// volumen cuesta dos niveles —cara frontal y cara interna trasera— y el
+    /// lecho necesita el tercero.
+    fn volumen_con_lecho() -> (Scene, SceneAccel, Color) {
+        let mut scene = Scene::new();
+
+        let agua = scene.add_material(
+            Material::new(Color::new(0.0, 0.2, 0.5))
+                .with_caps(0.9, 0.9, 1.333)
+                .with_shadow_mode(ShadowMode::Ignore),
+        );
+        let lecho = scene.add_material(Material::new(Color::new(0.0, 1.0, 0.0)));
+
+        scene.add_object(SceneObject {
+            primitive: Cuboid::centrado(Vec3::zeros(), Vec3::new(4.0, 4.0, 4.0)).into(),
+            initial_material: agua,
+            final_material: agua,
+            spatial_group: SpatialGroupId::FlyingWaters,
+            reveal_group: RevealGroup::FlyingWaters,
+        });
+        scene.add_object(SceneObject {
+            primitive: Cuboid::centrado(Vec3::new(0.0, 0.0, -6.0), Vec3::new(8.0, 8.0, 1.0)).into(),
+            initial_material: lecho,
+            final_material: lecho,
+            spatial_group: SpatialGroupId::FlyingWaters,
+            reveal_group: RevealGroup::FlyingWaters,
+        });
+
+        let cielo = Color::new(0.6, 0.0, 0.6);
+        scene.skybox = Skybox::Flat(cielo);
+        let accel = SceneAccel::build(&scene).expect("hay geometria");
+
+        (scene, accel, cielo)
+    }
+
+    /// Rayo que entra de frente al volumen, por el eje `-Z`.
+    fn rayo_frontal() -> Ray {
+        Ray::new(Vec3::new(0.0, 0.0, 10.0), Vec3::new(0.0, 0.0, -1.0))
+    }
+
+    fn trazar(
+        ray: &Ray,
+        scene: &Scene,
+        accel: &SceneAccel,
+        lights: &[PointLight],
+        depth: u32,
+        stats: &mut TraversalStats,
+    ) -> Color {
+        cast_ray_depth(
+            ray,
+            scene,
+            accel,
+            lights,
+            &RevealState::painted(),
+            Shading::Material,
+            depth,
+            stats,
+        )
+    }
+
+    #[test]
+    fn con_profundidad_cero_no_recurre_ni_traza() {
+        let (scene, accel) = suelo();
+        let mut stats = TraversalStats::default();
+
+        let color = trazar(&rayo_al_origen(), &scene, &accel, &[], 0, &mut stats);
+
+        // El presupuesto agotado devuelve cielo, no negro y no el suelo.
+        assert_eq!(color, Color::from_hex(crate::skybox::FALLBACK_COLOR));
+        // Y no llega a probar una sola primitiva.
+        assert_eq!(stats.primitive_tests, 0, "trazo con presupuesto cero");
+        assert_eq!(stats.reflection_rays, 0);
+        assert_eq!(stats.refraction_rays, 0);
+    }
+
+    #[test]
+    fn un_espejo_simple_refleja_el_cielo() {
+        let (scene, accel, cielo) = espejo_con_cielo();
+        let mut stats = TraversalStats::default();
+
+        // Cae a 45 grados: el reflejado sube y muestrea la franja de arriba.
+        let ray = Ray::new(
+            Vec3::new(0.0, 4.0, 4.0),
+            Vec3::new(0.0, -1.0, -1.0).normalize(),
+        );
+        let color = trazar(&ray, &scene, &accel, &[], MAX_DEPTH, &mut stats);
+
+        // Schlick a 45 grados con ior 20 da F = 0.818985, y el techo de
+        // reflexion es uno: el espejo devuelve ese porcentaje del cielo.
+        let f = 0.818_985;
+
+        assert!(
+            (color.r - f * cielo.r).abs() < 2e-3,
+            "el espejo dio {color} y el cielo es {cielo}"
+        );
+        assert!((color.g - f * cielo.g).abs() < 2e-3);
+        assert!((color.b - f * cielo.b).abs() < 2e-3);
+
+        // Un rayo reflejado, ninguno refractado: el techo de transmision
+        // del espejo es cero.
+        assert_eq!(stats.reflection_rays, 1);
+        assert_eq!(stats.refraction_rays, 0);
+    }
+
+    #[test]
+    fn el_agua_deja_ver_el_objeto_de_adentro() {
+        let rayo = Ray::new(Vec3::new(0.0, 5.0, 0.0), Vec3::new(0.0, -1.0, 0.0));
+
+        let (transparente, accel_t) = agua_con_objeto_dentro(true);
+        let mut stats_t = TraversalStats::default();
+        let a_traves = trazar(&rayo, &transparente, &accel_t, &[], MAX_DEPTH, &mut stats_t);
+
+        let (opaca, accel_o) = agua_con_objeto_dentro(false);
+        let mut stats_o = TraversalStats::default();
+        let tapado = trazar(&rayo, &opaca, &accel_o, &[], MAX_DEPTH, &mut stats_o);
+
+        // El objeto es rojo y el agua no tiene rojo: el canal rojo solo
+        // puede venir de haber atravesado la superficie.
+        assert!(a_traves.r > 0.04, "el rojo de adentro no llego: {a_traves}");
+        assert!(
+            tapado.r < 1e-6,
+            "con techos en cero no deberia pasar nada: {tapado}"
+        );
+
+        assert_eq!(stats_o.refraction_rays, 0, "el control no debe refractar");
+        assert!(stats_t.refraction_rays > 0, "el agua tiene que refractar");
+    }
+
+    #[test]
+    fn con_profundidad_tres_el_rayo_cruza_el_volumen_y_alcanza_el_lecho() {
+        let (scene, accel, _) = volumen_con_lecho();
+        let mut stats = TraversalStats::default();
+
+        let color = trazar(&rayo_frontal(), &scene, &accel, &[], 3, &mut stats);
+
+        // El lecho es verde y ni el agua ni el cielo lo son: el verde solo
+        // puede venir de haber cruzado el volumen completo.
+        assert!(
+            color.g > 0.02,
+            "el lecho no se alcanzo con profundidad 3: {color}"
+        );
+
+        // Dos refracciones para cruzar: cara frontal y cara interna trasera.
+        assert!(
+            stats.refraction_rays >= 2,
+            "solo {} refracciones",
+            stats.refraction_rays
+        );
+    }
+
+    #[test]
+    fn con_profundidad_dos_el_rayo_termina_en_cielo_y_no_en_negro() {
+        let (scene, accel, cielo) = volumen_con_lecho();
+
+        let mut stats_tres = TraversalStats::default();
+        let con_tres = trazar(&rayo_frontal(), &scene, &accel, &[], 3, &mut stats_tres);
+
+        let mut stats_dos = TraversalStats::default();
+        let con_dos = trazar(&rayo_frontal(), &scene, &accel, &[], 2, &mut stats_dos);
+
+        // Lo que se pierde al bajar la profundidad: el lecho.
+        assert!(
+            con_dos.g < 0.006,
+            "con profundidad 2 el lecho no deberia verse: {con_dos}"
+        );
+        assert!(
+            con_tres.g > con_dos.g + 0.02,
+            "bajar la profundidad tenia que perder el lecho: {con_tres} contra {con_dos}"
+        );
+
+        // Y lo que **no** pasa: quedarse en negro. El terminal es cielo.
+        assert!(
+            con_dos.r > 0.1 && con_dos.b > 0.1,
+            "el terminal salio oscuro en vez de cielo: {con_dos}"
+        );
+        assert!(
+            brillo(con_dos) > 0.2,
+            "manchas oscuras dentro del agua: {con_dos}"
+        );
+        // El cielo es magenta, asi que el rojo y el azul tienen que
+        // dominar sobre el verde.
+        assert!(cielo.g < cielo.r, "el cielo de la prueba no es magenta");
+        assert!(con_dos.r > con_dos.g * 10.0);
+    }
+
+    #[test]
+    fn el_resultado_siempre_es_finito_y_acotado() {
+        // El paso 6 del orden. Un `NaN` o un desborde en el reparto se
+        // convertiria en un pixel de un color arbitrario, y eso es de las
+        // cosas mas difíciles de rastrear mirando una imagen.
+        let (scene, accel, _) = volumen_con_lecho();
+        let luces = [luz_cenital(8.0)];
+
+        for i in 0..9 {
+            for j in 0..9 {
+                let x = (i as f32 / 4.0) - 1.0;
+                let y = (j as f32 / 4.0) - 1.0;
+                let direccion = Vec3::new(x, y, -1.0).normalize();
+                let ray = Ray::new(Vec3::new(0.0, 0.0, 10.0), direccion);
+
+                let color = trazar(
+                    &ray,
+                    &scene,
+                    &accel,
+                    &luces,
+                    MAX_DEPTH,
+                    &mut TraversalStats::default(),
+                );
+
+                for (canal, nombre) in [(color.r, "r"), (color.g, "g"), (color.b, "b")] {
+                    assert!(
+                        canal.is_finite(),
+                        "canal {nombre} no finito en ({x}, {y}): {color}"
+                    );
+                    assert!(
+                        (0.0..=1.0).contains(&canal),
+                        "canal {nombre} fuera de rango en ({x}, {y}): {color}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn el_highlight_del_agua_no_se_escala_por_kl() {
+        // Con los caps 0.9/0.9 lo local queda al diez por ciento. Si el
+        // specular entrara en ese reparto, el highlight del agua se veria
+        // diez veces mas debil y el gate de Aguas Voladoras no pasaria.
+        // El plan lo dice explicito: el specular directo se suma **despues**
+        // del reparto de Fresnel.
+        let fuerza = 0.6;
+        let escena = |strength: f32| {
+            let mut scene = Scene::new();
+            let agua = scene.add_material(
+                Material::new(Color::new(0.0, 0.2, 0.5))
+                    .with_caps(0.9, 0.9, 1.333)
+                    .with_specular(strength, 32.0)
+                    .with_shadow_mode(ShadowMode::Ignore),
+            );
+
+            // Volumen deliberadamente profundo: la cara superior queda en
+            // `y = 1` y la de salida 200 unidades mas abajo.
+            //
+            // La razon es que el rayo refractado impacta esa cara interna
+            // de salida, y **esa tambien** recibe su propio highlight,
+            // pesado por `kt`. Para medir el de una sola superficie hay que
+            // alejarla: con la luz a `range = 1.0`, su atenuacion a 204
+            // unidades cae a `2.4e-5` y su aporte queda por debajo de la
+            // tolerancia. Ojo: `range` es la distancia de media
+            // contribucion, no un corte, asi que alejar sin bajar `range`
+            // no alcanza.
+            scene.add_object(SceneObject {
+                primitive: Cuboid::centrado(
+                    Vec3::new(0.0, -99.0, 0.0),
+                    Vec3::new(10.0, 200.0, 10.0),
+                )
+                .into(),
+                initial_material: agua,
+                final_material: agua,
+                spatial_group: SpatialGroupId::FlyingWaters,
+                reveal_group: RevealGroup::FlyingWaters,
+            });
+            scene.skybox = Skybox::Flat(Color::black());
+
+            let accel = SceneAccel::build(&scene).expect("hay geometria");
+
+            (scene, accel)
+        };
+
+        // Rayo y luz en la vertical: el vector medio coincide con la normal
+        // y el brillo de Blinn-Phong vale uno exacto.
+        let rayo = Ray::new(Vec3::new(0.0, 5.0, 0.0), Vec3::new(0.0, -1.0, 0.0));
+        let luz = PointLight {
+            range: 1.0,
+            ..luz_cenital(5.0)
+        };
+
+        let (con_brillo, accel_con) = escena(fuerza);
+        let con = trazar(
+            &rayo,
+            &con_brillo,
+            &accel_con,
+            &[luz],
+            MAX_DEPTH,
+            &mut TraversalStats::default(),
+        );
+
+        let (sin_brillo, accel_sin) = escena(0.0);
+        let sin = trazar(
+            &rayo,
+            &sin_brillo,
+            &accel_sin,
+            &[luz],
+            MAX_DEPTH,
+            &mut TraversalStats::default(),
+        );
+
+        // La luz esta a 4 unidades de la superficie, que esta en y = 1.
+        let esperado = luz.color * luz.attenuation(4.0) * fuerza;
+        let delta = brillo(con) - brillo(sin);
+
+        assert!(
+            (delta - brillo(esperado)).abs() < 1e-4,
+            "el highlight aporto {delta} y el especular completo es {}",
+            brillo(esperado)
+        );
+        // Y la comprobacion que da nombre al test: escalado por kl seria
+        // una decima parte.
+        assert!(
+            delta > 5.0 * 0.1 * brillo(esperado),
+            "el highlight quedo escalado por kl: {delta}"
+        );
+    }
+
+    #[test]
+    fn un_material_opaco_no_lanza_secundarios() {
+        // Cuatro de los cinco materiales finales son opacos. El reparto no
+        // debe gastarles un rayo, ni siquiera uno que se descarte despues.
+        let (scene, accel) = suelo();
+        let mut stats = TraversalStats::default();
+
+        trazar(
+            &rayo_al_origen(),
+            &scene,
+            &accel,
+            &[luz_cenital(10.0)],
+            MAX_DEPTH,
+            &mut stats,
+        );
+
+        assert_eq!(stats.reflection_rays, 0);
+        assert_eq!(stats.refraction_rays, 0);
+    }
+
+    #[test]
+    fn la_profundidad_inicial_es_tres() {
+        // La decision cerrada del plan, amarrada: si alguien la baja a dos
+        // sin registrar qué se pierde, esto lo detiene.
+        assert_eq!(MAX_DEPTH, 3);
     }
 }
