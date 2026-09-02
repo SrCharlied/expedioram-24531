@@ -67,6 +67,20 @@ impl RevealState {
         self.progress(group) >= 1.0
     }
 
+    /// Progreso del diorama completo: la media de los cuatro grupos.
+    ///
+    /// Es lo que interpola el skybox, y por eso incluye `Finale`: el cielo
+    /// termina de pintarse cuando termina el diorama, y el Monolito es lo
+    /// último que se revela. Con las tres regiones listas y el finale sin
+    /// empezar, el cielo va por tres cuartos de camino.
+    ///
+    /// Media simple y no ponderada por primitivas: lo que se percibe al
+    /// mirar el fondo es cuántas regiones están hechas, no cuántos cubos
+    /// tenía cada una.
+    pub fn global_progress(&self) -> f32 {
+        self.progress_by_group.iter().sum::<f32>() / RevealGroup::COUNT as f32
+    }
+
     /// ¿Están pintadas las tres regiones?
     ///
     /// Es la condición que habilita el finale: el Monolito no empieza a

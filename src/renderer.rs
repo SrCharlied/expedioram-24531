@@ -14,11 +14,18 @@ use crate::material::{direct_light, AMBIENT};
 use crate::ray::Ray;
 use crate::reveal::{resolve, RevealState};
 use crate::scene::Scene;
+use crate::skybox::FALLBACK_COLOR;
 use crate::EPSILON;
 use nalgebra_glm::Vec3;
 
-/// Color que devuelve un rayo que no toca nada.
-pub const BACKGROUND_COLOR: u32 = 0x040C24;
+/// Color que devuelve un rayo que no toca nada **cuando la escena no
+/// tiene panoramas cargados**.
+///
+/// Se conserva el nombre porque es el que usan los tests del Hito 1, pero
+/// desde la Tarea 4.5 ya no es el fondo: el fondo lo decide `Skybox`, y
+/// este es solo el color de su variante plana. Vive en `skybox`, que es
+/// quien manda sobre el cielo.
+pub const BACKGROUND_COLOR: u32 = FALLBACK_COLOR;
 
 /// Resolución a la que se dibujan los cuadros mientras algo se mueve.
 ///
@@ -106,7 +113,11 @@ pub fn cast_ray(
     stats: &mut TraversalStats,
 ) -> Color {
     let Some(hit) = accel.intersect(scene, ray, stats) else {
-        return Color::from_hex(BACKGROUND_COLOR);
+        // Un miss no devuelve un color fijo: devuelve el cielo en la
+        // dirección del rayo. Es también el terminal que el plan reserva
+        // para un rayo que agote `max_depth` en el Hito 5, así que la
+        // profundidad agotada no necesitará un color propio.
+        return scene.skybox.sample(scene, &ray.direction, reveal);
     };
 
     let objeto = scene.objects[hit.object_index];
@@ -246,6 +257,7 @@ mod tests {
     use crate::light::{GroupMask, PointLight};
     use crate::material::{Material, ShadowMode};
     use crate::scene::{RevealGroup, SceneObject, SpatialGroupId};
+    use crate::skybox::Skybox;
 
     /// Suelo amplio en el origen, para tener una superficie que iluminar.
     fn suelo() -> (Scene, SceneAccel) {
@@ -487,6 +499,108 @@ mod tests {
             brillo(color) > 0.8 * AMBIENT * 3.0 + 0.1,
             "una luz sin sombras ilumina aunque haya un opaco delante: {color}"
         );
+    }
+
+    /// Cielo de dos filas: claro arriba, oscuro abajo. Un panorama de
+    /// `1 x 2` no tiene azimut, y eso es justo lo que hace medible la
+    /// altura por separado.
+    fn cielo_de_dos_franjas(scene: &mut Scene) -> (Color, Color) {
+        let claro = Color::new(0.80, 0.82, 0.90);
+        let oscuro = Color::new(0.04, 0.04, 0.07);
+
+        // Las texturas no entran en la estructura de aceleracion, asi que
+        // registrarlas despues de construirla no la invalida.
+        let panorama = crate::texture::Texture::from_pixels(1, 2, vec![claro, oscuro])
+            .expect("1x2 con dos pixeles");
+        let id = scene.add_texture(panorama);
+
+        scene.skybox = Skybox::Panorama {
+            pale: id,
+            painted: id,
+        };
+
+        (claro, oscuro)
+    }
+
+    #[test]
+    fn un_rayo_perdido_devuelve_el_cielo_y_no_un_color_fijo() {
+        let (mut scene, accel) = suelo();
+        let (claro, oscuro) = cielo_de_dos_franjas(&mut scene);
+
+        // Rayo que se va hacia el cenit, muy por encima del suelo.
+        let hacia_arriba = Ray::new(Vec3::new(0.0, 50.0, 0.0), Vec3::new(0.0, 1.0, 0.0));
+        // Y otro que cae hacia el nadir, pero fuera del suelo de 20 x 20.
+        let hacia_abajo = Ray::new(Vec3::new(0.0, 50.0, 100.0), Vec3::new(0.0, -1.0, 0.0));
+
+        let arriba = cast_ray(
+            &hacia_arriba,
+            &scene,
+            &accel,
+            &[],
+            &RevealState::unpainted(),
+            Shading::Material,
+            &mut TraversalStats::default(),
+        );
+        let abajo = cast_ray(
+            &hacia_abajo,
+            &scene,
+            &accel,
+            &[],
+            &RevealState::unpainted(),
+            Shading::Material,
+            &mut TraversalStats::default(),
+        );
+
+        assert_eq!(arriba, claro, "el cenit no trajo el cielo");
+        assert_eq!(abajo, oscuro, "el nadir no trajo el suelo del panorama");
+        // Lo que exige el plan: el fondo depende de la direccion. Si el
+        // miss siguiera devolviendo una constante, los dos serian iguales.
+        assert_ne!(arriba, abajo);
+        assert_ne!(arriba.to_hex(), BACKGROUND_COLOR);
+    }
+
+    #[test]
+    fn el_cielo_del_miss_avanza_con_la_revelacion() {
+        let (mut scene, accel) = suelo();
+
+        let sin_pintar = Color::new(0.9, 0.9, 0.85);
+        let pintado = Color::new(0.05, 0.08, 0.20);
+        let pale = scene.add_texture(
+            crate::texture::Texture::from_pixels(1, 1, vec![sin_pintar]).expect("1x1"),
+        );
+        let painted = scene
+            .add_texture(crate::texture::Texture::from_pixels(1, 1, vec![pintado]).expect("1x1"));
+        scene.skybox = Skybox::Panorama { pale, painted };
+
+        let perdido = Ray::new(Vec3::new(0.0, 50.0, 0.0), Vec3::new(0.0, 1.0, 0.0));
+        let cielo = |reveal: &RevealState| {
+            cast_ray(
+                &perdido,
+                &scene,
+                &accel,
+                &[],
+                reveal,
+                Shading::Material,
+                &mut TraversalStats::default(),
+            )
+        };
+
+        assert_eq!(cielo(&RevealState::unpainted()), sin_pintar);
+        assert_eq!(cielo(&RevealState::painted()), pintado);
+
+        // A medio camino, entre los dos y distinto de ambos.
+        let mut medio = RevealState::unpainted();
+        for grupo in [
+            RevealGroup::Meadows,
+            RevealGroup::Breakwater,
+            RevealGroup::FlyingWaters,
+            RevealGroup::Finale,
+        ] {
+            medio.set_progress(grupo, 0.5);
+        }
+        let a_medias = cielo(&medio);
+
+        assert!((a_medias.r - 0.475).abs() < 1e-5, "{a_medias}");
     }
 
     #[test]

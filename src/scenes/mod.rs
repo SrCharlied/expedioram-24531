@@ -22,6 +22,7 @@ use crate::scene_builder::{
     derive_orbit_radius, eye_at_yaw, measure_scene_radius, Blockout, SceneAnchors, SceneScale,
     HERO_YAW_DEGREES, LOOK_AT_HEIGHT_FRACTION,
 };
+use crate::skybox::Skybox;
 use crate::texture::{Texture, TextureError};
 use nalgebra_glm::Vec3;
 use std::path::Path;
@@ -248,6 +249,36 @@ impl Palette {
     }
 }
 
+/// Rutas de los dos panoramas del skybox, relativas a la raíz del proyecto.
+pub const RUTAS_SKYBOX: [(&str, &str); 2] = [
+    ("pale", "assets/skybox/pale.png"),
+    ("painted", "assets/skybox/painted.png"),
+];
+
+/// Carga los dos panoramas y devuelve el cielo que los interpola.
+///
+/// Igual que las texturas de material: si falta uno, error con su ruta y no
+/// un degradado de relleno. Un cielo que se sustituye en silencio es
+/// justamente lo que no se nota mirando la imagen, porque un fondo plano
+/// también es un fondo plausible.
+///
+/// Los panoramas se quedan con `WrapMode::Repeat`, que es lo correcto para
+/// el azimut: dan la vuelta completa y la columna final empalma con la
+/// primera. El cenit lo resuelve `Skybox`, que recorta `v` antes de
+/// muestrear.
+pub fn cargar_skybox(scene: &mut Scene, raiz: &Path) -> Result<Skybox, TextureError> {
+    let mut ids = Vec::with_capacity(RUTAS_SKYBOX.len());
+    for (_, ruta) in RUTAS_SKYBOX {
+        let panorama = Texture::load(&raiz.join(ruta))?;
+        ids.push(scene.add_texture(panorama));
+    }
+
+    Ok(Skybox::Panorama {
+        pale: ids[0],
+        painted: ids[1],
+    })
+}
+
 /// Presupuesto de primitivas por región, según el inventario.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Presupuesto {
@@ -295,7 +326,16 @@ pub fn safe_level_con(
     let mut scene = Scene::new();
     let mut plan = ClusterPlan::new();
     let paleta = match raiz_assets {
-        Some(raiz) => Palette::registrar_con_texturas(&mut scene, raiz)?,
+        Some(raiz) => {
+            let paleta = Palette::registrar_con_texturas(&mut scene, raiz)?;
+            // El cielo se carga con el resto de los assets: sin panoramas
+            // la escena se queda con el color plano por defecto, que es lo
+            // que ven los tests.
+            let cielo = cargar_skybox(&mut scene, raiz)?;
+            scene.skybox = cielo;
+
+            paleta
+        }
         None => Palette::registrar(&mut scene),
     };
 

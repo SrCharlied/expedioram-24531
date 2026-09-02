@@ -6,6 +6,7 @@ use crate::material::Material;
 use crate::primitive::Primitive;
 use crate::ray::Ray;
 use crate::ray_intersect::RayIntersect;
+use crate::skybox::Skybox;
 use crate::texture::Texture;
 use nalgebra_glm::{Vec2, Vec3};
 
@@ -117,6 +118,14 @@ pub struct Scene {
     pub objects: Vec<SceneObject>,
     pub palette: Vec<Material>,
     pub textures: Vec<Texture>,
+    /// Cielo de la escena. Por defecto un color plano; con los assets del
+    /// Hito 4 cargados, los dos panoramas equirectangulares.
+    ///
+    /// Vive aquí y no en el renderer por la misma razón que la paleta: es
+    /// parte de la descripción de la escena, sus panoramas están en esta
+    /// misma tabla de texturas, y así el trazado no necesita un parámetro
+    /// más que arrastrar por cada firma.
+    pub skybox: Skybox,
 }
 
 impl Scene {
