@@ -34,6 +34,7 @@ use std::process::ExitCode;
 
 use expedition33_continente_inacabado::color::Color;
 use expedition33_continente_inacabado::framebuffer::Framebuffer;
+use expedition33_continente_inacabado::skybox::FALLBACK_COLOR;
 
 /// Lado de las texturas de material. Cuadradas y potencia de dos.
 const LADO_TEXTURA: usize = 256;
@@ -312,12 +313,39 @@ fn skybox_pale() -> Framebuffer {
 }
 
 /// Cielo pintado: el fondo del estado final.
+///
+/// El hemisferio **inferior** es el que se ve, y eso no es intuitivo. La
+/// cámara hero orbita a `35°` de elevación mirando hacia abajo, con medio
+/// FOV vertical de `30°`: los rayos que fallan la geometría salen del ojo
+/// entre unos `−62°` y `−2°` de elevación, así que en la toma que se
+/// presenta **todo el fondo está bajo el horizonte** y el cenit azul no
+/// participa. Medido al integrar el muestreo en la Tarea 4.5.
+///
+/// La primera versión resolvía esa mitad como relleno neutro —«ahí no hay
+/// cielo que describir»— y el cuadro se llenaba de un café uniforme. De ahí
+/// el reparto de abajo: una franja cálida **breve** que deja legible dónde
+/// está el horizonte, un tránsito por malva, e índigo profundo como color
+/// dominante, cayendo hasta el azul de noche del proyecto en el nadir.
 fn skybox_painted() -> Framebuffer {
     let cenit = Color::from_srgb(0.07, 0.13, 0.34);
     let medio = Color::from_srgb(0.22, 0.38, 0.62);
     let horizonte = Color::from_srgb(0.72, 0.58, 0.44);
 
-    let nadir = Color::from_srgb(0.10, 0.09, 0.14);
+    // Bajo el horizonte, en orden de caída.
+    let malva = Color::from_srgb(0.34, 0.24, 0.40);
+    // Índigo con el azul por delante del rojo: es lo que sostiene el tono
+    // durante la revelación. Mezclado con el marfil del panorama pálido, un
+    // índigo neutro daría un gris sucio a media pintura.
+    let indigo = Color::from_srgb(0.09, 0.11, 0.32);
+    // El mismo azul de noche que el proyecto eligió como fondo en el Hito
+    // 1: el nadir cierra donde cerraba el color plano.
+    let nadir = Color::from_hex(FALLBACK_COLOR);
+
+    // Ancho de las dos bandas de transición, en fracción del hemisferio.
+    // `0.06` son unos `5°` de franja cálida: suficiente para leerla como
+    // horizonte, corta para que no domine el cuadro.
+    let franja_calida = 0.06;
+    let transicion_malva = 0.22;
 
     panorama(|u, v| {
         let nubes = fbm(u, v, 8, 5, 0x0A17_7ED0);
@@ -325,9 +353,23 @@ fn skybox_painted() -> Framebuffer {
         let altura = (v - 0.5) * 2.0;
 
         let base = if altura < 0.0 {
-            // Por debajo del horizonte cae rápido a un tono neutro oscuro:
-            // ahí no hay cielo que describir, solo un fondo que no compita.
-            mezclar(horizonte, nadir, (-altura).powf(0.55))
+            // Profundidad bajo el horizonte: 0 en el horizonte, 1 en el
+            // nadir.
+            let bajo = -altura;
+
+            if bajo < franja_calida {
+                mezclar(horizonte, malva, suavizar(bajo / franja_calida))
+            } else if bajo < transicion_malva {
+                let t = (bajo - franja_calida) / (transicion_malva - franja_calida);
+
+                mezclar(malva, indigo, suavizar(t))
+            } else {
+                // El tramo largo, y con pendiente: dejarlo plano se vería
+                // como un telón de un solo color detrás del diorama.
+                let t = (bajo - transicion_malva) / (1.0 - transicion_malva);
+
+                mezclar(indigo, nadir, suavizar(t))
+            }
         } else if altura < 0.30 {
             // Franja cálida al ras del horizonte.
             mezclar(horizonte, medio, altura / 0.30)
@@ -335,9 +377,10 @@ fn skybox_painted() -> Framebuffer {
             mezclar(medio, cenit, (altura - 0.30) / 0.70)
         };
 
-        // Las nubes tiñen hacia el tono medio, sin blanquear el cielo, y
-        // solo por encima del horizonte.
-        let peso = if altura > 0.0 { 0.22 } else { 0.05 };
+        // Las nubes tiñen hacia el tono medio, sin blanquear el cielo. Bajo
+        // el horizonte pesan poco pero no cero: son lo que impide que el
+        // índigo se lea como un color plano.
+        let peso = if altura > 0.0 { 0.22 } else { 0.10 };
 
         mezclar(base, medio, peso * nubes)
     })
@@ -537,6 +580,101 @@ mod tests {
                 assert!((0.0..=1.0).contains(&valor), "fbm salio de rango: {valor}");
             }
         }
+    }
+
+    /// Color medio del panorama pintado a una elevación dada, en grados.
+    ///
+    /// Promedia la fila completa a propósito: encima del degradado van las
+    /// nubes, y una sola columna mediría el ruido en vez de la banda.
+    fn cielo_pintado_a(fb: &Framebuffer, grados: f32) -> (f32, f32, f32) {
+        let v = 0.5 + grados / 180.0;
+        let fila = (((1.0 - v) * ALTO_SKYBOX as f32) as usize).min(ALTO_SKYBOX - 1);
+
+        let mut suma = (0.0, 0.0, 0.0);
+        for columna in 0..ANCHO_SKYBOX {
+            let pixel = fb.buffer[fila * ANCHO_SKYBOX + columna];
+
+            suma.0 += ((pixel >> 16) & 0xFF) as f32;
+            suma.1 += ((pixel >> 8) & 0xFF) as f32;
+            suma.2 += (pixel & 0xFF) as f32;
+        }
+
+        let escala = ANCHO_SKYBOX as f32 * 255.0;
+
+        (suma.0 / escala, suma.1 / escala, suma.2 / escala)
+    }
+
+    #[test]
+    fn el_fondo_de_la_toma_hero_esta_dominado_por_el_indigo() {
+        // La toma hero solo ve el hemisferio inferior: elevaciones de unos
+        // -62 a -2 grados. Este test fija esa calibracion, que se corrigio
+        // en la Tarea 4.5 despues de medir que el cenit azul no entra en
+        // cuadro y que el relleno neutro llenaba el fondo de cafe.
+        let fb = skybox_painted();
+
+        for grados in [-15.0, -30.0, -45.0, -60.0] {
+            let (r, g, b) = cielo_pintado_a(&fb, grados);
+
+            assert!(
+                b > r + 0.06,
+                "a {grados} grados el fondo no es azul: rgb {r:.3} {g:.3} {b:.3}"
+            );
+            assert!(
+                r < 0.45,
+                "a {grados} grados el fondo sigue siendo calido: r = {r:.3}"
+            );
+        }
+    }
+
+    #[test]
+    fn la_franja_calida_es_breve_y_marca_el_horizonte() {
+        // Al ras del horizonte sigue habiendo calor: es lo que lo hace
+        // legible como horizonte y no como un degradado cualquiera.
+        let fb = skybox_painted();
+
+        let (r_ras, _, b_ras) = cielo_pintado_a(&fb, -1.0);
+        assert!(r_ras > b_ras, "el horizonte perdio su franja calida");
+
+        // Y a diez grados por debajo ya se apago.
+        let (r_bajo, _, b_bajo) = cielo_pintado_a(&fb, -10.0);
+        assert!(
+            b_bajo > r_bajo,
+            "la franja calida se extendio demasiado: rgb {r_bajo:.3} .. {b_bajo:.3}"
+        );
+    }
+
+    #[test]
+    fn el_nadir_cierra_en_el_azul_de_noche_del_proyecto() {
+        let panorama = skybox_painted();
+        let (r, g, b) = cielo_pintado_a(&panorama, -89.0);
+
+        let (fr, fg, fb_) = (
+            ((FALLBACK_COLOR >> 16) & 0xFF) as f32 / 255.0,
+            ((FALLBACK_COLOR >> 8) & 0xFF) as f32 / 255.0,
+            (FALLBACK_COLOR & 0xFF) as f32 / 255.0,
+        );
+
+        // Cerca, no exacto: encima del degradado van las nubes.
+        assert!((r - fr).abs() < 0.10, "r: {r:.3} contra {fr:.3}");
+        assert!((g - fg).abs() < 0.10, "g: {g:.3} contra {fg:.3}");
+        assert!((b - fb_).abs() < 0.12, "b: {b:.3} contra {fb_:.3}");
+    }
+
+    #[test]
+    fn el_hemisferio_inferior_no_es_plano() {
+        // Un telon de un solo color detras del diorama se veria como un
+        // error de render, no como un fondo.
+        let fb = skybox_painted();
+        let cerca = cielo_pintado_a(&fb, -10.0);
+        let lejos = cielo_pintado_a(&fb, -70.0);
+
+        let salto =
+            (cerca.0 - lejos.0).abs() + (cerca.1 - lejos.1).abs() + (cerca.2 - lejos.2).abs();
+
+        assert!(
+            salto > 0.12,
+            "el hemisferio inferior salio plano: {salto:.3}"
+        );
     }
 
     #[test]

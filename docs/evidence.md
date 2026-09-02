@@ -468,6 +468,77 @@ verificación visual humana: que el proceso viva no dice qué se ve.
 
 ---
 
+## Hito 4 — Skybox: la mitad del panorama que sí se ve
+
+Al integrar el muestreo equirectangular en la Tarea 4.5 se midió algo que
+la autoría de los panoramas, en la Tarea 4.2, había supuesto al revés.
+
+### La medición
+
+La cámara hero orbita a `35°` de elevación, con la vista inclinada `31.94°`
+hacia abajo y medio FOV vertical de `30°`. Los rayos que fallan la
+geometría salen del ojo entre unos `−62°` y `−2°` de elevación, medidos
+sobre el eje vertical del cuadro:
+
+| Borde del cuadro | Elevación del rayo | `v` muestreada |
+|---|---|---|
+| Superior | `≈ −1.9°` | `0.489` |
+| Centro | `≈ −31.9°` | `0.323` |
+| Inferior | `≈ −61.9°` | `0.156` |
+
+Es decir que **todo el fondo de la toma que se presenta está por debajo del
+horizonte**: `v` nunca alcanza `0.5`, y el cenit azul profundo del panorama
+pintado no aparece en ningún píxel de la vista hero.
+
+Cubrir la esfera completa —lo que ya exigía la Tarea 4.2— era necesario,
+pero insuficiente: la mitad inferior se había resuelto como relleno neutro,
+con el argumento de que «ahí no hay cielo que describir». Resulta que ahí
+está todo el cielo que se ve.
+
+### La corrección
+
+Solo el hemisferio inferior de `skybox_painted`. Franja cálida breve —unos
+`5°`— que deja legible dónde está el horizonte, tránsito por malva, e
+índigo profundo como color dominante, cerrando en el `0x040C24` que el
+proyecto eligió como fondo en el Hito 1.
+
+Medido sobre los renders de `evidence/hito4/`, promediando la esquina
+inferior izquierda —cielo puro— y la franja superior:
+
+| Estado | Franja superior antes | Franja superior después | Fondo bajo antes | Fondo bajo después |
+|---|---|---|---|---|
+| `reveal 0.66` | `#C6B29E` | `#BAAAA0` | `#9B8F83` | `#848184` |
+| `reveal 1.00` | `#AA8A6B` | `#93766E` | `#6C584B` | `#16214F` |
+
+El estado final pasa de un café uniforme a índigo. El estado intermedio
+pasa de beige cálido —`r − b = 24`— a gris neutro frío —`b − r = 0`—, y esa
+neutralidad no es un residuo: interpolar marfil contra índigo **en lineal**
+da un punto medio desaturado por construcción, y el marfil pesa mucho más
+en lineal de lo que su aspecto sugiere. Se registra como consecuencia
+conocida y no como defecto pendiente.
+
+El panorama pálido queda **intacto**: `assets/skybox/pale.png` es
+byte-idéntico, igual que las seis texturas de material, y las semillas del
+generador no cambiaron. El único asset modificado es
+`assets/skybox/painted.png`.
+
+### Qué queda amarrado con tests
+
+La calibración vive en cinco tests del generador, para que no se pierda en
+un retoque posterior: el fondo de la toma hero es azul y no cálido a `−15`,
+`−30`, `−45` y `−60` grados; la franja cálida sigue viva al ras del
+horizonte y ya se apagó diez grados más abajo; el nadir cierra cerca del
+azul de noche del proyecto; y el hemisferio inferior no es plano —un telón
+de un solo color se leería como un error de render—.
+
+El muestreo tiene los suyos aparte, en `src/skybox.rs`: direcciones
+cardinales contra UV esperada, el azimut atado al yaw de la cámara vía
+`eye_at_yaw`, la continuidad de la costura en `+X`, y el cenit exacto, que
+bajo `WrapMode::Repeat` envolvería a `v = 0` y devolvería el color del
+suelo a un rayo que mira recto hacia arriba.
+
+---
+
 ## Pendientes de medición
 
 Ninguna de estas filas puede completarse por estimación. Cada hito llena la suya.

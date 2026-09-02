@@ -183,7 +183,14 @@ a sRGB al escribir el píxel; el cálculo de iluminación, reflexión y
 refracción ocurre siempre en lineal.
 
 **Panoramas del skybox.** Equirectangulares y cubren la esfera completa:
-`v = 0` es el nadir, `v = 0.5` el horizonte y `v = 1` el cenit. Cubrir la
-esfera entera es necesario porque la cámara orbita a 35° de elevación
-mirando hacia abajo, así que hay rayos que fallan la geometría viajando por
-debajo del horizonte.
+`v = 0` es el nadir, `v = 0.5` el horizonte y `v = 1` el cenit. En
+horizontal, `u = 0` mira hacia `+X` y crece girando hacia `+Z`, el mismo
+sentido que el yaw de la cámara.
+
+Cubrir la esfera entera no es un extra: la cámara hero orbita a 35° de
+elevación mirando hacia abajo, y al integrar el muestreo se midió que **los
+rayos perdidos viajan todos por debajo del horizonte**, entre unos −62° y
+−2° de elevación. El cenit no entra en cuadro y el hemisferio inferior es
+el fondo real de la toma, así que está tratado como tal: franja cálida
+breve en el horizonte, tránsito por malva e índigo profundo dominante. La
+medición está en `docs/evidence.md`.
