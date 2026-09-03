@@ -67,6 +67,76 @@ impl RevealState {
         self.progress(group) >= 1.0
     }
 
+    /// Fase de un grupo, derivada de su escalar.
+    pub fn phase(&self, group: RevealGroup) -> RevealPhase {
+        match self.progress(group) {
+            p if p <= 0.0 => RevealPhase::Unpainted,
+            p if p >= 1.0 => RevealPhase::Painted,
+            _ => RevealPhase::Revealing,
+        }
+    }
+
+    /// Arranca la revelación de un grupo. Devuelve si algo cambió.
+    ///
+    /// No hace nada sobre un grupo que ya está pintado o ya en curso: un
+    /// segundo clic sobre la misma región no la reinicia ni la acelera.
+    pub fn activate(&mut self, group: RevealGroup) -> bool {
+        if self.phase(group) != RevealPhase::Unpainted {
+            return false;
+        }
+
+        self.set_progress(group, ACTIVATION_NUDGE);
+
+        true
+    }
+
+    /// Avanza los grupos en curso por **tiempo real**. Devuelve si algo
+    /// cambió.
+    ///
+    /// El avance es por segundos y no por cuadros a propósito: una máquina
+    /// lenta tiene que terminar la transición en aproximadamente el mismo
+    /// tiempo de pared, con menos cuadros. Los quince cuadros son el
+    /// criterio de aceptación del perfil, no el mecanismo de avance.
+    ///
+    /// Al completarse las tres regiones, **activa el finale**. Esa es la
+    /// regla del inventario: el Monolito no se elige, se revela cuando el
+    /// Continente está pintado. La condición se deriva del propio estado, así
+    /// que no añade nada que pueda desincronizarse.
+    pub fn advance(&mut self, delta_seconds: f32, speed: f32) -> bool {
+        // Se exige **finito** y no solo positivo. Un `inf` pasaría un
+        // guardián de signo y completaría la transición entera en un cuadro,
+        // que es exactamente el corte que los quince cuadros existen para
+        // evitar; y un `NaN` envenenaría los cuatro escalares. Los dos
+        // vienen de un reloj que hipó, y perder un cuadro de animación es
+        // mejor que cualquiera de las dos cosas.
+        let sano = |v: f32| v.is_finite() && v > 0.0;
+
+        if !sano(delta_seconds) || !sano(speed) {
+            return false;
+        }
+
+        let paso = delta_seconds * speed;
+        let mut cambio = false;
+
+        for grupo in RevealGroup::ALL {
+            if self.phase(grupo) != RevealPhase::Revealing {
+                continue;
+            }
+
+            self.set_progress(grupo, self.progress(grupo) + paso);
+            cambio = true;
+        }
+
+        // Al final del tick: el finale arranca en el siguiente, y así no se
+        // le aplica un paso parcial del mismo en el que las regiones
+        // terminaron.
+        if self.all_regions_painted() && self.activate(RevealGroup::Finale) {
+            cambio = true;
+        }
+
+        cambio
+    }
+
     /// Progreso del diorama completo: la media de los cuatro grupos.
     ///
     /// Es lo que interpola el skybox, y por eso incluye `Finale`: el cielo
@@ -97,6 +167,99 @@ impl RevealState {
         .all(|grupo| self.is_painted(*grupo))
     }
 }
+
+/// Fase de un grupo, **derivada** del escalar.
+///
+/// No se guarda en ninguna parte y nada la escribe: es una vista de solo
+/// lectura sobre `progress`. Guardarla sería reintroducir exactamente el
+/// estado duplicado que la decisión de centralizar el progreso eliminó, con
+/// la posibilidad de que la fase y el escalar dejen de coincidir.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RevealPhase {
+    Unpainted,
+    Revealing,
+    Painted,
+}
+
+/// Cuadros de transición que se exigen como mínimo.
+///
+/// Es el **criterio de aceptación**, no el mecanismo: el avance se hace por
+/// tiempo real, y estos quince cuadros son lo que garantiza que la
+/// transición se lea como animación y no como un corte.
+pub const MINIMUM_REVEAL_FRAMES: f32 = 15.0;
+
+/// Piso de la duración. Evita que una máquina rápida convierta la
+/// revelación en un parpadeo.
+pub const REVEAL_DURATION_FLOOR: f32 = 1.5;
+
+/// Techo de la duración. **No se levanta** si los quince cuadros no caben:
+/// en ese caso falla el gate de fluidez, y lo que hay que bajar es la
+/// resolución, no alargar la animación.
+pub const REVEAL_DURATION_CEILING: f32 = 4.0;
+
+/// El perfil interactivo no alcanza para quince cuadros dentro del techo.
+///
+/// Es un fallo de gate y no un valor a corregir: alargar la animación para
+/// que quepan sería exactamente lo que el plan prohíbe.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FluidityFailure {
+    /// Tiempo por cuadro medido, en segundos.
+    pub interactive_frame_time: f32,
+    /// Duración que harían falta los quince cuadros.
+    pub required: f32,
+}
+
+/// Duración de la revelación, derivada del tiempo por cuadro medido.
+///
+/// ```text
+/// reveal_duration = clamp(15 x interactive_frame_time, 1.5, 4.0)
+/// ```
+///
+/// No se elige por gusto. El tiempo por cuadro se **mide** en el perfil
+/// interactivo, y de ahí sale la duración que garantiza los quince cuadros.
+///
+/// Devuelve error si el perfil no cabe: con `interactive_frame_time` por
+/// encima de `0.267 s`, quince cuadros ya no entran en cuatro segundos y el
+/// techo no se levanta.
+pub fn reveal_duration(interactive_frame_time: f32) -> Result<f32, FluidityFailure> {
+    let required = MINIMUM_REVEAL_FRAMES * interactive_frame_time;
+
+    // La finitud se exige aparte del techo, y no como una comparación
+    // negada, para que se lea la intención: un `NaN` no es una duración que
+    // quepa, es una medición inválida, y en los dos casos falla el gate.
+    let cabe = required.is_finite() && required <= REVEAL_DURATION_CEILING;
+
+    if !cabe {
+        return Err(FluidityFailure {
+            interactive_frame_time,
+            required,
+        });
+    }
+
+    Ok(required.max(REVEAL_DURATION_FLOOR))
+}
+
+/// Progreso por segundo que corresponde a una duración.
+pub fn reveal_speed(duration: f32) -> f32 {
+    if duration <= 0.0 {
+        return 0.0;
+    }
+
+    1.0 / duration
+}
+
+/// Empujón mínimo que saca a un grupo de cero al activarlo.
+///
+/// Es el precio de **no** guardar la activación aparte, y se paga a
+/// propósito. `Revealing` se deriva del escalar, así que un grupo en cero
+/// exacto es indistinguible de uno que nadie tocó: si `activate` no lo
+/// moviera, el siguiente `advance` no tendría cómo saber que hay que
+/// avanzarlo.
+///
+/// A la velocidad del proyecto —`0.667` por segundo— este valor equivale a
+/// `0.15 ms` de animación: invisible, y suficiente para que el `f32` lo
+/// distinga de cero.
+const ACTIVATION_NUDGE: f32 = 1e-4;
 
 /// Interpolación lineal entre dos escalares.
 fn mezcla(a: f32, b: f32, t: f32) -> f32 {
@@ -418,5 +581,313 @@ mod tests {
         assert!((visible.albedo.r - 0.75).abs() < 1e-6);
         // Y la textura queda resuelta, no pendiente de muestrear.
         assert_eq!(visible.albedo_texture, None);
+    }
+
+    // ------------------------------------------------- fase derivada
+
+    #[test]
+    fn la_fase_se_deriva_del_escalar_y_no_se_guarda() {
+        let mut estado = RevealState::unpainted();
+
+        assert_eq!(estado.phase(RevealGroup::Meadows), RevealPhase::Unpainted);
+
+        estado.set_progress(RevealGroup::Meadows, 0.5);
+        assert_eq!(estado.phase(RevealGroup::Meadows), RevealPhase::Revealing);
+
+        estado.set_progress(RevealGroup::Meadows, 1.0);
+        assert_eq!(estado.phase(RevealGroup::Meadows), RevealPhase::Painted);
+
+        // Y volviendo atras, la fase vuelve con el escalar: no hay nada
+        // guardado que pueda quedarse desincronizado.
+        estado.set_progress(RevealGroup::Meadows, 0.0);
+        assert_eq!(estado.phase(RevealGroup::Meadows), RevealPhase::Unpainted);
+    }
+
+    #[test]
+    fn los_extremos_pertenecen_a_las_fases_terminales() {
+        let mut estado = RevealState::unpainted();
+
+        // Justo por encima de cero ya esta revelando; justo por debajo de
+        // uno todavia. Es lo que hace que `advance` sepa a quien mover.
+        estado.set_progress(RevealGroup::Breakwater, 1e-6);
+        assert_eq!(
+            estado.phase(RevealGroup::Breakwater),
+            RevealPhase::Revealing
+        );
+
+        estado.set_progress(RevealGroup::Breakwater, 1.0 - 1e-6);
+        assert_eq!(
+            estado.phase(RevealGroup::Breakwater),
+            RevealPhase::Revealing
+        );
+    }
+
+    // ------------------------------------------------- duracion derivada
+
+    #[test]
+    fn la_duracion_reproduce_la_tabla_del_plan() {
+        // Las cuatro filas tabuladas, con el matiz del techo incluido.
+        assert_eq!(reveal_duration(0.05), Ok(1.5), "piso");
+        assert_eq!(reveal_duration(0.10), Ok(1.5));
+        assert_eq!(reveal_duration(0.20), Ok(3.0));
+
+        let fallo = reveal_duration(0.30).expect_err("0.30 debe fallar el gate");
+        assert!((fallo.required - 4.5).abs() < 1e-6, "{:?}", fallo);
+    }
+
+    #[test]
+    fn el_techo_no_se_levanta_nunca() {
+        // El matiz cerrado: pasados los 0.267 s por cuadro, quince cuadros
+        // no caben en cuatro segundos y **falla el gate**. No se alarga la
+        // animacion para que quepan.
+        let critico = REVEAL_DURATION_CEILING / MINIMUM_REVEAL_FRAMES;
+
+        assert!(
+            (critico - 0.266_666_7).abs() < 1e-6,
+            "el critico es {critico}"
+        );
+
+        assert!(reveal_duration(critico - 1e-4).is_ok());
+        assert!(reveal_duration(critico + 1e-4).is_err());
+
+        // Y ninguna duracion valida pasa del techo.
+        for paso in 0..=40 {
+            let cuadro = paso as f32 / 100.0;
+
+            if let Ok(duracion) = reveal_duration(cuadro) {
+                assert!(
+                    duracion <= REVEAL_DURATION_CEILING,
+                    "con {cuadro} s por cuadro salio {duracion}"
+                );
+                assert!(duracion >= REVEAL_DURATION_FLOOR);
+            }
+        }
+    }
+
+    #[test]
+    fn un_tiempo_por_cuadro_absurdo_falla_en_vez_de_colarse() {
+        assert!(
+            reveal_duration(f32::NAN).is_err(),
+            "un NaN no es una duracion"
+        );
+        assert!(reveal_duration(f32::INFINITY).is_err());
+        // Cero o negativo caen al piso: no hay quince cuadros que garantizar
+        // si el cuadro no cuesta nada, y el piso sigue evitando el
+        // parpadeo.
+        assert_eq!(reveal_duration(0.0), Ok(REVEAL_DURATION_FLOOR));
+    }
+
+    #[test]
+    fn el_perfil_medido_del_proyecto_pasa_el_gate_con_margen() {
+        // `interactive_frame_time` medido en el perfil MEDIA con optica
+        // completa, escena refractiva y reveal 1.0: el caso mas caro.
+        let medido = 0.0490;
+        let duracion = reveal_duration(medido).expect("el perfil MEDIA cabe");
+
+        assert_eq!(duracion, REVEAL_DURATION_FLOOR, "cae al piso");
+
+        // Y con margen: el critico esta cinco veces mas arriba.
+        let critico = REVEAL_DURATION_CEILING / MINIMUM_REVEAL_FRAMES;
+        assert!(critico / medido > 5.0, "margen {}", critico / medido);
+
+        // A esa duracion y ese cuadro salen unos treinta cuadros, el doble
+        // del minimo exigido.
+        let cuadros = duracion / medido;
+        assert!(
+            cuadros > MINIMUM_REVEAL_FRAMES * 2.0,
+            "solo {cuadros} cuadros"
+        );
+    }
+
+    #[test]
+    fn la_velocidad_es_el_reciproco_de_la_duracion() {
+        assert!((reveal_speed(1.5) - 0.666_666_7).abs() < 1e-6);
+        assert!((reveal_speed(4.0) - 0.25).abs() < 1e-6);
+        // Una duracion degenerada no divide entre cero.
+        assert_eq!(reveal_speed(0.0), 0.0);
+        assert_eq!(reveal_speed(-1.0), 0.0);
+    }
+
+    // ------------------------------------------------- avance temporizado
+
+    #[test]
+    fn activar_saca_al_grupo_de_cero_para_que_advance_lo_vea() {
+        // El precio de derivar la fase: sin el empujon, `advance` no tendria
+        // como distinguir un grupo activado de uno que nadie toco.
+        let mut estado = RevealState::unpainted();
+
+        assert!(estado.activate(RevealGroup::Meadows));
+        assert_eq!(estado.phase(RevealGroup::Meadows), RevealPhase::Revealing);
+        assert!(estado.progress(RevealGroup::Meadows) > 0.0);
+
+        // Y el empujon es invisible: menos de un milesimo del recorrido.
+        assert!(estado.progress(RevealGroup::Meadows) < 1e-3);
+    }
+
+    #[test]
+    fn activar_dos_veces_no_reinicia_ni_acelera() {
+        let mut estado = RevealState::unpainted();
+
+        estado.activate(RevealGroup::Meadows);
+        estado.advance(0.5, reveal_speed(1.5));
+        let a_medias = estado.progress(RevealGroup::Meadows);
+
+        assert!(
+            !estado.activate(RevealGroup::Meadows),
+            "no deberia reactivar"
+        );
+        assert_eq!(estado.progress(RevealGroup::Meadows), a_medias);
+
+        // Ni sobre una region ya pintada.
+        estado.set_progress(RevealGroup::Breakwater, 1.0);
+        assert!(!estado.activate(RevealGroup::Breakwater));
+    }
+
+    #[test]
+    fn el_avance_es_por_tiempo_de_pared_y_no_por_cuadros() {
+        // La misma duracion con dos cadencias distintas: una maquina con la
+        // mitad de cuadros llega al mismo punto en el mismo tiempo.
+        let velocidad = reveal_speed(1.5);
+
+        let mut rapida = RevealState::unpainted();
+        let mut lenta = RevealState::unpainted();
+
+        rapida.activate(RevealGroup::Meadows);
+        lenta.activate(RevealGroup::Meadows);
+
+        // Treinta cuadros de 1/60 s contra quince de 1/30 s: un segundo en
+        // los dos casos.
+        for _ in 0..30 {
+            rapida.advance(1.0 / 60.0, velocidad);
+        }
+        for _ in 0..15 {
+            lenta.advance(1.0 / 30.0, velocidad);
+        }
+
+        let diferencia =
+            (rapida.progress(RevealGroup::Meadows) - lenta.progress(RevealGroup::Meadows)).abs();
+
+        assert!(diferencia < 1e-5, "difieren en {diferencia}");
+    }
+
+    #[test]
+    fn la_revelacion_termina_en_la_duracion_derivada() {
+        let duracion = reveal_duration(0.0490).expect("cabe");
+        let velocidad = reveal_speed(duracion);
+
+        let mut estado = RevealState::unpainted();
+        estado.activate(RevealGroup::FlyingWaters);
+
+        // Un cuadro antes de tiempo todavia no ha terminado.
+        let paso = 0.0490;
+        let mut transcurrido = 0.0;
+
+        while transcurrido < duracion - paso {
+            estado.advance(paso, velocidad);
+            transcurrido += paso;
+        }
+
+        assert_eq!(
+            estado.phase(RevealGroup::FlyingWaters),
+            RevealPhase::Revealing,
+            "termino antes de la duracion"
+        );
+
+        // Y al pasarse, se queda en pintado sin desbordar.
+        for _ in 0..5 {
+            estado.advance(paso, velocidad);
+        }
+
+        assert_eq!(
+            estado.phase(RevealGroup::FlyingWaters),
+            RevealPhase::Painted
+        );
+        assert_eq!(estado.progress(RevealGroup::FlyingWaters), 1.0);
+    }
+
+    #[test]
+    fn el_avance_no_toca_lo_que_nadie_activo() {
+        let mut estado = RevealState::unpainted();
+        estado.activate(RevealGroup::Meadows);
+
+        assert!(estado.advance(0.1, reveal_speed(1.5)));
+
+        assert!(estado.progress(RevealGroup::Meadows) > 0.0);
+        assert_eq!(estado.progress(RevealGroup::Breakwater), 0.0);
+        assert_eq!(estado.progress(RevealGroup::FlyingWaters), 0.0);
+    }
+
+    #[test]
+    fn un_delta_absurdo_no_envenena_el_estado() {
+        let mut estado = RevealState::unpainted();
+        estado.activate(RevealGroup::Meadows);
+        let antes = estado.progress(RevealGroup::Meadows);
+
+        for delta in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+            assert!(!estado.advance(delta, reveal_speed(1.5)), "delta {delta}");
+            assert_eq!(estado.progress(RevealGroup::Meadows), antes);
+        }
+
+        // Y una velocidad absurda tampoco.
+        assert!(!estado.advance(0.1, f32::NAN));
+        assert!(!estado.advance(0.1, 0.0));
+        assert_eq!(estado.progress(RevealGroup::Meadows), antes);
+    }
+
+    #[test]
+    fn el_finale_arranca_solo_al_terminar_las_tres_regiones() {
+        // La regla del inventario: el Monolito no se elige, se revela cuando
+        // el Continente esta pintado. Y se deriva del propio estado.
+        let velocidad = reveal_speed(1.5);
+        let mut estado = RevealState::unpainted();
+
+        for grupo in [
+            RevealGroup::Meadows,
+            RevealGroup::Breakwater,
+            RevealGroup::FlyingWaters,
+        ] {
+            estado.activate(grupo);
+        }
+
+        // Con dos regiones listas el finale sigue sin arrancar.
+        estado.set_progress(RevealGroup::Meadows, 1.0);
+        estado.set_progress(RevealGroup::Breakwater, 1.0);
+        estado.advance(0.1, velocidad);
+
+        assert_eq!(estado.phase(RevealGroup::Finale), RevealPhase::Unpainted);
+
+        // Al completarse la tercera, arranca.
+        estado.set_progress(RevealGroup::FlyingWaters, 1.0);
+        assert!(
+            estado.advance(0.1, velocidad),
+            "el tick tenia que activarlo"
+        );
+        assert_eq!(estado.phase(RevealGroup::Finale), RevealPhase::Revealing);
+
+        // Y termina como cualquier otro grupo.
+        for _ in 0..40 {
+            estado.advance(0.05, velocidad);
+        }
+
+        assert_eq!(estado.phase(RevealGroup::Finale), RevealPhase::Painted);
+    }
+
+    #[test]
+    fn el_finale_no_se_activa_a_si_mismo_con_dos_regiones() {
+        // `all_regions_painted` deja fuera al finale a proposito, o la
+        // condicion se cumpliria sola. Este test lo comprueba desde el tick.
+        let mut estado = RevealState::unpainted();
+        estado.set_progress(RevealGroup::Finale, 1.0);
+
+        assert!(!estado.all_regions_painted());
+        estado.advance(0.1, reveal_speed(1.5));
+
+        for grupo in [
+            RevealGroup::Meadows,
+            RevealGroup::Breakwater,
+            RevealGroup::FlyingWaters,
+        ] {
+            assert_eq!(estado.phase(grupo), RevealPhase::Unpainted);
+        }
     }
 }

@@ -82,9 +82,21 @@ impl SpatialGroupId {
 }
 
 impl RevealGroup {
-    /// Cantidad de grupos: el tamaño del arreglo `[f32; 4]` que guardará el
+    /// Cantidad de grupos: el tamaño del arreglo `[f32; 4]` que guarda el
     /// progreso.
     pub const COUNT: usize = 4;
+
+    /// Los cuatro grupos, en el orden de sus índices.
+    ///
+    /// Existe para poder recorrerlos sin escribirlos a mano en cada sitio:
+    /// una lista repetida se queda corta el día que aparezca un quinto
+    /// grupo, y el compilador no avisa de una lista incompleta.
+    pub const ALL: [RevealGroup; RevealGroup::COUNT] = [
+        RevealGroup::Meadows,
+        RevealGroup::Breakwater,
+        RevealGroup::FlyingWaters,
+        RevealGroup::Finale,
+    ];
 
     /// Posición del grupo dentro de ese arreglo.
     pub fn index(self) -> usize {

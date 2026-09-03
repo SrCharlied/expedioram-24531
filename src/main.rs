@@ -8,13 +8,13 @@ use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use std::f32::consts::PI;
 use std::path::PathBuf;
 use std::process::ExitCode;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use expedition33_continente_inacabado::framebuffer::Framebuffer;
 use expedition33_continente_inacabado::input::{demo_region, pick_region};
 use expedition33_continente_inacabado::light::diorama as luces_del_diorama;
 use expedition33_continente_inacabado::renderer::{render, InteractiveProfile, Shading};
-use expedition33_continente_inacabado::reveal::RevealState;
+use expedition33_continente_inacabado::reveal::{reveal_duration, reveal_speed, RevealState};
 use expedition33_continente_inacabado::scenes::{safe_level_con, WaterPreset};
 
 const WIDTH: usize = 800;
@@ -34,6 +34,18 @@ const ZOOM_FRACTION: f32 = 0.06;
 /// La rueda del ratón entrega magnitudes muy distintas según el sistema;
 /// solo se usa su signo.
 const WHEEL_STEPS: f32 = 1.0;
+
+/// Tiempo por cuadro del perfil interactivo, **medido**.
+///
+/// `400 x 300`, preset refractivo y `reveal 1.0` —el caso más caro, porque
+/// el lienzo no lanza rayos secundarios y cuesta `0.0347 s—`, mediana de
+/// quince repeticiones en release.
+///
+/// No se hereda del Hito 3: aquella medición dio `0.0242 s` y fue **antes**
+/// de la óptica, que duplicó el costo. De aquí sale la duración de la
+/// revelación; medirlo mal alargaría o acortaría la animación sin que nada
+/// avisara.
+const INTERACTIVE_FRAME_TIME: f32 = 0.0490;
 
 fn main() -> ExitCode {
     let frame_delay = Duration::from_millis(16);
@@ -84,6 +96,25 @@ fn main() -> ExitCode {
     // `render_scene --reveal 1.0`.
     let mut reveal = RevealState::unpainted();
 
+    // Duración de la revelación, **derivada** del tiempo por cuadro medido
+    // en el perfil interactivo. No se elige: sale de la medición, con piso
+    // de 1.5 s y techo de 4.0 s. Si el perfil no diera para quince cuadros
+    // dentro del techo, esto aborta en vez de alargar la animación, que es
+    // lo que el plan prohíbe expresamente.
+    let duracion = match reveal_duration(INTERACTIVE_FRAME_TIME) {
+        Ok(duracion) => duracion,
+        Err(fallo) => {
+            eprintln!(
+                "error: el perfil interactivo falla el gate de fluidez: {:.4} s por cuadro\n  \
+                 quince cuadros exigirian {:.2} s y el techo son 4.00 s",
+                fallo.interactive_frame_time, fallo.required
+            );
+            eprintln!("  baja la resolucion del perfil en vez de alargar la animacion");
+            return ExitCode::FAILURE;
+        }
+    };
+    let velocidad = reveal_speed(duracion);
+
     // Ya hay luces: el sombreado completo dice más que el albedo plano.
     // `Shading::Albedo` reproduce las imágenes con las que se aprobó el
     // Blockout 1, y `Normals` sigue disponible para revisar geometría.
@@ -119,6 +150,9 @@ fn main() -> ExitCode {
     println!("  flechas  orbitar     W / S / rueda  zoom     Escape  salir");
     println!("  clic     pintar la region señalada     1 / 2 / 3  pintar por teclado");
     println!("  R        volver al lienzo");
+    println!(
+        "  revelado {duracion:.2} s por region, derivados de {INTERACTIVE_FRAME_TIME:.4} s por cuadro"
+    );
 
     // El primer cuadro cuenta como cambio pendiente, para que la ventana
     // arranque ya con la imagen definitiva.
@@ -128,6 +162,10 @@ fn main() -> ExitCode {
     // clic**. `get_mouse_down` informa un nivel, no un evento: sin esta
     // comparación, sostener el botón reactivaría la región en cada cuadro.
     let mut boton_anterior = false;
+
+    // Reloj del avance. Se toma justo antes del ciclo para que el primer
+    // delta no incluya el tiempo de cargar los assets.
+    let mut ultimo_cuadro = Instant::now();
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let orbit = [
@@ -209,13 +247,27 @@ fn main() -> ExitCode {
         }
 
         if let Some(grupo) = elegida {
-            // Salto instantáneo, provisional. La Tarea 6.3 lo reemplaza por
-            // el avance temporizado —quince cuadros como mínimo— derivado
-            // del `interactive_frame_time` medido en el Hito 3.
-            reveal.set_progress(grupo, 1.0);
-            cuadro_final_pendiente = true;
+            // Activar, no saltar: el avance lo hace el reloj más abajo.
+            if reveal.activate(grupo) {
+                println!("  pintando {grupo:?}");
+            }
+        }
 
-            println!("  pintando {grupo:?}");
+        // ------------------------------------------------ avance por reloj
+        //
+        // Por tiempo de pared y no por cuadros: una máquina lenta termina la
+        // transición en aproximadamente el mismo tiempo, con menos cuadros.
+        let ahora = Instant::now();
+        let delta = ahora.duration_since(ultimo_cuadro).as_secs_f32();
+        ultimo_cuadro = ahora;
+
+        let revelando = reveal.advance(delta, velocidad);
+
+        if revelando {
+            // Mientras algo se revela, el cuadro cambia: se dibuja al perfil
+            // interactivo igual que al orbitar, y el cuadro final llega al
+            // quedarse todo quieto.
+            en_movimiento = true;
         }
 
         if en_movimiento {
