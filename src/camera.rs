@@ -10,6 +10,24 @@ const PITCH_LIMIT: f32 = PI / 2.0 - 0.1;
 /// Campo de visión vertical heredado de la rama académica: 60 grados.
 pub const DEFAULT_VERTICAL_FOV: f32 = PI / 3.0;
 
+/// Encuadre guardado: los tres puntos que definen una vista.
+///
+/// Existe para poder **volver** a una vista sin reconstruir la cámara, y
+/// para que ese encuadre pueda guardarse donde corresponde. El plan lo pide
+/// explícito: el preset hero vive en la escena, no clavado en el módulo de
+/// entrada. Aquí solo está el tipo que lo transporta.
+///
+/// No incluye los límites de radio ni el campo de visión. Los tres puntos
+/// son el **encuadre**; los límites son una propiedad de la escena medida,
+/// y el FOV, del proyecto. Restaurar una vista no debe cambiar ninguna de
+/// las dos.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CameraPreset {
+    pub eye: Vec3,
+    pub orbit_center: Vec3,
+    pub look_at: Vec3,
+}
+
 /// Cámara orbital con el eje de giro separado del punto de encuadre.
 ///
 /// La versión académica tenía un solo `center` que hacía las dos cosas a la
@@ -159,6 +177,26 @@ impl Camera {
         let nuevo = (radius + delta).clamp(self.min_radius, self.max_radius);
 
         self.eye = self.orbit_center + radius_vector * (nuevo / radius);
+    }
+
+    /// El encuadre actual, para poder volver a él más tarde.
+    pub fn preset(&self) -> CameraPreset {
+        CameraPreset {
+            eye: self.eye,
+            orbit_center: self.orbit_center,
+            look_at: self.look_at,
+        }
+    }
+
+    /// Restaura un encuadre guardado.
+    ///
+    /// Deja intactos los límites de radio y el campo de visión, por la
+    /// razón que documenta `CameraPreset`: son de la escena y del proyecto,
+    /// no del encuadre.
+    pub fn restore(&mut self, preset: CameraPreset) {
+        self.eye = preset.eye;
+        self.orbit_center = preset.orbit_center;
+        self.look_at = preset.look_at;
     }
 
     /// Rayo primario que atraviesa el centro del píxel `(x, y)`.
@@ -691,5 +729,60 @@ mod tests {
 
             assert!((rayo.direction.magnitude() - 1.0).abs() < 1e-6);
         }
+    }
+
+    // ------------------------------------------------- encuadre guardado
+
+    #[test]
+    fn restaurar_devuelve_el_encuadre_exacto() {
+        let mut camara = camara_del_diorama();
+        let guardado = camara.preset();
+
+        // Se maltrata la camara: orbita, pitch y zoom.
+        camara.orbit(1.2, -0.4);
+        camara.zoom(2.5);
+
+        assert_ne!(camara.preset(), guardado, "la camara no se movio");
+
+        camara.restore(guardado);
+
+        assert_eq!(camara.preset(), guardado);
+        assert_eq!(camara.eye, guardado.eye);
+        assert_eq!(camara.orbit_center, guardado.orbit_center);
+        assert_eq!(camara.look_at, guardado.look_at);
+    }
+
+    #[test]
+    fn restaurar_no_toca_los_limites_ni_el_campo_de_vision() {
+        // Son de la escena y del proyecto, no del encuadre: restaurar una
+        // vista no debe reintroducir unos limites viejos.
+        let mut camara = camara_del_diorama().with_radius_limits(2.0, 40.0);
+        let guardado = camara.preset();
+
+        camara.orbit(0.5, 0.0);
+        camara.restore(guardado);
+
+        assert_eq!(camara.min_radius, 2.0);
+        assert_eq!(camara.max_radius, 40.0);
+        assert!((camara.vertical_fov - DEFAULT_VERTICAL_FOV).abs() < 1e-6);
+    }
+
+    #[test]
+    fn el_preset_recorrido_completo_deja_el_rayo_central_igual() {
+        // La prueba que importa para la presentacion: despues de perderse
+        // orbitando, `R` devuelve exactamente la misma imagen.
+        let mut camara = camara_del_diorama();
+        let guardado = camara.preset();
+        let antes = camara.ray_from_cursor((400.0, 300.0), 800, 600);
+
+        camara.orbit(2.7, 0.3);
+        camara.zoom(-1.0);
+        camara.restore(guardado);
+
+        let despues = camara.ray_from_cursor((400.0, 300.0), 800, 600);
+
+        assert_eq!(antes.origin, despues.origin);
+        let desvio = (antes.direction - despues.direction).magnitude();
+        assert!(desvio < 1e-6, "el rayo central desvio {desvio}");
     }
 }

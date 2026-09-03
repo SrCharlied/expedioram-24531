@@ -9,7 +9,7 @@
 //! de la altura real del Monolito, y `orbit_radius` se deriva de ambos.
 
 use crate::accel::SceneAccel;
-use crate::camera::Camera;
+use crate::camera::{Camera, CameraPreset};
 use crate::scene::Scene;
 use nalgebra_glm::Vec3;
 
@@ -221,6 +221,20 @@ impl Blockout {
         self.camera_at_yaw(HERO_YAW_DEGREES)
     }
 
+    /// Encuadre hero guardado, para el reset de presentación.
+    ///
+    /// Vive aquí y no en `input` porque es una propiedad **medida** de la
+    /// escena: el ojo sale de `eye_at_yaw` con el `orbit_radius` derivado
+    /// del encuadre, y el `look_at` de la fracción de altura del Monolito.
+    /// Clavar esos tres puntos en el módulo de entrada los desincronizaría
+    /// del blockout en el primer ajuste de composición.
+    ///
+    /// Se deriva de `hero_camera` y no en paralelo, así que las dos no
+    /// pueden discrepar.
+    pub fn hero_preset(&self) -> CameraPreset {
+        self.hero_camera().preset()
+    }
+
     /// Cámara con elevación explícita, para la vista de corte.
     pub fn camera_at(&self, yaw_degrees: f32, elevation_degrees: f32) -> Camera {
         let eye = eye_at(
@@ -323,5 +337,34 @@ mod tests {
 
         assert!(eye.z > 0.0, "la toma hero debe encarar el borde roto");
         assert!(eye.x.abs() < 1e-4);
+    }
+
+    #[test]
+    fn el_preset_hero_no_puede_discrepar_de_la_camara_hero() {
+        // El requisito del plan: el encuadre hero vive en la escena. Este
+        // test es el que impide que alguien escriba los tres puntos en otro
+        // sitio y se desincronicen del blockout.
+        use crate::scenes::{safe_level, WaterPreset};
+
+        let diorama = safe_level(WaterPreset::RefractiveWater);
+        let camara = diorama.hero_camera();
+
+        assert_eq!(diorama.hero_preset(), camara.preset());
+    }
+
+    #[test]
+    fn el_preset_hero_sale_de_las_anclas_medidas() {
+        // Y no de constantes: el ojo es el ancla hero, el centro de orbita
+        // y el look_at son los de la escena.
+        use crate::scenes::{safe_level, WaterPreset};
+
+        let diorama = safe_level(WaterPreset::RefractiveWater);
+        let preset = diorama.hero_preset();
+
+        assert_eq!(preset.orbit_center, diorama.anchors.orbit_center);
+        assert_eq!(preset.look_at, diorama.anchors.look_at);
+
+        let desvio = (preset.eye - diorama.anchors.hero_camera_anchor).magnitude();
+        assert!(desvio < 1e-4, "el ojo desvio {desvio} del ancla hero");
     }
 }

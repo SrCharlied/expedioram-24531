@@ -11,7 +11,7 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use expedition33_continente_inacabado::framebuffer::Framebuffer;
-use expedition33_continente_inacabado::input::{demo_region, pick_region};
+use expedition33_continente_inacabado::input::{demo_action, pick_region, DemoAction};
 use expedition33_continente_inacabado::light::diorama as luces_del_diorama;
 use expedition33_continente_inacabado::renderer::{
     plan_frame, render, FramePlan, InteractiveProfile, Shading,
@@ -117,6 +117,11 @@ fn main() -> ExitCode {
     };
     let velocidad = reveal_speed(duracion);
 
+    // Encuadre hero **de la escena**, capturado antes de mover sus campos.
+    // Los tres puntos salen de las anclas medidas del blockout; no hay
+    // ninguna constante de cámara en este archivo ni en `input`.
+    let hero = diorama.hero_preset();
+
     // Ya hay luces: el sombreado completo dice más que el albedo plano.
     // `Shading::Albedo` reproduce las imágenes con las que se aprobó el
     // Blockout 1, y `Normals` sigue disponible para revisar geometría.
@@ -151,7 +156,7 @@ fn main() -> ExitCode {
     );
     println!("  flechas  orbitar     W / S / rueda  zoom     Escape  salir");
     println!("  clic     pintar la region señalada     1 / 2 / 3  pintar por teclado");
-    println!("  L        volver al lienzo");
+    println!("  L        volver al lienzo     R  restaurar encuadre hero");
     println!(
         "  revelado {duracion:.2} s por region, derivados de {INTERACTIVE_FRAME_TIME:.4} s por cuadro"
     );
@@ -239,25 +244,39 @@ fn main() -> ExitCode {
             }
         }
 
-        for (tecla, digito) in [(Key::Key1, 1), (Key::Key2, 2), (Key::Key3, 3)] {
-            if window.is_key_pressed(tecla, KeyRepeat::No) {
-                elegida = demo_region(digito);
+        // Las teclas de la demo pasan por `input::demo_action`, que es la
+        // única lista de qué hace cada una. Aquí solo se traduce de
+        // `minifb::Key` al carácter que esa lista entiende.
+        let mut reinicio = false;
+
+        for (tecla, caracter) in [
+            (Key::Key1, '1'),
+            (Key::Key2, '2'),
+            (Key::Key3, '3'),
+            (Key::L, 'L'),
+            (Key::R, 'R'),
+        ] {
+            if !window.is_key_pressed(tecla, KeyRepeat::No) {
+                continue;
             }
-        }
 
-        // Reiniciar al lienzo. No está en la lista del plan, y se añade por
-        // la misma razón que existe el fallback de teclado: una
-        // presentación que solo se puede dar una vez por arranque no es
-        // fiable.
-        //
-        // La tecla es `L` de lienzo y no `R`: la Tarea 6.5 reserva `R` para
-        // restaurar la cámara hero.
-        let reinicio = window.is_key_pressed(Key::L, KeyRepeat::No);
+            match demo_action(caracter) {
+                Some(DemoAction::Paint(grupo)) => elegida = Some(grupo),
+                Some(DemoAction::ResetCanvas) => {
+                    reveal = RevealState::unpainted();
+                    reinicio = true;
 
-        if reinicio {
-            reveal = RevealState::unpainted();
+                    println!("  reiniciado al lienzo");
+                }
+                Some(DemoAction::ResetCamera) => {
+                    // El encuadre lo aporta la escena, no esta tecla.
+                    camera.restore(hero);
+                    reinicio = true;
 
-            println!("  reiniciado al lienzo");
+                    println!("  encuadre hero restaurado");
+                }
+                None => {}
+            }
         }
 
         let region_cambio = match elegida {

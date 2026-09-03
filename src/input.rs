@@ -120,6 +120,47 @@ pub fn demo_region(digit: u8) -> Option<RevealGroup> {
     DEMO_REGIONS.get(digit.checked_sub(1)? as usize).copied()
 }
 
+/// Lo que el teclado de presentación puede pedir.
+///
+/// Las tres acciones se declaran juntas porque juntas son la garantía de
+/// que la demo se puede dar sin ratón: pintar cada región, volver al lienzo
+/// para repetirla, y recuperar el encuadre si la órbita se fue a un ángulo
+/// desde el que no se ve nada.
+///
+/// `ResetCamera` **no lleva el encuadre**. Se limita a decir «restaurá», y
+/// el encuadre lo aporta la escena: `Blockout::hero_preset`. El plan lo
+/// exige así para que los tres puntos del blueprint no queden clavados en
+/// el módulo de entrada, donde se desincronizarían del blockout en el
+/// primer ajuste de composición.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DemoAction {
+    /// Empezar a pintar una región.
+    Paint(RevealGroup),
+    /// Volver al lienzo para repetir la demostración.
+    ResetCanvas,
+    /// Recuperar el encuadre hero de la escena.
+    ResetCamera,
+}
+
+/// Acción asociada a una tecla de la demo, o `None` si esa tecla no hace
+/// nada.
+///
+/// Se recibe el carácter y no un tipo de `minifb`, por la misma razón que
+/// el resto del módulo: la superficie de teclado se prueba sin abrir una
+/// ventana.
+pub fn demo_action(key: char) -> Option<DemoAction> {
+    match key {
+        '1' | '2' | '3' => {
+            let digito = key as u8 - b'0';
+
+            demo_region(digito).map(DemoAction::Paint)
+        }
+        'l' | 'L' => Some(DemoAction::ResetCanvas),
+        'r' | 'R' => Some(DemoAction::ResetCamera),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -428,5 +469,78 @@ mod tests {
                 Some(*grupo)
             );
         }
+    }
+
+    // ------------------------------------------------- superficie de teclado
+
+    #[test]
+    fn las_teclas_de_la_demo_hacen_lo_que_anuncia_la_ventana() {
+        assert_eq!(
+            demo_action('1'),
+            Some(DemoAction::Paint(RevealGroup::Meadows))
+        );
+        assert_eq!(
+            demo_action('2'),
+            Some(DemoAction::Paint(RevealGroup::Breakwater))
+        );
+        assert_eq!(
+            demo_action('3'),
+            Some(DemoAction::Paint(RevealGroup::FlyingWaters))
+        );
+        assert_eq!(demo_action('L'), Some(DemoAction::ResetCanvas));
+        assert_eq!(demo_action('R'), Some(DemoAction::ResetCamera));
+    }
+
+    #[test]
+    fn las_teclas_no_distinguen_mayusculas() {
+        assert_eq!(demo_action('l'), demo_action('L'));
+        assert_eq!(demo_action('r'), demo_action('R'));
+    }
+
+    #[test]
+    fn ninguna_otra_tecla_hace_nada() {
+        for tecla in ['0', '4', '9', 'a', 'W', 'S', ' ', 'ñ'] {
+            assert_eq!(
+                demo_action(tecla),
+                None,
+                "la tecla {tecla} no deberia actuar"
+            );
+        }
+    }
+
+    #[test]
+    fn las_dos_teclas_de_reset_no_se_pisan() {
+        // La 6.2 uso `R` para volver al lienzo y la 6.5 la reserva para la
+        // camara. Este test es el que impide que vuelvan a colisionar.
+        assert_ne!(demo_action('L'), demo_action('R'));
+        assert_eq!(demo_action('L'), Some(DemoAction::ResetCanvas));
+        assert_eq!(demo_action('R'), Some(DemoAction::ResetCamera));
+    }
+
+    #[test]
+    fn reset_camera_no_transporta_ningun_encuadre() {
+        // La accion solo dice «restaura»: los tres puntos los aporta la
+        // escena. Si `ResetCamera` llevara un `CameraPreset`, el encuadre
+        // del blueprint acabaria escrito en algun sitio de `input`, que es
+        // justo lo que el plan prohibe.
+        assert_eq!(
+            std::mem::size_of::<DemoAction>(),
+            std::mem::size_of::<Option<RevealGroup>>(),
+            "DemoAction crecio: alguien le colgo datos"
+        );
+    }
+
+    #[test]
+    fn la_superficie_de_teclado_cubre_las_tres_regiones() {
+        // Sin raton se tiene que poder llegar a la demo completa.
+        let alcanzables: Vec<RevealGroup> = ['1', '2', '3']
+            .iter()
+            .filter_map(|k| match demo_action(*k) {
+                Some(DemoAction::Paint(grupo)) => Some(grupo),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(alcanzables, DEMO_REGIONS.to_vec());
     }
 }
