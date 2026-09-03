@@ -30,6 +30,20 @@ use nalgebra_glm::Vec3;
 const ANCHO: usize = 800;
 const ALTO: usize = 600;
 
+/// Guarda un PNG de evidencia, o **aborta**.
+///
+/// No basta con abortar cuando faltan los assets de entrada: un generador
+/// de evidencia que imprime sus cifras y no logra escribir la imagen
+/// terminaba con código `0`, así que un guion que lo invoque lo daba por
+/// bueno. Abortar al cargar y no al escribir deja la mitad de la promesa
+/// sin cumplir.
+fn guardar(framebuffer: &Framebuffer, destino: &std::path::Path) {
+    if let Err(error) = framebuffer.save_png(destino) {
+        eprintln!("error: no se pudo escribir {}: {error}", destino.display());
+        std::process::exit(1);
+    }
+}
+
 fn brillo(color: Color) -> f32 {
     color.r + color.g + color.b
 }
@@ -210,14 +224,13 @@ fn main() {
         );
 
         let destino = PathBuf::from("evidence/hito5").join(format!("sombras-{nombre}.png"));
-        match framebuffer.save_png(&destino) {
-            Ok(()) => println!(
-                "  {:<14} {} ({} rayos de sombra)",
-                nombre,
-                destino.display(),
-                stats.shadow_rays
-            ),
-            Err(e) => eprintln!("  no se pudo escribir {}: {e}", destino.display()),
-        }
+        guardar(&framebuffer, &destino);
+
+        println!(
+            "  {:<14} {} ({} rayos de sombra)",
+            nombre,
+            destino.display(),
+            stats.shadow_rays
+        );
     }
 }

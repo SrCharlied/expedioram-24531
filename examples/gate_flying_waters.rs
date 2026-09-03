@@ -39,6 +39,20 @@ const ANCHO: usize = 800;
 const ALTO: usize = 600;
 const REPETICIONES: usize = 7;
 
+/// Guarda un PNG de evidencia, o **aborta**.
+///
+/// No basta con abortar cuando faltan los assets de entrada: un generador
+/// de evidencia que imprime sus cifras y no logra escribir la imagen
+/// terminaba con código `0`, así que un guion que lo invoque lo daba por
+/// bueno. Abortar al cargar y no al escribir deja la mitad de la promesa
+/// sin cumplir.
+fn guardar(framebuffer: &Framebuffer, destino: &std::path::Path) {
+    if let Err(error) = framebuffer.save_png(destino) {
+        eprintln!("error: no se pudo escribir {}: {error}", destino.display());
+        std::process::exit(1);
+    }
+}
+
 fn raiz() -> std::path::PathBuf {
     std::path::PathBuf::from(".")
 }
@@ -267,9 +281,7 @@ fn main() {
     tiempos.sort_by(|a, b| a.partial_cmp(b).expect("no hay NaN"));
 
     let destino = std::path::PathBuf::from("evidence/hito5/gate-hero.png");
-    if let Err(e) = framebuffer.save_png(&destino) {
-        eprintln!("  no se pudo escribir {}: {e}", destino.display());
-    }
+    guardar(&framebuffer, &destino);
 
     println!(
         "\n  6 · tiempo release   min {:.4} s | mediana {:.4} s | max {:.4} s  ({REPETICIONES} repeticiones)",

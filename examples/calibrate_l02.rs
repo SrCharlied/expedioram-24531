@@ -29,6 +29,20 @@ use expedition33_continente_inacabado::scenes::flying_waters::caja_del_volumen;
 use expedition33_continente_inacabado::scenes::{anclas_del_diorama, safe_level_con, WaterPreset};
 use nalgebra_glm::Vec3;
 
+/// Guarda un PNG de evidencia, o **aborta**.
+///
+/// No basta con abortar cuando faltan los assets de entrada: un generador
+/// de evidencia que imprime sus cifras y no logra escribir la imagen
+/// terminaba con código `0`, así que un guion que lo invoque lo daba por
+/// bueno. Abortar al cargar y no al escribir deja la mitad de la promesa
+/// sin cumplir.
+fn guardar(framebuffer: &Framebuffer, destino: &std::path::Path) {
+    if let Err(error) = framebuffer.save_png(destino) {
+        eprintln!("error: no se pudo escribir {}: {error}", destino.display());
+        std::process::exit(1);
+    }
+}
+
 fn brillo(color: Color) -> f32 {
     color.r + color.g + color.b
 }
@@ -312,10 +326,8 @@ fn main() {
         );
 
         let destino = std::path::PathBuf::from("evidence/hito5").join(format!("{nombre}.png"));
+        guardar(&framebuffer, &destino);
 
-        match framebuffer.save_png(&destino) {
-            Ok(()) => println!("\n  {nombre:<12} {}", destino.display()),
-            Err(e) => eprintln!("  no se pudo escribir {}: {e}", destino.display()),
-        }
+        println!("\n  {nombre:<12} {}", destino.display());
     }
 }

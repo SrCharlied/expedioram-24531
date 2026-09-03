@@ -1157,14 +1157,15 @@ la imagen es `evidence/hito5/gate-hero.png`.
 | 1 · La superficie devuelve skybox | **Cumple** |
 | 2 · El borde frontal permite ver el barco | **Cumple** |
 | 3 · El highlight del agua se ve | **Cumple** |
-| 4 · Barco, cadena y ancla legibles | **Pendiente de verificación visual** |
+| 4 · Barco, cadena y ancla legibles | **Cumple** |
 | 5 · Ni acné severo ni negro total | **Cumple** |
 | 6 · Tiempo en release registrado | **Registrado** |
 
-El criterio 4 se deja **pendiente a propósito**. Las medidas de abajo lo
-respaldan, pero un criterio de legibilidad lo cierra quien mira la imagen,
-no quien la mide. La primera versión de esta sección lo marcó como cumplido
-sin esa revisión; queda anotado como el error de proceso que fue.
+El criterio 4 lo aprobó la revisión visual sobre
+`evidence/hito5/gate-hero.png`, después de las tres correcciones de más
+abajo. Queda anotado que una versión anterior de esta sección lo marcó como
+cumplido **antes** de esa revisión: un criterio de legibilidad lo cierra
+quien mira la imagen, no quien la mide.
 
 #### 6 · el tiempo
 
@@ -1387,17 +1388,63 @@ cargo build --release                       OK
 cargo run                                   arranca, 160 primitivas, 8 texturas
 ```
 
+##### Los generadores de evidencia abortan de verdad
+
+Abortaban si no **cargaban** los assets, pero no si no **escribían** la
+imagen: imprimían el error del `save_png` y terminaban con código `0`. Un
+guion que los invocara los daba por buenos sin evidencia producida.
+
+Los tres pasan ahora por un `guardar` que aborta con código `1` y la ruta en
+el mensaje. Comprobado bloqueando el directorio de destino:
+
+| Ejemplo | Assets ausentes | Fallo al escribir |
+|---|---:|---:|
+| `gate_flying_waters` | `1` | `1` |
+| `calibrate_l02` | `1` | `1` |
+| `submarine_shadows` | `1` | `1` |
+
 Reparto de los 306: `276` de librería, `16` del generador de assets, `8` de
 humo del render y `6` de sombras submarinas.
 
-Dos imágenes del directorio quedaron **sin referencia** al reescribir esta
-sección: `l02-calibrada.png`, que el antes/después reemplazó, y
-`gate-hero-corregido.png`, que es byte a byte igual a `gate-hero.png` desde
-que el gate volvió a generarse. No se borraron; se anotan para que no se
-tomen por evidencia de otro estado.
+Dos imágenes se **eliminaron** en la limpieza de cierre:
+`gate-hero-corregido.png`, byte a byte igual a `gate-hero.png`, y
+`l02-calibrada.png`, que el antes/después reemplazó semánticamente.
+Conservarlas invitaba a que documentación futura volviera a apuntar al
+nombre equivocado, que es justo lo que le pasó al «antes» de la Tarea 5.7.
 
-Quedan cerradas las ocho tareas del hito y las tres correcciones de la
-auditoría del gate. El criterio 4 espera revisión visual.
+`safe-refractive-water.png` se conserva aunque hoy coincida con la toma
+hero: cumple una función distinta —es el preset canónico actual, no un
+artefacto histórico de un antes/después—.
+
+Las diez imágenes del hito son:
+
+| Archivo | Qué es |
+|---|---|
+| `gate-hero.png` | la toma del gate, criterio 4 aprobado sobre ella |
+| `safe-refractive-water.png` | el preset canónico |
+| `safe-interior-visible.png` | referencia sin refracción |
+| `safe-opaque-water.png` | control de oclusión |
+| `l02-antes.png` / `l02-despues.png` | la calibración de `L-02` |
+| `sombras-*.png` (cuatro) | las plataformas de luces de la Tarea 5.6 |
+
+**Hito 5 cerrado.** Las ocho tareas, las tres correcciones de legibilidad y
+los cuatro puntos de la limpieza de cierre: criterio 4 aprobado, guardado de
+evidencia fatal, la métrica de `chain_placement` renombrada a lo que de
+verdad mide, y los dos PNG redundantes eliminados.
+
+##### Una métrica que decía otra cosa
+
+`chain_placement` reportaba «piezas visibles» y daba `0 de 11` justo donde
+el gate contaba `167` píxeles de cadena. No era contradicción: mide si el
+segmento del ojo hasta el **centro** de cada pieza está libre, y un centro
+puede estar tapado mientras varias caras de la misma pieza se ven. Los
+primeros eslabones se ocultan el centro entre ellos, que es precisamente lo
+que hace una cadena vista de canto.
+
+Quedó renombrada a **centros de pieza con línea de visión libre**, con la
+advertencia de que no es un gate de legibilidad. El gate es el recorrido
+rasterizado de `gate_flying_waters`, que cuenta superficie visible píxel por
+píxel.
 
 ---
 

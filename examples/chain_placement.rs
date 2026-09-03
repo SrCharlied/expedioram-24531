@@ -1,17 +1,29 @@
-//! Dónde poner el conjunto cadena-ancla para que se vea desde la hero.
+//! Diagnóstico de oclusión del conjunto cadena-ancla.
 //!
 //! ```text
 //! cargo run --release --example chain_placement
 //! ```
 //!
-//! El gate de la Tarea 5.8 midió `61` píxeles de cadena y ancla desde la
-//! toma hero contra `137` a `yaw 45°`: el problema no era el tamaño de las
-//! piezas sino que el borde roto las tapa. Este barrido busca el
-//! desplazamiento más pequeño que las descubre.
+//! Sirvió para encontrar **qué** tapaba la cadena en la toma hero, cuando el
+//! gate de la Tarea 5.8 midió `61` píxeles contra `137` a `yaw 45°`. La
+//! respuesta fue el bloque `5` del borde roto, y de ahí salió la muesca.
 //!
-//! No mueve geometría: para cada candidato pregunta si el segmento del ojo
-//! al punto está libre, que es la misma prueba de oclusión que decide el
-//! píxel.
+//! # Lo que mide, y lo que NO mide
+//!
+//! Mide **centros de pieza con línea de visión libre**: para cada uno de los
+//! once centros, si el segmento del ojo hasta él está libre de oclusores.
+//!
+//! Eso **no** es legibilidad, y su resultado no debe leerse como tal. Un
+//! centro puede estar tapado mientras varias caras de la misma pieza se ven
+//! perfectamente, y de hecho es lo que pasa: los primeros eslabones se
+//! ocultan el centro entre ellos —que es lo que hace una cadena vista de
+//! canto— y el gate rasterizado cuenta `167` píxeles de superficie visible
+//! al mismo tiempo que este ejemplo reporta `0` centros libres.
+//!
+//! **El gate de legibilidad es el recorrido rasterizado de
+//! `gate_flying_waters`**, que cuenta superficie visible píxel por píxel.
+//! Esto es un instrumento de diagnóstico: sirve para saber quién ocluye y
+//! hacia dónde conviene moverse, no para aprobar nada.
 
 use expedition33_continente_inacabado::accel::TraversalStats;
 use expedition33_continente_inacabado::light::GroupMask;
@@ -70,7 +82,9 @@ fn main() {
             .count()
     };
 
-    println!("Colocación del conjunto cadena-ancla · piezas visibles de 11\n");
+    println!("Diagnóstico de oclusión del conjunto cadena-ancla");
+    println!("Métrica: centros de pieza con línea de visión libre, de 11.");
+    println!("NO es legibilidad: eso lo mide `gate_flying_waters` por pixel.\n");
     println!("  ojo hero en {ojo:?}");
     println!("\n  {:>6}", "dy \\ dx");
 
@@ -91,7 +105,10 @@ fn main() {
         println!();
     }
 
-    println!("\n  actual: {} de 11 visibles", visibles(Vec3::zeros()));
+    println!(
+        "\n  actual: {} de 11 centros con linea de vision libre",
+        visibles(Vec3::zeros())
+    );
 
     // Y **quien** las tapa. Diagnosticar antes de mover: si el oclusor es
     // el borde roto hay que salir de detras de el, y si es el propio casco
