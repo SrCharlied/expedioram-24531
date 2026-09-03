@@ -165,25 +165,55 @@ impl Camera {
     ///
     /// Vive en la cámara y no en el renderer porque el picking del Hito 6
     /// tiene que convertir la posición del cursor con **esta misma**
-    /// función: si el render y el picking calcularan la dirección por
+    /// proyección: si el render y el picking calcularan la dirección por
     /// separado, un clic terminaría apuntando a un píxel distinto del que
     /// se ve en pantalla.
     ///
-    /// El `+ 0.5` muestrea el centro del píxel y no su borde.
+    /// El `+ 0.5` muestrea el centro del píxel y no su borde. Un píxel es un
+    /// área y el renderer la representa por su centro; un cursor es un
+    /// punto, y de eso se encarga `ray_from_cursor`. Las dos rutas comparten
+    /// la proyección y solo difieren en cómo llegan a las coordenadas de
+    /// pantalla, que es la diferencia correcta.
     pub fn ray_from_pixel(&self, x: usize, y: usize, width: usize, height: usize) -> Ray {
-        let ancho = width as f32;
-        let alto = height as f32;
-        let aspect_ratio = ancho / alto;
+        let screen_x = (2.0 * (x as f32 + 0.5)) / width as f32 - 1.0;
+        let screen_y = -(2.0 * (y as f32 + 0.5)) / height as f32 + 1.0;
+
+        self.ray_from_screen(screen_x, screen_y, width, height)
+    }
+
+    /// Rayo primario que pasa por la posición **continua** del cursor.
+    ///
+    /// `cursor` va en píxeles de ventana, con el origen arriba a la
+    /// izquierda, que es como lo entrega `minifb`. No se redondea a píxel:
+    /// el centro exacto de la ventana produce el rayo central exacto, lo que
+    /// con una resolución par no ocurriría al redondear —no hay píxel
+    /// central en 800 × 600—.
+    ///
+    /// El tamaño que se pasa es el de la **ventana**, no el del perfil
+    /// interactivo. Da lo mismo en la práctica, y conviene saber por qué: el
+    /// así que un píxel de ventana y su píxel de perfil correspondiente
+    /// caen en la misma coordenada normalizada.
+    pub fn ray_from_cursor(&self, cursor: (f32, f32), width: usize, height: usize) -> Ray {
+        let screen_x = (2.0 * cursor.0) / width as f32 - 1.0;
+        let screen_y = -(2.0 * cursor.1) / height as f32 + 1.0;
+
+        self.ray_from_screen(screen_x, screen_y, width, height)
+    }
+
+    /// La proyección, compartida por el render y el picking.
+    ///
+    /// `screen_x` y `screen_y` van de `-1` a `1`, con la `y` ya invertida
+    /// respecto del orden de filas de la imagen.
+    ///
+    /// Es la única implementación de la perspectiva del proyecto. Extraerla
+    /// es lo que hace **cierta** la promesa de que un clic apunta al píxel
+    /// que se ve: no hay una segunda fórmula que pueda desviarse.
+    fn ray_from_screen(&self, screen_x: f32, screen_y: f32, width: usize, height: usize) -> Ray {
+        let aspect_ratio = width as f32 / height as f32;
 
         // Media altura del plano de proyección, que está a una unidad de la
         // cámara. Abrir el campo de visión ensancha el plano.
         let perspective_scale = (self.vertical_fov / 2.0).tan();
-
-        // De coordenadas de píxel a coordenadas de pantalla, de -1 a 1. La
-        // y se invierte porque el píxel 0 está arriba y el eje Y del mundo
-        // crece hacia arriba.
-        let screen_x = (2.0 * (x as f32 + 0.5)) / ancho - 1.0;
-        let screen_y = -(2.0 * (y as f32 + 0.5)) / alto + 1.0;
 
         // El rayo nace en coordenadas de cámara —viendo hacia -Z— y el
         // cambio de base lo lleva al mundo, donde están los objetos.
@@ -557,5 +587,108 @@ mod tests {
         assert!(dot(&derecha, &arriba).abs() < 1e-5);
         assert!(dot(&derecha, &adelante).abs() < 1e-5);
         assert!(dot(&arriba, &adelante).abs() < 1e-5);
+    }
+
+    // ------------------------------------------------- rayo del cursor
+
+    #[test]
+    fn el_cursor_en_el_centro_de_la_ventana_da_el_rayo_central() {
+        // Con resolucion par no hay pixel central, asi que esto solo puede
+        // salir exacto porque el cursor no se redondea a pixel.
+        let camara = camara_del_diorama();
+        let (ancho, alto) = (800, 600);
+
+        let central = camara.ray_from_cursor((ancho as f32 / 2.0, alto as f32 / 2.0), ancho, alto);
+
+        // El rayo central apunta al look_at, que es la propiedad que el
+        // Hito 2 ya fijo para el render.
+        let hacia_look_at = (camara.look_at - camara.eye).normalize();
+        let desvio = (central.direction - hacia_look_at).magnitude();
+
+        assert!(desvio < 1e-6, "el rayo central desvio {desvio} del look_at");
+    }
+
+    #[test]
+    fn el_cursor_en_el_centro_de_un_pixel_da_el_rayo_de_ese_pixel() {
+        // La forma fuerte de «la misma funcion que el renderer»: para el
+        // centro de cualquier pixel, las dos rutas coinciden bit a bit
+        // dentro de la tolerancia. Cubre de una vez el aspect ratio y el
+        // campo de vision, porque los dos entran en la misma proyeccion.
+        let camara = camara_del_diorama();
+
+        for (ancho, alto) in [(800, 600), (400, 300), (37, 91)] {
+            for (x, y) in [(0, 0), (1, 2), (ancho / 2, alto / 2), (ancho - 1, alto - 1)] {
+                let del_pixel = camara.ray_from_pixel(x, y, ancho, alto);
+                let del_cursor =
+                    camara.ray_from_cursor((x as f32 + 0.5, y as f32 + 0.5), ancho, alto);
+
+                let desvio = (del_pixel.direction - del_cursor.direction).magnitude();
+
+                assert!(
+                    desvio < 1e-6,
+                    "en {ancho}x{alto} el pixel ({x}, {y}) desvio {desvio}"
+                );
+                assert_eq!(del_pixel.origin, del_cursor.origin);
+            }
+        }
+    }
+
+    #[test]
+    fn el_cursor_respeta_el_campo_de_vision_vertical() {
+        // El borde superior de la ventana tiene que caer justo a medio FOV
+        // del rayo central. Es la comprobacion de que el picking hereda el
+        // encuadre del render y no otro.
+        let camara = camara_del_diorama();
+        let (ancho, alto) = (800, 600);
+
+        let central = camara.ray_from_cursor((400.0, 300.0), ancho, alto);
+        let arriba = camara.ray_from_cursor((400.0, 0.0), ancho, alto);
+
+        let angulo = dot(&central.direction, &arriba.direction).acos();
+        let medio_fov = camara.vertical_fov / 2.0;
+
+        assert!(
+            (angulo - medio_fov).abs() < 1e-4,
+            "el borde superior esta a {angulo} rad y medio FOV es {medio_fov}"
+        );
+    }
+
+    #[test]
+    fn el_cursor_respeta_el_aspect_ratio() {
+        // El borde lateral abre mas que el superior, y exactamente en la
+        // proporcion del cuadro: es lo que significa el aspect ratio.
+        let camara = camara_del_diorama();
+        let (ancho, alto) = (800, 600);
+
+        let central = camara.ray_from_cursor((400.0, 300.0), ancho, alto);
+        let lado = camara.ray_from_cursor((0.0, 300.0), ancho, alto);
+        let arriba = camara.ray_from_cursor((400.0, 0.0), ancho, alto);
+
+        // Comparando tangentes, que es donde la relacion es exacta; los
+        // angulos no escalan linealmente.
+        let tan_lado = dot(&central.direction, &lado.direction).acos().tan();
+        let tan_arriba = dot(&central.direction, &arriba.direction).acos().tan();
+
+        let razon = tan_lado / tan_arriba;
+        let esperada = ancho as f32 / alto as f32;
+
+        assert!(
+            (razon - esperada).abs() < 1e-4,
+            "la razon de tangentes es {razon} y el aspect ratio {esperada}"
+        );
+    }
+
+    #[test]
+    fn el_cursor_fuera_del_cuadro_sigue_dando_un_rayo_valido() {
+        // La geometria no tiene por que rechazar nada: extrapolar mas alla
+        // del borde es una direccion perfectamente definida. Quien decide
+        // que un clic fuera de la ventana no cuenta es `input`.
+        let camara = camara_del_diorama();
+
+        for cursor in [(-50.0, 300.0), (900.0, 300.0), (400.0, -10.0)] {
+            let rayo = camara.ray_from_cursor(cursor, 800, 600);
+
+            assert!((rayo.direction.magnitude() - 1.0).abs() < 1e-6);
+        }
     }
 }

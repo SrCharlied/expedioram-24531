@@ -13,6 +13,7 @@ pub mod color;
 pub mod cuboid;
 pub mod framebuffer;
 pub mod hit;
+pub mod input;
 pub mod light;
 pub mod material;
 pub mod optics;
