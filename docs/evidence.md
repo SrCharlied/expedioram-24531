@@ -1448,6 +1448,171 @@ píxel.
 
 ---
 
+## Hito 6 — Picking, paleta y revelación
+
+### La proyección quedó en un solo sitio
+
+El picking usa **la misma función** que el render, y eso ahora es literal:
+`Camera::ray_from_screen` es la única implementación de la perspectiva del
+proyecto, y `ray_from_pixel` y `ray_from_cursor` la comparten. Sin una
+segunda fórmula no hay nada que pueda desviarse.
+
+Difieren en una cosa, a propósito: un píxel es un **área** y el renderer la
+representa por su centro; un cursor es un **punto**. Redondear el cursor a
+píxel rompería el criterio del plan, porque con `800 × 600` no hay píxel
+central y solo una posición continua da el rayo central exacto.
+
+El test que amarra la equivalencia compara las dos rutas en el centro de
+varios píxeles, en tres resoluciones incluida una impar, con desvío por
+debajo de `1e-6`. Cubre a la vez el aspect ratio y el campo de visión,
+porque los dos entran en la misma proyección.
+
+### Un `Option` que evita un bug de composición
+
+`Scene::paintable_group` devuelve `None` para las entradas **inertes**.
+Sin ese filtro hay un fallo real y difícil de ver: el plinto ocupa toda la
+base del diorama y comparte grupo con el Monolito **por tipado**, así que un
+clic en la base activaría el finale. El plinto es lienzo y nunca se pinta.
+
+La firma también es lo que hace cumplir el «no pintar por vóxel» del plan:
+de un clic se obtiene un grupo, no un objeto, no una cara y no una
+coordenada de textura.
+
+### La fase se deriva, y eso tiene un precio declarado
+
+`RevealPhase` no se guarda en ninguna parte. La consecuencia es que un grupo
+en cero exacto es **indistinguible** de uno que nadie tocó, así que
+`activate` tiene que sacarlo de cero: un empujón de `1e-4`, que a la
+velocidad del proyecto son `0.15 ms` de animación. Queda documentado como lo
+que es —el precio de no duplicar el estado de activación— y no como un
+número mágico.
+
+### La duración se midió otra vez, no se heredó
+
+El `interactive_frame_time` del Hito 3 se midió **antes de la óptica**:
+
+| Perfil `400 × 300` | Tiempo por cuadro |
+|---|---:|
+| Hito 3, sin óptica | `0.0242 s` |
+| Hoy, `reveal 1.0` | **`0.0490 s`** |
+| Hoy, `reveal 0.0` | `0.0347 s` |
+
+Y de paso un hallazgo: **el cuadro se encarece durante la propia
+transición**. En lienzo los techos del agua están interpolados desde `0/0`,
+así que `kl = 1` y no se lanza un solo rayo secundario. La derivación toma
+el extremo pintado, que es el caso peor.
+
+```text
+reveal_duration = clamp(15 x 0.0490, 1.5, 4.0) = 1.5 s   (piso)
+reveal_speed    = 0.667 por segundo
+```
+
+El crítico está en `0.267 s` por cuadro: **5.4 veces de margen**.
+`reveal_duration` devuelve `Result` y no un valor recortado, así que si el
+perfil no cupiera la ventana **aborta** con qué hacer, en vez de alargar la
+animación, que es lo que el plan prohíbe.
+
+### El terminal que completaba la transición de golpe
+
+El guardián del avance era `delta_seconds > 0.0`, y un `inf` lo pasa: la
+transición entera se completaba en un cuadro, que es exactamente el corte
+que los quince cuadros existen para evitar. Ahora se exige **finitud**.
+Perder un cuadro por un reloj que hipó es mejor que eso.
+
+### El finale arranca solo
+
+Al completarse las tres regiones, el tick activa `Finale`. Es la regla del
+inventario, y sin ella el Monolito era **inalcanzable**: nada lo pintaba
+nunca. La condición se deriva del propio estado, y `all_regions_painted`
+deja fuera al finale para que no se cumpla a sí misma.
+
+### Dirty rendering: sostenido contra instantáneo
+
+Las cuatro fuentes del plan tienen cada una su booleano, y de ese desglose
+salió una distinción que no era obvia. Un cambio **sostenido** va a seguir
+cambiando el cuadro siguiente —órbita, zoom, transición— y dibuja al perfil
+interactivo. Un cambio **instantáneo** ya terminó, así que gastarle un
+cuadro de baja resolución no aporta nada: va directo al cuadro final.
+
+La política salió del ciclo a `renderer::plan_frame`, con su tabla de tres
+filas probada, incluida la secuencia completa de una interacción: dos
+cuadros moviéndose, uno final, y reposo.
+
+Y el descanso de `16 ms` se ejecutaba **todos** los cuadros, también durante
+la animación: a `0.0490 s` por cuadro eso bajaba la transición de treinta
+cuadros a veintitrés. Ahora duerme solo en reposo.
+
+### El encuadre hero vive en la escena
+
+`Blockout::hero_preset` se **deriva** de `hero_camera`, no en paralelo, así
+que las dos no pueden discrepar. Los tres puntos salen de las anclas
+medidas. La parte de producción de `input.rs` no menciona `Vec3` ni una sola
+vez: cero constantes de cámara, que es lo que el plan exigía.
+
+`CameraPreset` lleva el **encuadre** y nada más. Los límites de radio son de
+la escena medida y el FOV es del proyecto, así que `restore` no los toca.
+
+`DemoAction` declara la superficie de teclado completa en un sitio probable
+sin ventana, y `ResetCamera` **no transporta el encuadre**: solo dice
+«restaurá». Hay un test que vigila el tamaño del enum para que nadie le
+cuelgue un preset y acabe escribiendo el blueprint dentro de `input`.
+
+### Gate del Hito 6
+
+«Demo completa desde lienzo hasta Monolito final sin recompilar».
+
+El criterio «sin recompilar» es una afirmación sobre el **estado en tiempo de
+ejecución**, y como tal se puede verificar sin ventana:
+`tests/demo_completa.rs` recorre el trayecto entero por la API pública —la
+misma que usa la ventana— simulando el reloj.
+
+| Comprobación | Resultado |
+|---|---|
+| Lienzo → tres regiones → Monolito | **Pasa** |
+| Cada región tarda la duración derivada | `1.5 s`, ±2 cuadros |
+| Cada región usa al menos quince cuadros | **31 cuadros** |
+| La demo se puede dar **dos veces** seguidas con `L` | **Pasa** |
+| Las tres regiones pueden revelarse en paralelo | dos duraciones en total |
+| El ratón alcanza las tres regiones desde la hero | **Pasa** |
+| Lienzo y pintado difieren en la mayoría del diorama | **Pasa** |
+| Ningún píxel del estado final en negro absoluto | **Pasa** |
+
+Los `31` cuadros por región son el doble del mínimo exigido.
+
+#### Línea de tiempo, en imágenes
+
+`cargo run --release --example demo_timeline` reproduce la presentación con
+el mismo reloj y la misma velocidad derivada que la ventana, y guarda un
+render en cada hito:
+
+| Archivo | Momento |
+|---|---|
+| `evidence/hito6/0-lienzo.png` | el diorama sin pintar |
+| `1-praderas-a-medias.png` | cuadro 15 de la primera transición |
+| `2-praderas.png` | Praderas listas |
+| `3-rompeolas.png` | Rompeolas listo |
+| `4-aguas.png` | Aguas Voladoras lista |
+| `6-monolito.png` | el Monolito, que arrancó solo |
+
+#### Lo que el recorrido humano añade
+
+Dos cosas que ningún test alcanza, y que son la revisión visual pendiente:
+
+- Que el **ratón apunte donde el usuario cree**. La equivalencia con el
+  render está probada, pero que el clic caiga sobre la región que se
+  pretendía es percepción.
+- Que la transición **se lea como animación**. Los quince cuadros son el
+  criterio, y treinta y uno lo duplican, pero si se lee fluido lo dice el
+  ojo.
+
+Lista para ese recorrido: abrir la ventana, pulsar `1`, `2` y `3` viendo
+cada transición; comprobar que el Monolito se pinta solo al terminar la
+tercera; pulsar `L` y repetirlo todo; orbitar hasta perder el encuadre y
+pulsar `R`; y hacer clic directamente sobre las praderas, el acantilado y la
+bahía.
+
+---
+
 ## Pendientes de medición
 
 Ninguna de estas filas puede completarse por estimación. Cada hito llena la suya.
@@ -1460,7 +1625,7 @@ Ninguna de estas filas puede completarse por estimación. Cada hito llena la suy
 | 3 | Benchmark `safe-opaque-water` (160 primitivas) — control de oclusión | **Registrado** |
 | 3 | `interactive_frame_time` del perfil interactivo | **Registrado** — perfil fijado en `MEDIA` (400 × 300) |
 | 5 | Calibración de `L-02`: `distance_boat`, `range`, `intensity` | **Registrado** — `0.192 S`, `0.30 S`, `2.8211` derivada |
-| 6 | `reveal_duration` derivada de `interactive_frame_time` | Pendiente |
+| 6 | `reveal_duration` derivada de `interactive_frame_time` | **Registrado** — `0.0490 s` por cuadro, `1.5 s` de duración, 31 cuadros |
 | 7 | Matriz de rendimiento por preset | Pendiente |
 | 8 | Hardware de medición y tiempos finales en release | Pendiente |
 
