@@ -191,6 +191,7 @@ impl Camera {
     ///
     /// El tamaño que se pasa es el de la **ventana**, no el del perfil
     /// interactivo. Da lo mismo en la práctica, y conviene saber por qué: el
+    /// escalado por vecino más cercano preserva las coordenadas de pantalla,
     /// así que un píxel de ventana y su píxel de perfil correspondiente
     /// caen en la misma coordenada normalizada.
     pub fn ray_from_cursor(&self, cursor: (f32, f32), width: usize, height: usize) -> Ray {
