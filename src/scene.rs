@@ -112,6 +112,18 @@ pub struct SceneObject {
     pub reveal_group: RevealGroup,
 }
 
+impl SceneObject {
+    /// ¿Cambia de aspecto al pintarse?
+    ///
+    /// Dos entradas del inventario no lo hacen, por razones opuestas:
+    /// `G-01`, el plinto, es lienzo y se queda así, y `G-04`, la paleta y el
+    /// pincel, nace ya en cristal porque es la herramienta con la que se
+    /// pinta. Las dos necesitan grupo por tipado y ninguna se revela.
+    pub fn is_revealable(&self) -> bool {
+        self.initial_material != self.final_material
+    }
+}
+
 /// La escena completa: los objetos y la paleta que sus índices resuelven.
 #[derive(Debug, Default)]
 pub struct Scene {
@@ -153,6 +165,27 @@ impl Scene {
 
     pub fn material(&self, id: MaterialId) -> Material {
         self.palette[id.0]
+    }
+
+    /// Grupo de revelación que un clic sobre este objeto debe activar, o
+    /// `None` si el objeto no se pinta.
+    ///
+    /// Es **lo único** que el picking puede leer de un impacto, y por eso
+    /// existe como método en vez de dejar que quien recibe el `Hit` husmee
+    /// el objeto. El plan lo dice en negativo —«no pintar por vóxel ni
+    /// modificar textura libremente»— y esta firma lo hace cumplir: de un
+    /// clic se obtiene un grupo, no un objeto, no una cara y no una
+    /// coordenada de textura.
+    ///
+    /// Devuelve `None` para las entradas **inertes**, las que nacen y
+    /// mueren con el mismo material. Sin ese filtro, un clic en el plinto
+    /// —`G-01`, que ocupa toda la base del diorama— activaría el finale del
+    /// Monolito, porque comparte grupo con él por tipado. El plinto es
+    /// lienzo y nunca se pinta; pincharlo no debe hacer nada.
+    pub fn paintable_group(&self, object_index: usize) -> Option<RevealGroup> {
+        let objeto = self.objects.get(object_index)?;
+
+        objeto.is_revealable().then_some(objeto.reveal_group)
     }
 
     pub fn texture(&self, id: TextureId) -> &Texture {

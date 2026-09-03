@@ -4,13 +4,14 @@
 //! presentar el framebuffer. Todo lo que se puede probar sin ventana vive
 //! en la librería del paquete.
 
-use minifb::{Key, Window, WindowOptions};
+use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use std::f32::consts::PI;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
 
 use expedition33_continente_inacabado::framebuffer::Framebuffer;
+use expedition33_continente_inacabado::input::{demo_region, pick_region};
 use expedition33_continente_inacabado::light::diorama as luces_del_diorama;
 use expedition33_continente_inacabado::renderer::{render, InteractiveProfile, Shading};
 use expedition33_continente_inacabado::reveal::RevealState;
@@ -74,7 +75,14 @@ fn main() -> ExitCode {
     // Arranca con todo pintado: el picking de la Tarea 6.2 y la
     // temporizacion de la 6.3 son las que lo vuelven interactivo. Mostrar el
     // lienzo entero ahora dejaria una ventana de un solo color.
-    let reveal = RevealState::painted();
+    // Arranca **sin pintar**, que es el estado inicial de la obra: un
+    // diorama de lienzo esperando a que alguien lo pinte. Es también lo que
+    // hace observable el picking, porque un clic sobre una región ya
+    // pintada no cambiaría un solo píxel.
+    //
+    // Para ver el estado final sin interactuar está el render headless:
+    // `render_scene --reveal 1.0`.
+    let mut reveal = RevealState::unpainted();
 
     // Ya hay luces: el sombreado completo dice más que el albedo plano.
     // `Shading::Albedo` reproduce las imágenes con las que se aprobó el
@@ -109,10 +117,17 @@ fn main() -> ExitCode {
         perfil.width, perfil.height
     );
     println!("  flechas  orbitar     W / S / rueda  zoom     Escape  salir");
+    println!("  clic     pintar la region señalada     1 / 2 / 3  pintar por teclado");
+    println!("  R        volver al lienzo");
 
     // El primer cuadro cuenta como cambio pendiente, para que la ventana
     // arranque ya con la imagen definitiva.
     let mut cuadro_final_pendiente = true;
+
+    // Estado del botón en el cuadro anterior, para disparar **una vez por
+    // clic**. `get_mouse_down` informa un nivel, no un evento: sin esta
+    // comparación, sostener el botón reactivaría la región en cada cuadro.
+    let mut boton_anterior = false;
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let orbit = [
@@ -151,6 +166,56 @@ fn main() -> ExitCode {
         if pasos != 0.0 {
             camera.zoom(pasos * ZOOM_FRACTION * camera.radius());
             en_movimiento = true;
+        }
+
+        // ------------------------------------------------ pintar una región
+        //
+        // El ratón es la interacción principal y el teclado el respaldo de
+        // presentación: una bahía que ocupa el 2.4 % del cuadro no es un
+        // blanco fiable delante de público.
+        //
+        // `MouseMode::Discard` no devuelve posición cuando el puntero salió
+        // del área de dibujo, que es la misma política que aplica
+        // `input::ray_under_cursor`. Se dejan las dos: la de minifb evita el
+        // trabajo y la de la librería es la que se puede probar sin ventana.
+        let boton = window.get_mouse_down(MouseButton::Left);
+        let clic = boton && !boton_anterior;
+        boton_anterior = boton;
+
+        let mut elegida = None;
+
+        if clic {
+            if let Some(cursor) = window.get_mouse_pos(MouseMode::Discard) {
+                elegida = pick_region(&scene, &accel, &camera, cursor, WIDTH, HEIGHT);
+            }
+        }
+
+        for (tecla, digito) in [(Key::Key1, 1), (Key::Key2, 2), (Key::Key3, 3)] {
+            if window.is_key_pressed(tecla, KeyRepeat::No) {
+                elegida = demo_region(digito);
+            }
+        }
+
+        // Reiniciar al lienzo. No está en la lista del plan, y se añade por
+        // la misma razón que existe el fallback de teclado: una
+        // presentación que solo se puede dar una vez por arranque no es
+        // fiable. Con `R` la revelación se puede mostrar de nuevo sin
+        // cerrar la ventana.
+        if window.is_key_pressed(Key::R, KeyRepeat::No) {
+            reveal = RevealState::unpainted();
+            cuadro_final_pendiente = true;
+
+            println!("  reiniciado al lienzo");
+        }
+
+        if let Some(grupo) = elegida {
+            // Salto instantáneo, provisional. La Tarea 6.3 lo reemplaza por
+            // el avance temporizado —quince cuadros como mínimo— derivado
+            // del `interactive_frame_time` medido en el Hito 3.
+            reveal.set_progress(grupo, 1.0);
+            cuadro_final_pendiente = true;
+
+            println!("  pintando {grupo:?}");
         }
 
         if en_movimiento {
