@@ -13,7 +13,9 @@ use std::time::{Duration, Instant};
 use expedition33_continente_inacabado::framebuffer::Framebuffer;
 use expedition33_continente_inacabado::input::{demo_region, pick_region};
 use expedition33_continente_inacabado::light::diorama as luces_del_diorama;
-use expedition33_continente_inacabado::renderer::{render, InteractiveProfile, Shading};
+use expedition33_continente_inacabado::renderer::{
+    plan_frame, render, FramePlan, InteractiveProfile, Shading,
+};
 use expedition33_continente_inacabado::reveal::{reveal_duration, reveal_speed, RevealState};
 use expedition33_continente_inacabado::scenes::{safe_level_con, WaterPreset};
 
@@ -149,7 +151,7 @@ fn main() -> ExitCode {
     );
     println!("  flechas  orbitar     W / S / rueda  zoom     Escape  salir");
     println!("  clic     pintar la region señalada     1 / 2 / 3  pintar por teclado");
-    println!("  R        volver al lienzo");
+    println!("  L        volver al lienzo");
     println!(
         "  revelado {duracion:.2} s por region, derivados de {INTERACTIVE_FRAME_TIME:.4} s por cuadro"
     );
@@ -175,12 +177,20 @@ fn main() -> ExitCode {
             (Key::Down, 0.0, ROTATION_SPEED),
         ];
 
-        let mut en_movimiento = false;
+        // ------------------------------------------------ fuentes de cambio
+        //
+        // El plan enumera cuatro: cámara, zoom, avance de la revelación y
+        // región seleccionada. Cada una se nombra por separado en vez de
+        // acumularse en una bandera anónima, porque de esa distinción sale
+        // **qué resolución** se usa: las que se sostienen en el tiempo
+        // —órbita, zoom, transición— dibujan al perfil interactivo, y las
+        // instantáneas —un reinicio— van directas al cuadro final.
+        let mut camara_cambio = false;
 
         for (key, delta_yaw, delta_pitch) in orbit {
             if window.is_key_down(key) {
                 camera.orbit(delta_yaw, delta_pitch);
-                en_movimiento = true;
+                camara_cambio = true;
             }
         }
 
@@ -201,9 +211,10 @@ fn main() -> ExitCode {
             }
         }
 
-        if pasos != 0.0 {
+        let zoom_cambio = pasos != 0.0;
+
+        if zoom_cambio {
             camera.zoom(pasos * ZOOM_FRACTION * camera.radius());
-            en_movimiento = true;
         }
 
         // ------------------------------------------------ pintar una región
@@ -237,21 +248,28 @@ fn main() -> ExitCode {
         // Reiniciar al lienzo. No está en la lista del plan, y se añade por
         // la misma razón que existe el fallback de teclado: una
         // presentación que solo se puede dar una vez por arranque no es
-        // fiable. Con `R` la revelación se puede mostrar de nuevo sin
-        // cerrar la ventana.
-        if window.is_key_pressed(Key::R, KeyRepeat::No) {
+        // fiable.
+        //
+        // La tecla es `L` de lienzo y no `R`: la Tarea 6.5 reserva `R` para
+        // restaurar la cámara hero.
+        let reinicio = window.is_key_pressed(Key::L, KeyRepeat::No);
+
+        if reinicio {
             reveal = RevealState::unpainted();
-            cuadro_final_pendiente = true;
 
             println!("  reiniciado al lienzo");
         }
 
-        if let Some(grupo) = elegida {
+        let region_cambio = match elegida {
             // Activar, no saltar: el avance lo hace el reloj más abajo.
-            if reveal.activate(grupo) {
+            Some(grupo) if reveal.activate(grupo) => {
                 println!("  pintando {grupo:?}");
+                true
             }
-        }
+            // Un clic sobre una región ya pintada o ya en curso no cambia
+            // nada, y no debe costar un cuadro.
+            _ => false,
+        };
 
         // ------------------------------------------------ avance por reloj
         //
@@ -263,48 +281,66 @@ fn main() -> ExitCode {
 
         let revelando = reveal.advance(delta, velocidad);
 
-        if revelando {
-            // Mientras algo se revela, el cuadro cambia: se dibuja al perfil
-            // interactivo igual que al orbitar, y el cuadro final llega al
-            // quedarse todo quieto.
-            en_movimiento = true;
-        }
+        // ------------------------------------------------ dirty rendering
+        //
+        // Un cambio **sostenido** es el que va a seguir cambiando el cuadro
+        // siguiente: mientras dura, se dibuja barato. Un cambio instantáneo
+        // ya terminó, así que no tiene sentido gastarle un cuadro de baja
+        // resolución: se marca el cuadro final y se dibuja bien de una vez.
+        let sostenido = camara_cambio || zoom_cambio || revelando || region_cambio;
 
-        if en_movimiento {
-            // Cuadro barato: se traza a la resolución del perfil y se
-            // escala al tamaño de la ventana.
-            render(
-                &mut borrador,
-                &scene,
-                &accel,
-                &lights,
-                &reveal,
-                &camera,
-                shading,
-            );
-            framebuffer.blit_upscaled(&borrador);
+        // Un cambio instantáneo —el reinicio— no dibuja barato: solo deja
+        // pendiente el cuadro definitivo.
+        if sostenido || reinicio {
             cuadro_final_pendiente = true;
-        } else if cuadro_final_pendiente {
-            // Todo quieto: una sola pasada a resolución completa. Mientras
-            // nada cambie se reutiliza el framebuffer, como en la rama del
-            // profesor.
-            render(
-                &mut framebuffer,
-                &scene,
-                &accel,
-                &lights,
-                &reveal,
-                &camera,
-                shading,
-            );
-            cuadro_final_pendiente = false;
         }
 
+        // La decisión vive en `renderer::plan_frame`, con su tabla probada.
+        match plan_frame(sostenido, cuadro_final_pendiente) {
+            FramePlan::Interactive => {
+                // Cuadro barato: se traza a la resolución del perfil y se
+                // escala al tamaño de la ventana.
+                render(
+                    &mut borrador,
+                    &scene,
+                    &accel,
+                    &lights,
+                    &reveal,
+                    &camera,
+                    shading,
+                );
+                framebuffer.blit_upscaled(&borrador);
+            }
+            FramePlan::Final => {
+                // Todo quieto: una sola pasada a resolución completa.
+                render(
+                    &mut framebuffer,
+                    &scene,
+                    &accel,
+                    &lights,
+                    &reveal,
+                    &camera,
+                    shading,
+                );
+                cuadro_final_pendiente = false;
+            }
+            // Nada cambió: se reutiliza el framebuffer sin trazar.
+            FramePlan::Reuse => {}
+        }
+
+        // `update_with_buffer` va siempre, también cuando no se dibujó: es
+        // lo que bombea los eventos de la ventana. Cuando nada cambia
+        // presenta el mismo framebuffer otra vez, que es la reutilización
+        // que pide el plan.
         window
             .update_with_buffer(&framebuffer.buffer, WIDTH, HEIGHT)
             .unwrap();
 
-        std::thread::sleep(frame_delay);
+        // El descanso es **solo para el ciclo en reposo**; ver
+        // `FramePlan::should_sleep`.
+        if plan_frame(sostenido, cuadro_final_pendiente).should_sleep() {
+            std::thread::sleep(frame_delay);
+        }
     }
 
     ExitCode::SUCCESS

@@ -70,6 +70,56 @@ impl Default for InteractiveProfile {
     }
 }
 
+/// Qué hacer con el cuadro que toca presentar.
+///
+/// Es la política del *dirty rendering* del Hito 6, sacada del ciclo de la
+/// ventana para poder comprobarla sin abrirla. Dentro del ciclo era una
+/// pareja de banderas mutables cuya corrección había que leer siguiendo el
+/// flujo; aquí es una tabla de tres filas con tests.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FramePlan {
+    /// Nada cambió y el cuadro definitivo ya está dibujado: se vuelve a
+    /// presentar el mismo framebuffer.
+    Reuse,
+    /// Algo se está moviendo. Se traza al perfil interactivo y se escala.
+    Interactive,
+    /// Se detuvo el movimiento y falta el cuadro a resolución completa.
+    Final,
+}
+
+/// Decide el plan del cuadro.
+///
+/// `changing` es cierto mientras haya un cambio **sostenido** —órbita,
+/// zoom o una región revelándose—, es decir uno que va a seguir cambiando
+/// el cuadro siguiente. Un cambio instantáneo no entra aquí: ya terminó, y
+/// gastarle un cuadro de baja resolución no aporta nada. Lo que hace es
+/// dejar `final_pending` en cierto.
+pub fn plan_frame(changing: bool, final_pending: bool) -> FramePlan {
+    match (changing, final_pending) {
+        (true, _) => FramePlan::Interactive,
+        (false, true) => FramePlan::Final,
+        (false, false) => FramePlan::Reuse,
+    }
+}
+
+impl FramePlan {
+    /// ¿Hay que trazar la escena en este cuadro?
+    pub fn draws(self) -> bool {
+        self != FramePlan::Reuse
+    }
+
+    /// ¿Conviene dormir después de presentar?
+    ///
+    /// Solo en reposo. Dormir mientras algo se mueve le quita cuadros a la
+    /// animación: a `0.0490 s` por cuadro, dormir `16 ms` de más baja de
+    /// treinta cuadros a veintitrés en el segundo y medio de una
+    /// transición. Los quince del criterio se seguirían cumpliendo, pero se
+    /// pagarían sin recibir nada.
+    pub fn should_sleep(self) -> bool {
+        self == FramePlan::Reuse
+    }
+}
+
 /// Cómo se resuelve el color de un impacto.
 ///
 /// `Normals` no es sombreado sino una vista de depuración: cada eje se ve
@@ -1178,5 +1228,79 @@ mod tests {
         // La decision cerrada del plan, amarrada: si alguien la baja a dos
         // sin registrar qué se pierde, esto lo detiene.
         assert_eq!(MAX_DEPTH, 3);
+    }
+
+    // ------------------------------------------------- dirty rendering
+
+    #[test]
+    fn la_tabla_del_plan_de_cuadro_tiene_tres_filas() {
+        assert_eq!(plan_frame(true, true), FramePlan::Interactive);
+        assert_eq!(plan_frame(true, false), FramePlan::Interactive);
+        assert_eq!(plan_frame(false, true), FramePlan::Final);
+        assert_eq!(plan_frame(false, false), FramePlan::Reuse);
+    }
+
+    #[test]
+    fn en_reposo_no_se_traza_nada() {
+        // Es la reutilizacion del framebuffer que pide el plan: cuando nada
+        // cambia, el cuadro no se recalcula.
+        let plan = plan_frame(false, false);
+
+        assert!(!plan.draws());
+        assert!(plan.should_sleep());
+    }
+
+    #[test]
+    fn mientras_algo_se_mueve_se_traza_y_no_se_duerme() {
+        let plan = plan_frame(true, false);
+
+        assert!(plan.draws());
+        assert!(
+            !plan.should_sleep(),
+            "dormir le quita cuadros a la animacion"
+        );
+    }
+
+    #[test]
+    fn el_cuadro_final_se_traza_una_sola_vez() {
+        // Se dibuja al detenerse, y el siguiente cuadro ya reutiliza. La
+        // secuencia completa de una interaccion: dos cuadros moviendose,
+        // uno final, y reposo.
+        let mut pendiente = false;
+        let mut planes = Vec::new();
+
+        for sostenido in [true, true, false, false, false] {
+            let plan = plan_frame(sostenido, pendiente);
+
+            pendiente = match plan {
+                FramePlan::Interactive => true,
+                FramePlan::Final => false,
+                FramePlan::Reuse => pendiente,
+            };
+
+            planes.push(plan);
+        }
+
+        assert_eq!(
+            planes,
+            vec![
+                FramePlan::Interactive,
+                FramePlan::Interactive,
+                FramePlan::Final,
+                FramePlan::Reuse,
+                FramePlan::Reuse,
+            ]
+        );
+    }
+
+    #[test]
+    fn un_cambio_instantaneo_va_directo_al_cuadro_final() {
+        // Un reinicio al lienzo no es sostenido: no tiene sentido gastarle
+        // un cuadro de baja resolucion cuando ya termino.
+        let plan = plan_frame(false, true);
+
+        assert_eq!(plan, FramePlan::Final);
+        assert!(plan.draws());
+        assert!(!plan.should_sleep());
     }
 }
