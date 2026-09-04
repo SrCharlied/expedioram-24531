@@ -26,6 +26,7 @@ pub mod scene;
 pub mod scene_builder;
 pub mod scenes;
 pub mod skybox;
+pub mod stats;
 pub mod texture;
 
 /// Margen para despegar un rayo secundario de la superficie que lo originó.

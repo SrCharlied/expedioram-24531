@@ -30,7 +30,7 @@ pub const BACKGROUND_COLOR: u32 = FALLBACK_COLOR;
 
 /// Resolución a la que se dibujan los cuadros mientras algo se mueve.
 ///
-/// A `800 × 600` el nivel seguro refractivo tarda `0.2581 s` por cuadro
+/// A `800 × 600` el nivel seguro refractivo tarda `0.2630 s` por cuadro
 /// —unos 4 fps—, y eso es latencia perceptible al orbitar. Mientras la
 /// cámara o la revelación cambian se dibuja a menor resolución y se escala;
 /// al quedar todo quieto se produce un cuadro final a resolución completa.
@@ -40,20 +40,29 @@ pub const BACKGROUND_COLOR: u32 = FALLBACK_COLOR;
 /// eran de **antes** de la refracción y quedaron a menos de la mitad del
 /// costo real.
 ///
-/// Todas: preset `safe-refractive-water`, `reveal 1.0`, mediana de catorce
-/// muestras intercaladas en release; commit `2c7960a` con el árbol de la
-/// Tarea 7.1, 3 de septiembre de 2026, Ryzen 7 6800H, rustc 1.97.0. Se
-/// rederivan con `cargo run --release --example performance_matrix`.
+/// Todas: preset `safe-refractive-water`, estado pintado, **toma hero**,
+/// mediana de quince rondas intercaladas y rotadas en release; árbol de
+/// trabajo sin commitear sobre `2c7960a`, 4 de septiembre de 2026, Ryzen 7
+/// 6800H, rustc 1.97.0. Se rederivan con
+/// `cargo run --release --example performance_matrix`.
+///
+/// # La toma hero no es el peor encuadre
+///
+/// Estas cifras son del encuadre que se presenta. El zoom más cercano que
+/// el usuario puede alcanzar cuesta **`3.5x`** esto, porque llena la
+/// pantalla de bahía refractiva: `107 084` rayos secundarios por cuadro
+/// contra `22 512` en la hero. Ninguna constante de este módulo cubre ese
+/// caso; lo cubre el presupuesto de la Tarea 7.1.
 ///
 /// # Ráfaga contra carga sostenida
 ///
-/// Estas cifras son un `25 %` más altas que las que registró el Hito 6 para
-/// los mismos estados, y la diferencia no es ruido: las de entonces salían
-/// de una ráfaga de quince renders seguidos, y estas de una corrida que
-/// sostiene la carga medio minuto sobre diecisiete estados. La máquina
-/// baja de frecuencia. Las sostenidas son las que hay que usar para
-/// dimensionar —una sesión de la demo se parece más a eso que a una
-/// ráfaga—, y el sentido del sesgo es el seguro: sobreestiman el coste.
+/// Son más altas que las que registró el Hito 6 para los mismos estados, y
+/// la diferencia no es ruido: las de entonces salían de una ráfaga de
+/// quince renders seguidos, y estas de corridas que sostienen la carga
+/// medio minuto. La máquina baja de frecuencia. Las sostenidas son las que
+/// hay que usar para dimensionar —una sesión de la demo se parece más a eso
+/// que a una ráfaga—, y el sentido del sesgo es el seguro: sobreestiman el
+/// coste.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InteractiveProfile {
     pub width: usize,
@@ -61,18 +70,28 @@ pub struct InteractiveProfile {
 }
 
 impl InteractiveProfile {
-    /// Media resolución: `0.0707 s` medidos con el volumen refractivo
-    /// pintado, unos 14 fps. Es el punto de partida que fija el plan, y el
-    /// que la ventana usa por defecto. En el peor cuadro de la transición
-    /// son `0.0768 s`.
+    /// Media resolución: `0.0695 s` con el volumen refractivo pintado en la
+    /// toma hero, unos 14 fps; `0.0735 s` en el peor estado de la
+    /// transición. Es el punto de partida que fija el plan y el que la
+    /// ventana usa por defecto.
+    ///
+    /// En el **peor encuadre alcanzable** son `0.2636 s`, que deja los
+    /// quince cuadros de la transición en `3.95 s` contra un techo de
+    /// `4.0 s`: pasa el gate por los pelos, y hay corridas en las que no
+    /// pasa. Ver la Tarea 7.1.
     pub const MEDIA: InteractiveProfile = InteractiveProfile {
         width: 400,
         height: 300,
     };
 
-    /// Un paso más agresivo, sin remedir desde el Hito 6: `0.0340 s` en
-    /// ráfaga, unos 29 fps. Reserva si la escena crece y `MEDIA` deja de dar
-    /// los quince cuadros de transición.
+    /// Un paso más agresivo: `0.0465 s` en el peor estado de la toma hero
+    /// —unos 22 fps— y `0.1703 s` en el peor encuadre alcanzable, que deja
+    /// los quince cuadros en `2.55 s` y el gate con un `1.6x` de margen.
+    ///
+    /// Es la reserva si la escena crece, y ahora mismo es también la única
+    /// opción que aguanta el peor encuadre con holgura. Cambiar el perfil
+    /// por defecto es una decisión de presentación, no de medición: está
+    /// planteada y no aplicada.
     pub const BAJA: InteractiveProfile = InteractiveProfile {
         width: 320,
         height: 240,
@@ -130,10 +149,10 @@ impl FramePlan {
     /// ¿Conviene dormir después de presentar?
     ///
     /// Solo en reposo. Dormir mientras algo se mueve le quita cuadros a la
-    /// animación: a `0.0820 s` por cuadro, dormir `16 ms` de más baja de
-    /// dieciocho cuadros a quince en el segundo y medio de una transición.
-    /// Los quince del criterio se seguirían cumpliendo justo, y se pagarían
-    /// sin recibir nada.
+    /// animación: a `0.0736 s` por cuadro, dormir `16 ms` de más baja de
+    /// veinte cuadros a diecisiete en el segundo y medio de una transición.
+    /// Los quince del criterio se seguirían cumpliendo, y se pagarían sin
+    /// recibir nada.
     pub fn should_sleep(self) -> bool {
         self == FramePlan::Reuse
     }

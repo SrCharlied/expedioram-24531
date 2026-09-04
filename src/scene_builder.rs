@@ -235,6 +235,58 @@ impl Blockout {
         self.hero_camera().preset()
     }
 
+    /// Las cámaras con las que se mide el rendimiento, con su etiqueta.
+    ///
+    /// # Por qué no basta la toma hero
+    ///
+    /// La primera matriz de la Tarea 7.1 midió los cuatro presets solo en la
+    /// toma hero, y eso deja fuera cámaras que el usuario alcanza con dos
+    /// teclas. El coste de un cuadro depende de qué ocupa la pantalla: la
+    /// bahía refractiva y el arco costero no cubren la misma fracción del
+    /// cuadro desde todos los ángulos, y acercarse llena la pantalla con lo
+    /// que estaba al fondo. Un presupuesto medido en un solo encuadre
+    /// promete un margen que el primer giro puede gastarse.
+    ///
+    /// # El conjunto
+    ///
+    /// - La toma hero, primera porque es la que se presenta.
+    /// - La órbita completa en pasos de `45°`, que son los siete ángulos
+    ///   restantes. Con la escena entera dentro del encuadre, el barrido de
+    ///   yaw es el que cambia qué región queda delante.
+    /// - Los dos extremos del zoom en el yaw hero. Se piden con un `delta`
+    ///   deliberadamente enorme porque `Camera::zoom` recorta a
+    ///   `min_radius..=max_radius`: así los extremos salen de los límites
+    ///   medidos de la escena y no de una distancia elegida a mano.
+    ///
+    /// La elevación no se barre: la ventana no la expone. `orbit` sí cambia
+    /// el pitch, pero las teclas de la demo solo giran el yaw y hacen zoom,
+    /// y el conjunto tiene que ser de cámaras **alcanzables**.
+    pub fn measurement_cameras(&self) -> Vec<(String, Camera)> {
+        let mut camaras = vec![("hero".to_string(), self.hero_camera())];
+
+        for paso in 1..8 {
+            let yaw = HERO_YAW_DEGREES + 45.0 * paso as f32;
+            camaras.push((
+                format!("yaw {:+.0}", 45.0 * paso as f32),
+                self.camera_at_yaw(yaw),
+            ));
+        }
+
+        // Un delta que el recorte convierte en «el extremo», sin clavar
+        // ninguna distancia en este archivo.
+        const HASTA_EL_TOPE: f32 = 1.0e6;
+
+        let mut cerca = self.hero_camera();
+        cerca.zoom(-HASTA_EL_TOPE);
+        camaras.push(("zoom cerca".to_string(), cerca));
+
+        let mut lejos = self.hero_camera();
+        lejos.zoom(HASTA_EL_TOPE);
+        camaras.push(("zoom lejos".to_string(), lejos));
+
+        camaras
+    }
+
     /// Cámara con elevación explícita, para la vista de corte.
     pub fn camera_at(&self, yaw_degrees: f32, elevation_degrees: f32) -> Camera {
         let eye = eye_at(
@@ -258,6 +310,59 @@ impl Blockout {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn las_camaras_de_medicion_cubren_la_orbita_y_los_dos_extremos_del_zoom() {
+        let nivel = crate::scenes::safe_level(crate::scenes::WaterPreset::RefractiveWater);
+        let camaras = nivel.measurement_cameras();
+
+        assert_eq!(camaras.len(), 10, "hero, siete yaws y dos extremos de zoom");
+        assert_eq!(camaras[0].0, "hero");
+
+        // Los ocho angulos de la orbita estan a radio orbital, y los dos
+        // extremos del zoom en los limites medidos de la escena.
+        let hero = nivel.hero_camera();
+
+        for (etiqueta, camara) in camaras.iter().take(8) {
+            assert!(
+                (camara.radius() - hero.radius()).abs() < 1e-3,
+                "{etiqueta} cambio el radio: orbitar no hace zoom"
+            );
+        }
+
+        let cerca = &camaras[8];
+        let lejos = &camaras[9];
+
+        assert!(
+            (cerca.1.radius() - hero.min_radius).abs() < 1e-3,
+            "el extremo cercano tiene que quedar pegado a min_radius"
+        );
+        assert!(
+            (lejos.1.radius() - hero.max_radius).abs() < 1e-3,
+            "el extremo lejano tiene que quedar pegado a max_radius"
+        );
+        assert!(cerca.1.radius() < hero.radius());
+        assert!(lejos.1.radius() > hero.radius());
+    }
+
+    #[test]
+    fn las_camaras_de_medicion_miran_todas_al_mismo_encuadre() {
+        // Si una de ellas apuntara a otro sitio, la comparacion entre
+        // camaras mediria dos cosas a la vez.
+        let nivel = crate::scenes::safe_level(crate::scenes::WaterPreset::RefractiveWater);
+        let hero = nivel.hero_camera();
+
+        for (etiqueta, camara) in nivel.measurement_cameras() {
+            assert!(
+                (camara.look_at - hero.look_at).magnitude() < 1e-4,
+                "{etiqueta} mira a otro punto"
+            );
+            assert!(
+                (camara.orbit_center - hero.orbit_center).magnitude() < 1e-4,
+                "{etiqueta} orbita alrededor de otro eje"
+            );
+        }
+    }
 
     #[test]
     fn el_radio_derivado_reproduce_los_valores_del_inventario() {

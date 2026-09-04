@@ -50,8 +50,15 @@ impl RevealState {
         }
     }
 
-    /// El cuadro **más caro** que la demo puede presentar: el clímax, con
-    /// el Continente pintado y el grupo `Finale` a medio revelar.
+    /// Un **representante** de los cuadros más caros de la demo: el
+    /// clímax, con el Continente pintado y el grupo `Finale` a medio
+    /// revelar.
+    ///
+    /// «Representante» y no «el máximo»: el máximo global no está
+    /// demostrado y con esta dispersión de máquina no se puede demostrar.
+    /// Lo que está medido es que hay una **banda alta** —todo lo revelado,
+    /// entre `1.2x` y `1.6x` el lienzo— y que este estado pertenece a ella;
+    /// dentro de la banda, el orden de los puntos cambia entre corridas.
     ///
     /// Es con lo que se calibra la ventana, y **no** con `painted()`. Las
     /// dos razones son estructurales, no estadísticas:
@@ -76,12 +83,21 @@ impl RevealState {
     /// # Lo que la medición sí y no puede decir
     ///
     /// El barrido de `examples/interactive_frame_time.rs` confirma la banda:
-    /// el lienzo va aparte, abajo, y todo lo revelado se agrupa entre
-    /// `1.3x` y `1.6x` su coste. Dentro de esa banda **la dispersión de la
-    /// máquina es mayor que las diferencias**, así que el punto exacto no se
-    /// elige persiguiendo el máximo de una corrida: se elige por la
-    /// estructura de arriba, y el ejemplo avisa si alguna corrida encuentra
-    /// un punto que se salga de la banda.
+    /// el lienzo va aparte, abajo, y todo lo revelado se agrupa por encima.
+    /// Dentro de esa banda **la dispersión de la máquina es mayor que las
+    /// diferencias**, así que el punto exacto no se elige persiguiendo el
+    /// máximo de una corrida: se elige por la estructura de arriba, y el
+    /// ejemplo avisa si alguna corrida encuentra un punto que se salga de
+    /// la banda.
+    ///
+    /// # La cámara es otra dimensión, y no está aquí
+    ///
+    /// Este constructor fija el **estado**; el coste de un cuadro depende
+    /// además del encuadre, porque no todas las cámaras ponen la misma
+    /// fracción de bahía refractiva en pantalla. La ventana calibra en el
+    /// encuadre hero, que es el que presenta, y el presupuesto de la matriz
+    /// se toma sobre las diez cámaras alcanzables. Ver
+    /// `Blockout::measurement_cameras`.
     pub fn worst_case() -> Self {
         let mut estado = RevealState::painted();
         estado.set_progress(RevealGroup::Finale, WORST_CASE_PROGRESS);

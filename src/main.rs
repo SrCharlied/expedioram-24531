@@ -123,8 +123,12 @@ fn main() -> ExitCode {
     // cuadros sin que nada avisara, y el gate de fluidez no llegaría a
     // dispararse nunca.
     //
-    // Se mide con `RevealState::worst_case()`, que es el clímax: el
-    // Continente pintado y el grupo `Finale` a medio revelar.
+    // Se mide con `RevealState::worst_case()`, un representante de los
+    // cuadros más caros: el clímax, con el Continente pintado y el grupo
+    // `Finale` a medio revelar. En el encuadre hero, que es el que la
+    // ventana presenta al arrancar; otras cámaras alcanzables cuestan algo
+    // más, y eso lo cubre el presupuesto de la matriz, no esta
+    // calibración.
     //
     // Antes se medía con `reveal 1.0` por la mitad de la razón correcta. Es
     // cierto que el lienzo es el estado barato —sin techos ópticos no hay un

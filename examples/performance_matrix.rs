@@ -17,14 +17,21 @@
 //! | `safe-canvas` | sin volumen, `159` primitivas | lienzo, `0.0` |
 //! | `safe-painted` | sin volumen, `159` primitivas | pintado, `1.0` |
 //! | `safe-water` | refractivo, `160` primitivas | pintado, `1.0` |
-//! | `safe-revealing` | refractivo, `160` primitivas | **el peor cuadro** |
+//! | `safe-revealing` | refractivo, `160` primitivas | `worst_case()` |
 //! | `target-water` | nivel objetivo | pintado, `1.0` |
 //!
-//! Las filas están ordenadas de forma que cada una añade **un** coste sobre
-//! la anterior: primero las texturas del estado pintado, luego la óptica del
-//! volumen, luego el doble muestreo de la transición, y al final la
+//! Las filas están ordenadas de forma que cada una añade **un** cambio sobre
+//! la anterior: primero los materiales pintados, luego el volumen
+//! refractivo, luego el doble muestreo de la transición, y al final la
 //! densidad del nivel objetivo. Así la diferencia entre dos filas
-//! consecutivas es atribuible.
+//! consecutivas es atribuible a un solo cambio.
+//!
+//! Un escalón mal nombrado, corregido por la columna de rayos: el primero
+//! **no es «las texturas»**. Al pasar de lienzo a pintado se encienden a la
+//! vez las texturas y los techos ópticos de los materiales finales, y los
+//! conteos dicen cuál pesa: los rayos secundarios por cuadro pasan de `986`
+//! a `13 809`. Es la óptica, no el muestreo. El único escalón que sí es
+//! muestreo es el último, que añade `262` rayos y un `6 %` de tiempo.
 //!
 //! `target-water` **no se mide**: el nivel objetivo no existe todavía —es la
 //! Tarea 7.2, y decidir si se construye es justo para lo que sirve esta
@@ -33,25 +40,39 @@
 //!
 //! # Método
 //!
-//! Release, o la comparación no significa nada. Dos resoluciones: la
-//! ventana completa y el perfil interactivo, que son los dos regímenes
-//! reales del programa.
+//! Release, o la comparación no significa nada.
 //!
-//! Las filas se **intercalan por ronda**: un cuadro de cada fila, y otra
-//! vuelta. En esta máquina el estado térmico se mueve dentro de una sola
-//! corrida, así que agotar una fila antes de pasar a la siguiente le carga
-//! el calentamiento a la que tocara y las diferencias dejan de ser
-//! atribuibles.
+//! **Tres bloques.** El cuadro final a `800 x 600` y el perfil interactivo a
+//! `400 x 300`, que son los dos regímenes reales del programa, los dos en la
+//! toma hero para que las filas sean comparables entre sí. Y un tercero con
+//! el peor estado en las **diez cámaras alcanzables**, porque un presupuesto
+//! medido en un solo encuadre promete un margen que el primer giro puede
+//! gastarse.
 //!
-//! Se reportan mínimo, mediana y máximo: la mediana dimensiona y el mínimo
-//! compara. Los valores absolutos de las dos resoluciones **no** son
-//! comparables entre sí —la fase de resolución completa deja la máquina
-//! caliente para la siguiente—; lo comparable es lo de dentro de cada
-//! bloque, que es donde está el intercalado.
+//! **Rondas intercaladas y rotadas.** Un cuadro de cada celda por ronda, y
+//! el orden de la ronda rota. Intercalar reparte la deriva térmica; rotar
+//! reparte la posición dentro de la ronda, que no es neutra. Sin rotación la
+//! instrumentación favorece sistemáticamente a las primeras filas, que es
+//! precisamente el sesgo que esta versión corrige.
+//!
+//! **Estadística.** Quince rondas y `stats::summarize`, que calcula bien la
+//! mediana de un conteo par. Las atribuciones entre filas usan
+//! `stats::median_ratio`: cociente ronda contra ronda y mediana de los
+//! cocientes, no cociente de medianas.
+//!
+//! **Conteos de rayos.** Junto a cada celda se registran los rayos
+//! secundarios por cuadro. Sin ellos, decir *por qué* una fila cuesta más
+//! que la anterior sería una hipótesis; con ellos es una medición.
+//!
+//! Los valores absolutos de bloques distintos **no** son comparables entre
+//! sí: cada bloque deja la máquina más caliente para el siguiente. Lo
+//! comparable es lo de dentro de un bloque, que es donde está el intercalado.
 
 use std::path::PathBuf;
 use std::time::Instant;
 
+use expedition33_continente_inacabado::accel::TraversalStats;
+use expedition33_continente_inacabado::camera::Camera;
 use expedition33_continente_inacabado::framebuffer::Framebuffer;
 use expedition33_continente_inacabado::light::{diorama as luces_del_diorama, PointLight};
 use expedition33_continente_inacabado::renderer::{render, InteractiveProfile, Shading};
@@ -61,37 +82,42 @@ use expedition33_continente_inacabado::reveal::{
 };
 use expedition33_continente_inacabado::scene_builder::Blockout;
 use expedition33_continente_inacabado::scenes::{safe_level_con, WaterPreset};
+use expedition33_continente_inacabado::stats::{median_ratio, summarize};
 
 const ANCHO: usize = 800;
 const ALTO: usize = 600;
 
-/// Cuadros por celda, cada uno en una ronda distinta.
-const MUESTRAS: usize = 14;
+/// Rondas por celda. **Impar**: la mediana es un valor observado.
+const RONDAS: usize = 15;
 
-/// Una fila de la matriz, con su distribución de tiempos por resolución.
-struct Fila {
-    nombre: &'static str,
+/// Una celda de la matriz: un nivel, un estado, una cámara y su muestra.
+struct Celda {
+    nombre: String,
     /// Índice del blockout: `0` sin volumen, `1` refractivo.
     nivel: usize,
     reveal: RevealState,
+    camara: Camera,
     tiempos: Vec<f64>,
+    /// Contadores del último cuadro trazado. Son deterministas para un
+    /// estado y una cámara dados, así que uno basta.
+    stats: TraversalStats,
 }
 
-impl Fila {
-    fn nueva(nombre: &'static str, nivel: usize, reveal: RevealState) -> Self {
-        Fila {
+impl Celda {
+    fn nueva(nombre: String, nivel: usize, reveal: RevealState, camara: Camera) -> Self {
+        Celda {
             nombre,
             nivel,
             reveal,
-            tiempos: Vec::with_capacity(MUESTRAS),
+            camara,
+            tiempos: Vec::with_capacity(RONDAS),
+            stats: TraversalStats::default(),
         }
     }
 
-    fn distribucion(&self) -> (f64, f64, f64) {
-        let mut t = self.tiempos.clone();
-        t.sort_by(|a, b| a.partial_cmp(b).expect("no hay NaN"));
-
-        (t[0], t[t.len() / 2], t[t.len() - 1])
+    /// Rayos secundarios por cuadro.
+    fn secundarios(&self) -> usize {
+        self.stats.reflection_rays + self.stats.refraction_rays
     }
 }
 
@@ -109,63 +135,84 @@ fn nivel(preset: WaterPreset) -> Blockout {
     }
 }
 
-/// Mide las filas a una resolución, con pasadas intercaladas.
+/// Mide las celdas, un cuadro de cada una por ronda, **rotando** el orden.
+///
+/// `tiempos[r]` queda siendo la ronda `r` para todas las celdas, que es lo
+/// que hace válidos los cocientes pareados.
 fn medir(
-    filas: &mut [Fila],
+    celdas: &mut [Celda],
     niveles: &[Blockout],
     luces: &[Vec<PointLight>],
     ancho: usize,
     alto: usize,
 ) {
     let mut framebuffer = Framebuffer::new(ancho, alto);
+    let n = celdas.len();
 
-    for fila in filas.iter_mut() {
-        fila.tiempos.clear();
+    for celda in celdas.iter_mut() {
+        celda.tiempos.clear();
     }
 
-    for _ in 0..MUESTRAS {
-        for fila in filas.iter_mut() {
-            let diorama = &niveles[fila.nivel];
-            let camara = diorama.hero_camera();
+    for ronda in 0..RONDAS {
+        for k in 0..n {
+            let i = (k + ronda) % n;
+            let diorama = &niveles[celdas[i].nivel];
 
             let inicio = Instant::now();
-            render(
+            let stats = render(
                 &mut framebuffer,
                 &diorama.scene,
                 &diorama.accel,
-                &luces[fila.nivel],
-                &fila.reveal,
-                &camara,
+                &luces[celdas[i].nivel],
+                &celdas[i].reveal,
+                &celdas[i].camara,
                 Shading::Material,
             );
-            fila.tiempos.push(inicio.elapsed().as_secs_f64());
+            celdas[i].tiempos.push(inicio.elapsed().as_secs_f64());
+            celdas[i].stats = stats;
         }
     }
 }
 
-fn reportar(filas: &[Fila], niveles: &[Blockout], ancho: usize, alto: usize, titulo: &str) {
+fn reportar(celdas: &[Celda], niveles: &[Blockout], ancho: usize, alto: usize, titulo: &str) {
     println!("\n  {titulo}   {ancho} x {alto}");
     println!(
-        "  {:<18} {:>6} {:>9} {:>9} {:>9} {:>7}",
-        "preset", "prim.", "minimo", "mediana", "maximo", "fps"
+        "  {:<18} {:>6} {:>9} {:>9} {:>9} {:>6} {:>12}",
+        "celda", "prim.", "minimo", "mediana", "maximo", "fps", "2os rayos"
     );
 
-    for fila in filas {
-        let (minimo, mediana, maximo) = fila.distribucion();
-        let fps = 1.0 / mediana;
+    for celda in celdas {
+        let d = summarize(&celda.tiempos);
 
         println!(
-            "  {:<18} {:>6} {minimo:>9.4} {mediana:>9.4} {maximo:>9.4} {fps:>7.1}",
-            fila.nombre,
-            niveles[fila.nivel].scene.objects.len()
+            "  {:<18} {:>6} {:>9.4} {:>9.4} {:>9.4} {:>6.1} {:>12}",
+            celda.nombre,
+            niveles[celda.nivel].scene.objects.len(),
+            d.min,
+            d.median,
+            d.max,
+            1.0 / d.median,
+            celda.secundarios()
         );
     }
+}
 
-    println!(
-        "  {:<18} {:>6} {:>9} {:>9} {:>9} {:>7}",
-        "target-water", "?", "-", "-", "-", "-"
-    );
-    println!("    pendiente: el nivel objetivo es la Tarea 7.2 y no existe todavia.");
+/// Imprime los escalones entre filas consecutivas, con cociente pareado.
+fn escalones(celdas: &[Celda], etiqueta: &str) {
+    println!("\n  escalones {etiqueta} (cociente pareado, ronda contra ronda)");
+
+    for par in celdas.windows(2) {
+        let (antes, despues) = (&par[0], &par[1]);
+        let cociente = median_ratio(&despues.tiempos, &antes.tiempos);
+        let rayos = despues.secundarios() as i64 - antes.secundarios() as i64;
+
+        println!(
+            "  {:<18} -> {:<18} {:+6.1} %   2os rayos {rayos:+}",
+            antes.nombre,
+            despues.nombre,
+            100.0 * (cociente - 1.0)
+        );
+    }
 }
 
 fn main() {
@@ -179,13 +226,21 @@ fn main() {
         .collect();
 
     let perfil = InteractiveProfile::MEDIA;
+    let hero = niveles[1].hero_camera();
 
-    let mut filas = vec![
-        Fila::nueva("safe-canvas", 0, RevealState::unpainted()),
-        Fila::nueva("safe-painted", 0, RevealState::painted()),
-        Fila::nueva("safe-water", 1, RevealState::painted()),
-        Fila::nueva("safe-revealing", 1, RevealState::worst_case()),
-    ];
+    let presets = || {
+        vec![
+            Celda::nueva("safe-canvas".to_string(), 0, RevealState::unpainted(), hero),
+            Celda::nueva("safe-painted".to_string(), 0, RevealState::painted(), hero),
+            Celda::nueva("safe-water".to_string(), 1, RevealState::painted(), hero),
+            Celda::nueva(
+                "safe-revealing".to_string(),
+                1,
+                RevealState::worst_case(),
+                hero,
+            ),
+        ]
+    };
 
     println!("performance_matrix · Tarea 7.1\n");
     println!("  release     si, obligatorio");
@@ -194,36 +249,88 @@ fn main() {
         niveles[1].scene.textures.len(),
         luces[1].len()
     );
-    println!("  camara      toma hero");
-    println!("  muestras    {MUESTRAS} por celda, intercaladas por ronda");
-    println!("  peor cuadro Continente pintado y grupo Finale en {WORST_CASE_PROGRESS:.2}");
+    println!("  rondas      {RONDAS}, intercaladas y con el orden rotado");
+    println!("  peor estado Continente pintado y grupo Finale en {WORST_CASE_PROGRESS:.2}");
     println!("  comando     cargo run --release --example performance_matrix");
 
-    medir(&mut filas, &niveles, &luces, ANCHO, ALTO);
-    reportar(&filas, &niveles, ANCHO, ALTO, "cuadro final");
-    let final_medianas: Vec<f64> = filas.iter().map(|f| f.distribucion().1).collect();
+    // ---------------------------------------------- bloque 1: cuadro final
+    let mut finales = presets();
+    medir(&mut finales, &niveles, &luces, ANCHO, ALTO);
+    reportar(&finales, &niveles, ANCHO, ALTO, "cuadro final, toma hero");
+    escalones(&finales, "a resolucion completa");
 
-    medir(&mut filas, &niveles, &luces, perfil.width, perfil.height);
+    // ------------------------------------------ bloque 2: perfil interactivo
+    let mut interactivas = presets();
+    medir(
+        &mut interactivas,
+        &niveles,
+        &luces,
+        perfil.width,
+        perfil.height,
+    );
     reportar(
-        &filas,
+        &interactivas,
         &niveles,
         perfil.width,
         perfil.height,
-        "perfil interactivo",
+        "perfil interactivo, toma hero",
     );
-    let interactivas: Vec<f64> = filas.iter().map(|f| f.distribucion().1).collect();
+    escalones(&interactivas, "en el perfil interactivo");
+
+    println!("\n  target-water: pendiente. El nivel objetivo es la Tarea 7.2 y no existe");
+    println!("  todavia, asi que la fila no se puede medir ni estimar.");
+
+    // ---------------------------------------------- bloque 3: las cámaras
+    let mut camaras: Vec<Celda> = niveles[1]
+        .measurement_cameras()
+        .into_iter()
+        .map(|(etiqueta, camara)| Celda::nueva(etiqueta, 1, RevealState::worst_case(), camara))
+        .collect();
+
+    medir(&mut camaras, &niveles, &luces, perfil.width, perfil.height);
+    reportar(
+        &camaras,
+        &niveles,
+        perfil.width,
+        perfil.height,
+        "safe-revealing en las camaras alcanzables",
+    );
+
+    let peor_camara = camaras
+        .iter()
+        .max_by(|a, b| {
+            summarize(&a.tiempos)
+                .median
+                .partial_cmp(&summarize(&b.tiempos).median)
+                .expect("no hay NaN")
+        })
+        .expect("hay camaras");
+
+    println!(
+        "\n  peor camara  {}   {:.4} s   ({:+.1} % sobre la hero, pareado)",
+        peor_camara.nombre,
+        summarize(&peor_camara.tiempos).median,
+        100.0 * (median_ratio(&peor_camara.tiempos, &camaras[0].tiempos) - 1.0)
+    );
 
     // ------------------------------------------------ el presupuesto
     //
     // El gate que puede fallar de verdad es el de fluidez, y solo mira el
     // perfil interactivo: el cuadro final se produce una vez al soltar los
     // controles y nadie lo anima.
+    //
+    // Se toma el peor de los dos bloques interactivos, que es lo que hace
+    // que el presupuesto no dependa de haber medido el encuadre afortunado.
     let critico = REVEAL_DURATION_CEILING / MINIMUM_REVEAL_FRAMES;
-    let peor = interactivas[3];
+    let peor = summarize(&interactivas[3].tiempos)
+        .median
+        .max(summarize(&peor_camara.tiempos).median);
 
     println!("\n  presupuesto");
-    println!("  peor estado interactivo    {peor:.4} s   (safe-revealing)");
-    println!("  critico del gate           {critico:.4} s   (15 cuadros en {REVEAL_DURATION_CEILING:.1} s)");
+    println!("  peor cuadro interactivo    {peor:.4} s");
+    println!(
+        "  critico del gate           {critico:.4} s   (15 cuadros en {REVEAL_DURATION_CEILING:.1} s)"
+    );
     println!(
         "  reserva                    {:.1}x en tiempo",
         critico as f64 / peor
@@ -235,41 +342,14 @@ fn main() {
             duracion / peor as f32
         ),
         Err(_) => {
-            println!("  FALLA el gate de fluidez con el peor estado.");
+            println!("  FALLA el gate de fluidez con el peor cuadro.");
             std::process::exit(1);
         }
     }
 
-    println!("\n  lo que cuesta cada cosa, en el perfil interactivo");
-    println!(
-        "  texturas del estado pintado  {:+.1} %",
-        100.0 * (interactivas[1] / interactivas[0] - 1.0)
-    );
-    println!(
-        "  volumen refractivo           {:+.1} %",
-        100.0 * (interactivas[2] / interactivas[1] - 1.0)
-    );
-    println!(
-        "  doble muestreo de la transicion {:+.1} %",
-        100.0 * (interactivas[3] / interactivas[2] - 1.0)
-    );
-
-    println!("\n  y en el cuadro final");
-    println!(
-        "  texturas del estado pintado  {:+.1} %",
-        100.0 * (final_medianas[1] / final_medianas[0] - 1.0)
-    );
-    println!(
-        "  volumen refractivo           {:+.1} %",
-        100.0 * (final_medianas[2] / final_medianas[1] - 1.0)
-    );
-    println!(
-        "  doble muestreo de la transicion {:+.1} %",
-        100.0 * (final_medianas[3] / final_medianas[2] - 1.0)
-    );
-
     println!("\n  La reserva esta en tiempo, no en primitivas: el coste no es lineal");
-    println!("  en el conteo —la jerarquia poda el 92 % de los tests del Hito 3—, asi");
-    println!("  que traducirla a densidad exige medir el nivel objetivo, no dividir.");
-    println!("\n  Registrar junto a las cifras: commit, fecha, hardware y toolchain.");
+    println!("  en el conteo, asi que traducirla a densidad exige medir el nivel");
+    println!("  objetivo. Y el escalon mas caro de la tabla no es el conteo sino la");
+    println!("  optica: mirar la columna de rayos secundarios junto a los tiempos.");
+    println!("\n  Registrar junto a las cifras: commit, fecha, arbol, hardware y toolchain.");
 }
