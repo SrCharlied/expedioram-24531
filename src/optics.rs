@@ -1,10 +1,10 @@
 //! Óptica de los rayos secundarios: reflexión, refracción y de qué lado
 //! sale cada uno.
 //!
-//! Solo geometría de direcciones. El reparto de energía —Schlick, `kr`,
-//! `kt`, `kl`— llega en la Tarea 5.2, y la recursión en la 5.3. Separarlo
-//! así deja este módulo comprobable contra la ley de Snell sin escena, sin
-//! materiales y sin luces.
+//! Geometría de direcciones y reparto de energía: `reflect`, `refract`,
+//! Schlick y los techos. La **recursión** vive en `renderer::cast_ray`, y
+//! esa separación es la que deja este módulo comprobable contra la ley de
+//! Snell sin escena, sin luces y sin trazar un solo rayo.
 //!
 //! # Convención de vectores
 //!

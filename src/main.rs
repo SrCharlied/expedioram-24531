@@ -11,7 +11,9 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use expedition33_continente_inacabado::framebuffer::Framebuffer;
-use expedition33_continente_inacabado::input::{demo_action, pick_region, DemoAction, FrameIntent};
+use expedition33_continente_inacabado::input::{
+    demo_action, pick_region, DemoAction, FrameIntent, PresentedFrame,
+};
 use expedition33_continente_inacabado::light::diorama as luces_del_diorama;
 use expedition33_continente_inacabado::renderer::{
     plan_frame, render, FramePlan, InteractiveProfile, Shading,
@@ -58,14 +60,11 @@ fn main() -> ExitCode {
     )
     .unwrap();
 
-    // Nivel seguro con el interior de la bahía visible.
+    // Nivel seguro con el volumen de agua **refractivo**, que es el preset
+    // canónico desde la Tarea 5.4: 160 primitivas, techos `0.9 / 0.9` e
+    // `ior 1.333`. Los rayos cruzan la superficie y alcanzan las 44
+    // primitivas del interior —barco, mástil, cadena, ancla, kelp y rocas—.
     //
-    // El volumen de agua no se inserta: hasta que el Hito 5 traiga
-    // refracción, un cuboide azul opaco taparía las 44 primitivas del
-    // interior —barco, mástil, cadena, ancla, kelp y rocas— y el plan
-    // prohíbe expresamente fingir transparencia sin óptica. Mostrar el
-    // interior es también lo que hace útil la ventana mientras se trabajan
-    // los materiales de los Hitos 4 a 6.
     // Las texturas se cargan desde la raíz del proyecto. Si falta alguna,
     // se aborta con su ruta en vez de arrancar con colores planos que nadie
     // distinguiría de un material mal ajustado.
@@ -111,10 +110,10 @@ fn main() -> ExitCode {
     let scene = diorama.scene;
     let accel = diorama.accel;
 
-    // A 800 x 600 el nivel seguro cuesta ~0.096 s por cuadro: orbitar a
-    // 10 fps se siente pegajoso. Mientras algo se mueve se dibuja en el
-    // perfil interactivo y se escala; al soltar los controles se produce
-    // un cuadro final a resolución completa.
+    // A 800 x 600 el nivel seguro refractivo cuesta ~0.20 s por cuadro:
+    // orbitar a 5 fps se siente pegajoso. Mientras algo se mueve se dibuja
+    // en el perfil interactivo y se escala; al soltar los controles se
+    // produce un cuadro final a resolución completa.
     let perfil = InteractiveProfile::default();
     let mut borrador = Framebuffer::new(perfil.width, perfil.height);
 
@@ -203,15 +202,20 @@ fn main() -> ExitCode {
     // delta no incluya el tiempo de cargar los assets.
     let mut ultimo_cuadro = Instant::now();
 
-    // La cámara con la que se dibujó **lo que está en pantalla**.
+    // Con qué se dibujó **lo que está en pantalla**: cámara y resolución
+    // fuente.
     //
-    // El picking tiene que usar esta y no la actual. El usuario hace clic
-    // sobre la imagen que ve, y esa imagen se trazó con la cámara del cuadro
-    // anterior: si sostiene una flecha mientras pincha, la cámara ya rotó
-    // antes de llegar al clic y el rayo apuntaría a una escena que todavía
-    // no se ha mostrado. La diferencia es de un cuadro, y es justo el cuadro
-    // en el que el usuario decidió dónde pinchar.
-    let mut camara_presentada = camera;
+    // Las dos pueden diferir de las actuales. La cámara avanza antes de que
+    // se lea el clic, porque las teclas de órbita se procesan primero en el
+    // mismo cuadro. Y la resolución fuente es la del perfil interactivo
+    // mientras algo se mueve, donde un píxel fuente ocupa un bloque de la
+    // ventana: el clic tiene que resolverse contra el píxel que produjo la
+    // imagen, no contra una coordenada interpolada. Ver
+    // `input::PresentedFrame`.
+    //
+    // Arranca a resolución completa porque el primer cuadro presentado será
+    // el final: `cuadro_final_pendiente` empieza en cierto.
+    let mut presentado = PresentedFrame::full(camera, (WIDTH, HEIGHT));
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let orbit = [
@@ -285,9 +289,7 @@ fn main() -> ExitCode {
         if clic {
             if let Some(cursor) = window.get_mouse_pos(MouseMode::Discard) {
                 // Contra `camara_presentada`: el clic apunta a lo que se ve.
-                if let Some(grupo) =
-                    pick_region(&scene, &accel, &camara_presentada, cursor, WIDTH, HEIGHT)
-                {
+                if let Some(grupo) = pick_region(&scene, &accel, &presentado, cursor) {
                     acciones.push(DemoAction::Paint(grupo));
                 }
             }
@@ -377,7 +379,11 @@ fn main() -> ExitCode {
                     shading,
                 );
                 framebuffer.blit_upscaled(&borrador);
-                camara_presentada = camera;
+                presentado = PresentedFrame {
+                    camera,
+                    source: (perfil.width, perfil.height),
+                    window: (WIDTH, HEIGHT),
+                };
             }
             FramePlan::Final => {
                 // Todo quieto: una sola pasada a resolución completa.
@@ -391,7 +397,7 @@ fn main() -> ExitCode {
                     shading,
                 );
                 cuadro_final_pendiente = false;
-                camara_presentada = camera;
+                presentado = PresentedFrame::full(camera, (WIDTH, HEIGHT));
             }
             // Nada cambió: se reutiliza el framebuffer sin trazar.
             FramePlan::Reuse => {}

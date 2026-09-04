@@ -22,8 +22,8 @@ use nalgebra_glm::Vec2;
 /// Progreso de pintura, uno por grupo de revelación.
 ///
 /// Es la **única** fuente de progreso del proyecto. `RevealPhase` y el
-/// avance por tiempo llegan en la Tarea 6.3 y se derivan de estos cuatro
-/// escalares, sin duplicarlos.
+/// avance por tiempo se **derivan** de estos cuatro escalares y no se
+/// guardan en ninguna parte.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RevealState {
     progress_by_group: [f32; RevealGroup::COUNT],

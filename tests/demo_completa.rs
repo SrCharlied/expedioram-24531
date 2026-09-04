@@ -13,7 +13,9 @@
 use std::collections::HashSet;
 
 use expedition33_continente_inacabado::accel::TraversalStats;
-use expedition33_continente_inacabado::input::{demo_action, pick_region, DemoAction};
+use expedition33_continente_inacabado::input::{
+    demo_action, pick_region, DemoAction, PresentedFrame,
+};
 use expedition33_continente_inacabado::light::diorama as luces_del_diorama;
 use expedition33_continente_inacabado::renderer::{cast_ray, Shading};
 use expedition33_continente_inacabado::reveal::{
@@ -255,9 +257,12 @@ fn los_grupos_alcanzables_por_raton_son_exactamente_las_tres_regiones() {
         for x in (0..ANCHO).step_by(7) {
             let cursor = (x as f32 + 0.5, y as f32 + 0.5);
 
-            if let Some(grupo) =
-                pick_region(&diorama.scene, &diorama.accel, &camara, cursor, ANCHO, ALTO)
-            {
+            if let Some(grupo) = pick_region(
+                &diorama.scene,
+                &diorama.accel,
+                &PresentedFrame::full(camara, (ANCHO, ALTO)),
+                cursor,
+            ) {
                 alcanzadas.insert(grupo);
             }
         }

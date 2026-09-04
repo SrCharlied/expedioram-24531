@@ -11,6 +11,25 @@ pub struct Framebuffer {
     current_color: u32,
 }
 
+/// Píxel fuente que el escalado muestra en un píxel de destino.
+///
+/// Es la **única** definición del mapeo, y por eso es pública: la usan
+/// `blit_upscaled` para dibujar y el picking para resolver un clic contra lo
+/// que se está mostrando. Dos copias de esta división se desincronizan, y el
+/// síntoma sería un clic que elige lo que hay un píxel al lado.
+///
+/// División entera a propósito: es vecino más cercano por truncamiento, así
+/// que un bloque de destino entero muestra el **mismo** píxel fuente. Ese
+/// bloque es lo que el usuario ve como un solo punto de color, y es la razón
+/// de que el picking tenga que pasar por aquí en vez de interpolar.
+pub fn source_pixel(destino: usize, lado_destino: usize, lado_fuente: usize) -> usize {
+    if lado_destino == 0 {
+        return 0;
+    }
+
+    destino * lado_fuente / lado_destino
+}
+
 impl Framebuffer {
     pub fn new(width: usize, height: usize) -> Self {
         Framebuffer {
@@ -86,10 +105,10 @@ impl Framebuffer {
         }
 
         for y in 0..self.height {
-            let fuente_y = y * origen.height / self.height;
+            let fuente_y = source_pixel(y, self.height, origen.height);
 
             for x in 0..self.width {
-                let fuente_x = x * origen.width / self.width;
+                let fuente_x = source_pixel(x, self.width, origen.width);
 
                 self.buffer[y * self.width + x] = origen.buffer[fuente_y * origen.width + fuente_x];
             }

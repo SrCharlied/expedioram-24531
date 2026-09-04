@@ -233,11 +233,19 @@ impl Camera {
     /// con una resolución par no ocurriría al redondear —no hay píxel
     /// central en 800 × 600—.
     ///
-    /// El tamaño que se pasa es el de la **ventana**, no el del perfil
-    /// interactivo. Da lo mismo en la práctica, y conviene saber por qué: el
-    /// escalado por vecino más cercano preserva las coordenadas de pantalla,
-    /// así que un píxel de ventana y su píxel de perfil correspondiente
-    /// caen en la misma coordenada normalizada.
+    /// # No sirve para picking
+    ///
+    /// Una versión anterior decía aquí que daba lo mismo pasar el tamaño de
+    /// la ventana o el del perfil interactivo, porque «el escalado por
+    /// vecino más cercano preserva las coordenadas de pantalla». **Es
+    /// falso**: el escalado trunca, así que el centro del píxel fuente que
+    /// se muestra bajo el cursor está a media unidad de fuente de la
+    /// coordenada continua del cursor.
+    ///
+    /// Esta función sigue siendo la proyección continua correcta, y es lo
+    /// que hace exacto el rayo central. Para resolver un clic hay que pasar
+    /// por `input::PresentedFrame`, que trunca al píxel fuente con el mismo
+    /// mapeo que dibuja.
     pub fn ray_from_cursor(&self, cursor: (f32, f32), width: usize, height: usize) -> Ray {
         let screen_x = (2.0 * cursor.0) / width as f32 - 1.0;
         let screen_y = -(2.0 * cursor.1) / height as f32 + 1.0;

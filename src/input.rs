@@ -16,52 +16,117 @@
 //! binario lee el cursor de `minifb` y pasa el par de números; el picking se
 //! prueba con `cargo test`.
 //!
-//! El tamaño que se pasa es el de la **ventana**, el mismo con el que se
-//! presenta el framebuffer. El escalado por vecino más cercano del perfil
-//! interactivo preserva las coordenadas normalizadas, así que un píxel de
-//! ventana y su píxel de perfil caen en la misma coordenada de pantalla y no
-//! hay ambigüedad entre los dos tamaños.
+//! # El cuadro presentado
+//!
+//! Un clic se resuelve contra `PresentedFrame`: la cámara **y la resolución
+//! fuente** con las que se trazó lo que está en pantalla.
+//!
+//! Una versión anterior de este módulo afirmaba que el escalado por vecino
+//! más cercano preserva las coordenadas normalizadas y que por eso daba lo
+//! mismo usar el tamaño de la ventana. **Es falso.** El escalado trunca:
+//! a `800 × 600` sobre un perfil de `400 × 300`, los píxeles de ventana `2k`
+//! y `2k + 1` muestran los dos el píxel fuente `k`, y el centro de ese
+//! píxel fuente está a media unidad de fuente —un píxel de ventana— de la
+//! coordenada continua del cursor.
+//!
+//! La consecuencia es que un clic podía elegir lo que había un píxel al
+//! lado de lo que el usuario veía. Se resuelve pasando por el mismo mapeo
+//! que dibuja, `framebuffer::source_pixel`, y trazando el rayo del **píxel
+//! fuente**: el mismo que el renderer trazó para ese punto de la imagen.
 
 use crate::accel::{SceneAccel, TraversalStats};
 use crate::camera::Camera;
+use crate::framebuffer::source_pixel;
 use crate::ray::Ray;
 use crate::scene::{RevealGroup, Scene};
 
-/// Rayo bajo el cursor, o `None` si ese cursor no señala el cuadro.
+/// La imagen que el usuario está mirando: con qué cámara y a qué resolución
+/// se trazó, y en qué ventana se presentó.
 ///
-/// Se rechazan dos cosas, y ninguna es paranoia:
+/// Existe porque las tres cosas pueden diferir de las actuales:
 ///
-/// - **Fuera de la ventana.** `minifb` entrega la última posición conocida
-///   del puntero incluso cuando salió del área de dibujo, así que un clic
-///   registrado ahí apuntaría a geometría que el usuario no está viendo.
-/// - **No finito.** Un `NaN` propagado desde el sistema de ventanas
-///   produciría una dirección `NaN`, y un rayo así no falla: recorre la
-///   escena, no impacta nada y devuelve cielo. Un picking que «no encuentra
-///   nada» es indistinguible de un clic en el vacío, y ese es justo el
-///   error que no se quiere depurar mirando la pantalla.
-///
-/// El borde derecho e inferior quedan **excluidos**: un cursor en `x = 800`
-/// de una ventana de `800` está una columna más allá del último píxel, igual
-/// que el índice `800` de un arreglo de `800`.
-pub fn ray_under_cursor(
-    camera: &Camera,
-    cursor: (f32, f32),
-    width: usize,
-    height: usize,
-) -> Option<Ray> {
-    if !cursor.0.is_finite() || !cursor.1.is_finite() {
-        return None;
+/// - La **cámara** avanza antes de que se lea el clic. Las teclas de órbita
+///   se procesan primero en el mismo cuadro, así que sosteniendo una flecha
+///   mientras se pincha, el rayo apuntaría a una escena que todavía no se ha
+///   mostrado.
+/// - La **resolución fuente** es la del perfil interactivo mientras algo se
+///   mueve, y la de la ventana en reposo. El clic tiene que resolverse
+///   contra la que produjo la imagen.
+#[derive(Debug, Clone, Copy)]
+pub struct PresentedFrame {
+    /// Cámara con la que se trazó el cuadro.
+    pub camera: Camera,
+    /// Resolución a la que se **trazó**: el perfil interactivo o la ventana.
+    pub source: (usize, usize),
+    /// Resolución de la ventana en la que se presentó.
+    pub window: (usize, usize),
+}
+
+impl PresentedFrame {
+    /// Un cuadro trazado a la resolución de la ventana, sin escalado.
+    pub fn full(camera: Camera, window: (usize, usize)) -> Self {
+        PresentedFrame {
+            camera,
+            source: window,
+            window,
+        }
     }
 
-    if cursor.0 < 0.0 || cursor.1 < 0.0 {
-        return None;
+    /// Píxel **fuente** que se muestra bajo ese cursor, o `None` si el
+    /// cursor no señala el cuadro.
+    ///
+    /// Se rechazan dos cosas, y ninguna es paranoia:
+    ///
+    /// - **Fuera de la ventana.** `minifb` entrega la última posición
+    ///   conocida del puntero incluso cuando salió del área de dibujo, así
+    ///   que un clic registrado ahí apuntaría a geometría que el usuario no
+    ///   está viendo.
+    /// - **No finito.** Un `NaN` produciría una dirección `NaN`, y un rayo
+    ///   así no falla: recorre la escena, no impacta nada y devuelve cielo.
+    ///   Un picking que «no encuentra nada» es indistinguible de un clic en
+    ///   el vacío, y ese es justo el error que no se quiere depurar mirando
+    ///   la pantalla.
+    ///
+    /// El borde derecho e inferior quedan **excluidos**: un cursor en
+    /// `x = 800` de una ventana de `800` está una columna más allá del
+    /// último píxel, igual que el índice `800` de un arreglo de `800`.
+    pub fn source_pixel_at(&self, cursor: (f32, f32)) -> Option<(usize, usize)> {
+        if !cursor.0.is_finite() || !cursor.1.is_finite() {
+            return None;
+        }
+
+        if cursor.0 < 0.0 || cursor.1 < 0.0 {
+            return None;
+        }
+
+        let (ancho, alto) = self.window;
+
+        if cursor.0 >= ancho as f32 || cursor.1 >= alto as f32 {
+            return None;
+        }
+
+        // El mismo mapeo que dibuja. Ver `framebuffer::source_pixel`.
+        Some((
+            source_pixel(cursor.0 as usize, ancho, self.source.0),
+            source_pixel(cursor.1 as usize, alto, self.source.1),
+        ))
     }
 
-    if cursor.0 >= width as f32 || cursor.1 >= height as f32 {
-        return None;
-    }
+    /// El rayo que el renderer trazó para el píxel bajo ese cursor.
+    ///
+    /// No es el rayo de la posición continua del cursor: es el del **píxel
+    /// fuente**, que es la unidad que el usuario ve como un solo punto de
+    /// color. Con el perfil interactivo activo, los cuatro píxeles de
+    /// ventana de un bloque `2 × 2` devuelven el mismo rayo, porque muestran
+    /// el mismo píxel.
+    pub fn ray_under_cursor(&self, cursor: (f32, f32)) -> Option<Ray> {
+        let (x, y) = self.source_pixel_at(cursor)?;
 
-    Some(camera.ray_from_cursor(cursor, width, height))
+        Some(
+            self.camera
+                .ray_from_pixel(x, y, self.source.0, self.source.1),
+        )
+    }
 }
 
 /// Región que selecciona un clic, o `None` si no selecciona ninguna.
@@ -75,7 +140,8 @@ pub fn ray_under_cursor(
 ///
 /// Devuelve `None` en tres casos, todos legítimos:
 ///
-/// - El cursor no señala el cuadro. Lo resuelve `ray_under_cursor`.
+/// - El cursor no señala el cuadro. Lo resuelve
+///   `PresentedFrame::source_pixel_at`.
 /// - El rayo no toca nada: un clic en el cielo.
 /// - Lo que toca no se pinta. El plinto ocupa toda la base del diorama y
 ///   comparte grupo con el Monolito por tipado; sin este filtro, pincharlo
@@ -83,12 +149,10 @@ pub fn ray_under_cursor(
 pub fn pick_region(
     scene: &Scene,
     accel: &SceneAccel,
-    camera: &Camera,
+    frame: &PresentedFrame,
     cursor: (f32, f32),
-    width: usize,
-    height: usize,
 ) -> Option<RevealGroup> {
-    let ray = ray_under_cursor(camera, cursor, width, height)?;
+    let ray = frame.ray_under_cursor(cursor)?;
 
     // Un rayo por clic: los contadores de recorrido no se llevan a ninguna
     // parte, así que se descartan aquí en vez de obligar al llamador a
@@ -248,22 +312,38 @@ mod tests {
         )
     }
 
+    /// Cuadro presentado a resolución completa.
+    fn completo() -> PresentedFrame {
+        PresentedFrame::full(camara(), (ANCHO, ALTO))
+    }
+
+    /// Cuadro presentado desde el perfil interactivo: se trazó a la mitad de
+    /// lado y se escaló al doble.
+    fn escalado() -> PresentedFrame {
+        PresentedFrame {
+            camera: camara(),
+            source: (ANCHO / 2, ALTO / 2),
+            window: (ANCHO, ALTO),
+        }
+    }
+
     #[test]
     fn un_cursor_dentro_del_cuadro_da_rayo() {
-        let camara = camara();
+        let cuadro = completo();
 
         for cursor in [(0.0, 0.0), (400.0, 300.0), (799.9, 599.9)] {
-            let rayo = ray_under_cursor(&camara, cursor, ANCHO, ALTO)
+            let rayo = cuadro
+                .ray_under_cursor(cursor)
                 .unwrap_or_else(|| panic!("{cursor:?} esta dentro del cuadro"));
 
             assert!((rayo.direction.magnitude() - 1.0).abs() < 1e-6);
-            assert_eq!(rayo.origin, camara.eye);
+            assert_eq!(rayo.origin, cuadro.camera.eye);
         }
     }
 
     #[test]
     fn un_cursor_fuera_del_cuadro_no_da_rayo() {
-        let camara = camara();
+        let cuadro = completo();
 
         for cursor in [
             (-0.1, 300.0),
@@ -273,7 +353,7 @@ mod tests {
             (1e6, 1e6),
         ] {
             assert!(
-                ray_under_cursor(&camara, cursor, ANCHO, ALTO).is_none(),
+                cuadro.ray_under_cursor(cursor).is_none(),
                 "{cursor:?} deberia quedar fuera"
             );
         }
@@ -284,7 +364,7 @@ mod tests {
         // Sin este filtro el rayo saldria con direccion NaN, recorreria la
         // escena sin impactar nada y devolveria cielo: un picking roto
         // indistinguible de un clic en el vacio.
-        let camara = camara();
+        let cuadro = completo();
 
         for cursor in [
             (f32::NAN, 300.0),
@@ -292,7 +372,7 @@ mod tests {
             (f32::INFINITY, 300.0),
             (400.0, f32::NEG_INFINITY),
         ] {
-            assert!(ray_under_cursor(&camara, cursor, ANCHO, ALTO).is_none());
+            assert!(cuadro.ray_under_cursor(cursor).is_none());
         }
     }
 
@@ -300,41 +380,163 @@ mod tests {
     fn el_borde_derecho_e_inferior_estan_excluidos() {
         // Igual que el indice de un arreglo: el ultimo pixel de 800 es el
         // 799, y `x = 800` esta una columna mas alla.
-        let camara = camara();
+        let cuadro = completo();
 
-        assert!(ray_under_cursor(&camara, (799.999, 300.0), ANCHO, ALTO).is_some());
-        assert!(ray_under_cursor(&camara, (800.0, 300.0), ANCHO, ALTO).is_none());
-        assert!(ray_under_cursor(&camara, (400.0, 599.999), ANCHO, ALTO).is_some());
-        assert!(ray_under_cursor(&camara, (400.0, 600.0), ANCHO, ALTO).is_none());
+        assert!(cuadro.ray_under_cursor((799.999, 300.0)).is_some());
+        assert!(cuadro.ray_under_cursor((800.0, 300.0)).is_none());
+        assert!(cuadro.ray_under_cursor((400.0, 599.999)).is_some());
+        assert!(cuadro.ray_under_cursor((400.0, 600.0)).is_none());
     }
 
     #[test]
     fn el_rayo_del_cursor_es_el_mismo_que_traza_el_renderer() {
-        // La promesa del Hito 6 dicha en un test: para el centro de un
-        // pixel, el rayo del picking y el del render coinciden. Se comprueba
-        // aqui ademas de en `camera` porque es la capa que el binario llama.
-        let camara = camara();
+        // La promesa del Hito 6 dicha en un test: el rayo del picking y el
+        // del render son **el mismo**, no aproximadamente el mismo. A
+        // resolucion completa la igualdad es exacta, porque las dos rutas
+        // llaman a `ray_from_pixel` con los mismos argumentos.
+        let cuadro = completo();
 
         for (x, y) in [(0, 0), (13, 41), (400, 300), (799, 599)] {
-            let del_render = camara.ray_from_pixel(x, y, ANCHO, ALTO);
-            let del_cursor =
-                ray_under_cursor(&camara, (x as f32 + 0.5, y as f32 + 0.5), ANCHO, ALTO)
-                    .expect("el centro de un pixel esta dentro del cuadro");
+            let del_render = cuadro.camera.ray_from_pixel(x, y, ANCHO, ALTO);
 
-            let desvio = (del_render.direction - del_cursor.direction).magnitude();
+            // Cualquier punto **dentro** del pixel, no solo su centro: el
+            // picking trunca al pixel, asi que las cuatro esquinas y el
+            // centro dan lo mismo.
+            for (dx, dy) in [(0.0, 0.0), (0.5, 0.5), (0.99, 0.01), (0.01, 0.99)] {
+                let del_cursor = cuadro
+                    .ray_under_cursor((x as f32 + dx, y as f32 + dy))
+                    .expect("dentro del cuadro");
 
-            assert!(desvio < 1e-6, "el pixel ({x}, {y}) desvio {desvio}");
+                assert_eq!(
+                    del_render.direction, del_cursor.direction,
+                    "el pixel ({x}, {y}) con offset ({dx}, {dy})"
+                );
+            }
         }
     }
 
     #[test]
-    fn una_ventana_degenerada_no_divide_entre_cero() {
-        // No es alcanzable con `minifb`, pero el rango vacio hace que todo
-        // cursor quede fuera, y eso resuelve el caso sin dividir.
-        let camara = camara();
+    fn una_ventana_degenerada_no_divide_entre_cero_ni_con_escalado() {
+        let cuadro = PresentedFrame::full(camara(), (0, 600));
 
-        assert!(ray_under_cursor(&camara, (0.0, 0.0), 0, 600).is_none());
-        assert!(ray_under_cursor(&camara, (0.0, 0.0), 800, 0).is_none());
+        assert!(cuadro.ray_under_cursor((0.0, 0.0)).is_none());
+    }
+
+    // ------------------------------------- el cuadro escalado
+
+    #[test]
+    fn un_bloque_de_dos_por_dos_elige_el_mismo_pixel_fuente() {
+        // Con el perfil interactivo a la mitad de lado, cada pixel fuente
+        // ocupa un bloque de 2 x 2 en la ventana. El usuario ve ese bloque
+        // como **un** punto de color, asi que los cuatro tienen que elegir
+        // lo mismo.
+        let cuadro = escalado();
+
+        for (bx, by) in [(0, 0), (7, 13), (199, 149), (399, 299)] {
+            let esperado = (bx, by);
+
+            for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                let cursor = ((bx * 2 + dx) as f32 + 0.5, (by * 2 + dy) as f32 + 0.5);
+
+                assert_eq!(
+                    cuadro.source_pixel_at(cursor),
+                    Some(esperado),
+                    "el bloque ({bx}, {by}) difiere en el offset ({dx}, {dy})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn el_bloque_de_dos_por_dos_tambien_comparte_el_rayo() {
+        // Y no solo el indice: el rayo es identico, que es lo que hace que
+        // el picking elija lo mismo en los cuatro.
+        let cuadro = escalado();
+
+        for (bx, by) in [(0, 0), (100, 75), (399, 299)] {
+            let referencia = cuadro
+                .camera
+                .ray_from_pixel(bx, by, cuadro.source.0, cuadro.source.1);
+
+            for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                let cursor = ((bx * 2 + dx) as f32 + 0.5, (by * 2 + dy) as f32 + 0.5);
+                let rayo = cuadro.ray_under_cursor(cursor).expect("dentro");
+
+                assert_eq!(rayo.direction, referencia.direction);
+            }
+        }
+    }
+
+    #[test]
+    fn el_rayo_escalado_es_el_que_trazo_el_perfil_interactivo() {
+        // La promesa completa: el clic resuelve contra el rayo que el
+        // renderer trazo **a la resolucion del perfil**, no contra el que
+        // habria trazado a resolucion de ventana. Los dos difieren.
+        let cuadro = escalado();
+        let cursor = (401.0, 301.0);
+
+        let (sx, sy) = cuadro.source_pixel_at(cursor).expect("dentro");
+        let del_perfil = cuadro
+            .camera
+            .ray_from_pixel(sx, sy, cuadro.source.0, cuadro.source.1);
+        let del_cursor = cuadro.ray_under_cursor(cursor).expect("dentro");
+
+        assert_eq!(del_cursor.direction, del_perfil.direction);
+
+        // Y no coincide con el de la ventana: si coincidiera, el tipo no
+        // haria falta. La diferencia es de medio pixel fuente.
+        let de_ventana =
+            cuadro
+                .camera
+                .ray_from_pixel(cursor.0 as usize, cursor.1 as usize, ANCHO, ALTO);
+        let desvio = (del_cursor.direction - de_ventana.direction).magnitude();
+
+        assert!(
+            desvio > 1e-5,
+            "las dos resoluciones dan el mismo rayo: el escalado no importaria"
+        );
+    }
+
+    #[test]
+    fn el_pixel_fuente_del_picking_es_el_que_dibuja_el_escalado() {
+        // El mapeo es uno solo, y esto lo comprueba contra el propio
+        // `blit_upscaled`: se pinta un patron en el borrador, se escala, y
+        // el color bajo el cursor tiene que ser el del pixel que el picking
+        // dice que hay ahi.
+        use crate::framebuffer::Framebuffer;
+
+        let (fuente_ancho, fuente_alto) = (7, 5);
+        let (ventana_ancho, ventana_alto) = (31, 17);
+
+        let mut fuente = Framebuffer::new(fuente_ancho, fuente_alto);
+        for y in 0..fuente_alto {
+            for x in 0..fuente_ancho {
+                fuente.set_current_color((y * fuente_ancho + x) as u32 + 1);
+                fuente.point(x, y);
+            }
+        }
+
+        let mut ventana = Framebuffer::new(ventana_ancho, ventana_alto);
+        ventana.blit_upscaled(&fuente);
+
+        let cuadro = PresentedFrame {
+            camera: camara(),
+            source: (fuente_ancho, fuente_alto),
+            window: (ventana_ancho, ventana_alto),
+        };
+
+        for y in 0..ventana_alto {
+            for x in 0..ventana_ancho {
+                let cursor = (x as f32 + 0.5, y as f32 + 0.5);
+                let (sx, sy) = cuadro.source_pixel_at(cursor).expect("dentro");
+
+                assert_eq!(
+                    ventana.buffer[y * ventana_ancho + x],
+                    fuente.buffer[sy * fuente_ancho + sx],
+                    "el pixel de ventana ({x}, {y}) muestra otro pixel fuente"
+                );
+            }
+        }
     }
 
     // ------------------------------------------------- picking de region
@@ -416,7 +618,12 @@ mod tests {
             (Vec3::new(4.0, 0.0, 0.0), RevealGroup::FlyingWaters),
         ] {
             let cursor = cursor_sobre(&camara, centro);
-            let grupo = pick_region(&scene, &accel, &camara, cursor, ANCHO, ALTO);
+            let grupo = pick_region(
+                &scene,
+                &accel,
+                &PresentedFrame::full(camara, (ANCHO, ALTO)),
+                cursor,
+            );
 
             assert_eq!(grupo, Some(esperado), "el clic en {cursor:?} eligio mal");
         }
@@ -428,7 +635,12 @@ mod tests {
 
         // Esquina superior izquierda: por encima y a un lado de las losas.
         assert_eq!(
-            pick_region(&scene, &accel, &camara, (2.0, 2.0), ANCHO, ALTO),
+            pick_region(
+                &scene,
+                &accel,
+                &PresentedFrame::full(camara, (ANCHO, ALTO)),
+                (2.0, 2.0)
+            ),
             None
         );
     }
@@ -442,13 +654,19 @@ mod tests {
         let cursor = cursor_sobre(&camara, Vec3::new(0.0, -4.0, 0.0));
 
         // El rayo si toca algo: lo que no hace es elegir region.
-        let rayo = ray_under_cursor(&camara, cursor, ANCHO, ALTO).expect("cursor dentro");
+        let cuadro = PresentedFrame::full(camara, (ANCHO, ALTO));
+        let rayo = cuadro.ray_under_cursor(cursor).expect("cursor dentro");
         assert!(accel
             .intersect(&scene, &rayo, &mut TraversalStats::default())
             .is_some());
 
         assert_eq!(
-            pick_region(&scene, &accel, &camara, cursor, ANCHO, ALTO),
+            pick_region(
+                &scene,
+                &accel,
+                &PresentedFrame::full(camara, (ANCHO, ALTO)),
+                cursor
+            ),
             None
         );
     }
@@ -459,7 +677,12 @@ mod tests {
 
         for cursor in [(-1.0, 300.0), (800.0, 300.0), (f32::NAN, 300.0)] {
             assert_eq!(
-                pick_region(&scene, &accel, &camara, cursor, ANCHO, ALTO),
+                pick_region(
+                    &scene,
+                    &accel,
+                    &PresentedFrame::full(camara, (ANCHO, ALTO)),
+                    cursor
+                ),
                 None
             );
         }
@@ -481,10 +704,8 @@ mod tests {
             let elige = pick_region(
                 &scene,
                 &accel,
-                &camara,
+                &PresentedFrame::full(camara, (ANCHO, ALTO)),
                 (x as f32 + 0.5, y as f32 + 0.5),
-                ANCHO,
-                ALTO,
             );
 
             assert_eq!(elige, dibuja, "el pixel ({x}, {y}) discrepa");
@@ -533,7 +754,12 @@ mod tests {
             let cursor = cursor_sobre(&camara, *centro);
 
             assert_eq!(
-                pick_region(&scene, &accel, &camara, cursor, ANCHO, ALTO),
+                pick_region(
+                    &scene,
+                    &accel,
+                    &PresentedFrame::full(camara, (ANCHO, ALTO)),
+                    cursor
+                ),
                 Some(*grupo)
             );
         }
@@ -649,14 +875,20 @@ mod tests {
 
         // El rayo si da en el Monolito.
         let centro = (400.0, 300.0);
-        let rayo = ray_under_cursor(&camara, centro, ANCHO, ALTO).expect("cursor dentro");
+        let cuadro = PresentedFrame::full(camara, (ANCHO, ALTO));
+        let rayo = cuadro.ray_under_cursor(centro).expect("cursor dentro");
         assert!(accel
             .intersect(&scene, &rayo, &mut TraversalStats::default())
             .is_some());
 
         // Y aun asi no selecciona region.
         assert_eq!(
-            pick_region(&scene, &accel, &camara, centro, ANCHO, ALTO),
+            pick_region(
+                &scene,
+                &accel,
+                &PresentedFrame::full(camara, (ANCHO, ALTO)),
+                centro
+            ),
             None
         );
     }

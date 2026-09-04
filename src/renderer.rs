@@ -30,14 +30,20 @@ pub const BACKGROUND_COLOR: u32 = FALLBACK_COLOR;
 
 /// Resolución a la que se dibujan los cuadros mientras algo se mueve.
 ///
-/// A `800 × 600` el nivel seguro tarda `0.0956 s` por cuadro —unos 10.5
-/// fps—, y eso es latencia perceptible al orbitar. Los Hitos 4 a 6 hay que
-/// poder probarlos de forma interactiva, así que mientras la cámara o la
-/// revelación cambian se dibuja a menor resolución y se escala; al quedar
-/// todo quieto se produce un cuadro final a resolución completa.
+/// A `800 × 600` el nivel seguro refractivo tarda `0.2005 s` por cuadro
+/// —unos 5 fps—, y eso es latencia perceptible al orbitar. Mientras la
+/// cámara o la revelación cambian se dibuja a menor resolución y se escala;
+/// al quedar todo quieto se produce un cuadro final a resolución completa.
 ///
-/// Las dos opciones salen de la medición de la Tarea 3.8, no de una
-/// suposición.
+/// Las dos opciones salen de medición, no de una suposición. Las cifras de
+/// abajo se remidieron con la óptica del Hito 5 activa: las de la Tarea 3.8
+/// eran de **antes** de la refracción y quedaron a menos de la mitad del
+/// costo real.
+///
+/// Todas: preset `safe-refractive-water`, `reveal 1.0`, mediana de quince
+/// repeticiones en release; commit `afa92c2`, 3 de septiembre de 2026,
+/// Ryzen 7 6800H, rustc 1.97.0. Se rederivan con
+/// `cargo run --release --example interactive_frame_time`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InteractiveProfile {
     pub width: usize,
@@ -45,15 +51,15 @@ pub struct InteractiveProfile {
 }
 
 impl InteractiveProfile {
-    /// Media resolución: `0.0242 s` medidos, unos 41 fps. Es el punto de
-    /// partida que fija el plan.
+    /// Media resolución: `0.0518 s` medidos, unos 19 fps. Es el punto de
+    /// partida que fija el plan, y el que la ventana usa por defecto.
     pub const MEDIA: InteractiveProfile = InteractiveProfile {
         width: 400,
         height: 300,
     };
 
-    /// Un paso más agresivo: `0.0157 s`, unos 64 fps. Reserva para cuando
-    /// la escena crezca con texturas y óptica.
+    /// Un paso más agresivo: `0.0340 s`, unos 29 fps. Reserva si la escena
+    /// crece y `MEDIA` deja de dar los quince cuadros de transición.
     pub const BAJA: InteractiveProfile = InteractiveProfile {
         width: 320,
         height: 240,

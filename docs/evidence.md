@@ -1467,6 +1467,36 @@ varios píxeles, en tres resoluciones incluida una impar, con desvío por
 debajo de `1e-6`. Cubre a la vez el aspect ratio y el campo de visión,
 porque los dos entran en la misma proyección.
 
+Y una corrección que llegó al cerrar el hito: **el picking no usa la
+posición continua del cursor**. Una versión anterior de esta sección afirmó
+que el escalado por vecino más cercano preserva las coordenadas
+normalizadas, y que por eso daba lo mismo resolver el clic contra el tamaño
+de la ventana. Es falso: el escalado **trunca**. Con el perfil interactivo a
+`400 × 300` sobre una ventana de `800 × 600`, los píxeles de ventana `2k` y
+`2k + 1` muestran los dos el píxel fuente `k`, y el centro de ese píxel está
+a media unidad de fuente —un píxel de ventana— de donde está el cursor. Un
+clic podía elegir lo que había un píxel al lado de lo que el usuario veía.
+
+La corrección es `input::PresentedFrame`, que guarda **la cámara y la
+resolución fuente** con las que se trazó lo que está en pantalla, y trunca
+al píxel fuente con `framebuffer::source_pixel`, el mismo mapeo que dibuja.
+El rayo del picking pasa a ser, literalmente, el que el renderer trazó para
+ese punto de la imagen.
+
+Los tests que lo fijan:
+
+| Test | Qué comprueba |
+|---|---|
+| `un_bloque_de_dos_por_dos_elige_el_mismo_pixel_fuente` | los cuatro píxeles de ventana de un bloque devuelven el mismo índice |
+| `el_bloque_de_dos_por_dos_tambien_comparte_el_rayo` | y el mismo rayo, que es lo que hace que elijan lo mismo |
+| `el_rayo_escalado_es_el_que_trazo_el_perfil_interactivo` | y **difiere** del de la ventana: si coincidiera, el tipo no haría falta |
+| `el_pixel_fuente_del_picking_es_el_que_dibuja_el_escalado` | contra `blit_upscaled` real, con un patrón de `7 × 5` escalado a `31 × 17` |
+| `el_rayo_del_cursor_es_el_mismo_que_traza_el_renderer` | igualdad **exacta**, y desde las cuatro esquinas del píxel, no solo su centro |
+
+El último de la lista dejó de comparar con tolerancia: a resolución completa
+las dos rutas llaman a `ray_from_pixel` con los mismos argumentos, así que
+la igualdad es exacta y el test lo exige.
+
 ### Un `Option` que evita un bug de composición
 
 `Scene::paintable_group` devuelve `None` para las entradas **inertes**.
@@ -1611,12 +1641,21 @@ tercera; pulsar `L` y repetirlo todo; orbitar hasta perder el encuadre y
 pulsar `R`; y hacer clic directamente sobre las praderas, el acantilado y la
 bahía.
 
-De la auditoría se añade una sola comprobación más: hacer clic **sobre el
+De la auditoría se añadió una sola comprobación más: hacer clic **sobre el
 Monolito**, que no debe pintar nada. La carrera entre `L` y una selección
 del mismo cuadro no entra en la lista manual —ver la decisión cerrada sobre
 el despintado por región—.
 
-El estado del hito es **no cerrado** hasta ese recorrido.
+#### Hito 6 cerrado
+
+El recorrido se ejecutó y aprobó: las tres regiones se pintan por teclado y
+por clic, el Monolito arranca solo al completarse la tercera, `L` permite
+repetir la demostración, `R` recupera el encuadre, y un clic sobre el
+Monolito no pinta nada.
+
+Con eso quedan cerradas las cinco tareas del hito, los tres bloqueos de
+integración que encontró la auditoría, los seis textos obsoletos y el
+recorrido humano. La demo va de lienzo a Monolito final sin recompilar.
 
 ---
 
@@ -1816,17 +1855,37 @@ tendrían que caer en el mismo sondeo de unos `50 ms`, así que no se puede
 provocar a mano con fiabilidad. La cubre `FrameIntent` con un test
 determinista, en los dos órdenes de sondeo.
 
+#### Seis textos obsoletos, corregidos
+
+Al cerrar el hito quedaban afirmaciones que el propio avance del proyecto
+había dejado falsas. No son cosméticas: un comentario que miente sobre una
+medición es peor que no tener comentario, porque el siguiente lector lo
+cree.
+
+| Dónde | Decía | Ahora |
+|---|---|---|
+| `camera::ray_from_cursor` | que daba lo mismo el tamaño de ventana o de perfil | que **no** lo da, y que para picking hay que usar `PresentedFrame` |
+| `main.rs`, carga de escena | que el volumen no se inserta «hasta que el Hito 5 traiga refracción» | el preset refractivo, que es el canónico desde la 5.4 |
+| `main.rs`, perfil | `~0.096 s` a `800 × 600` | `~0.20 s`, remedido con óptica |
+| `InteractiveProfile` | `0.0956 s` a resolución completa, de la Tarea 3.8 | `0.2005 s`, con la nota de que las de la 3.8 eran de antes de la refracción |
+| `InteractiveProfile::MEDIA` y `BAJA` | `0.0242 s` y `0.0157 s` | `0.0518 s` y `0.0340 s`, con procedencia y el comando que las rederiva |
+| `RevealState` y `optics` | que la fase, el avance y la recursión «llegan» en tareas futuras | que ya están, y dónde |
+
+Las tres cifras nuevas del perfil se midieron juntas: preset
+`safe-refractive-water`, `reveal 1.0`, mediana de quince repeticiones,
+commit `afa92c2`, 3 de septiembre de 2026, Ryzen 7 6800H, rustc 1.97.0.
+
 #### Gates registrados
 
 ```text
 cargo fmt -- --check                        OK
 cargo clippy --all-targets -- -D warnings   0 avisos
-cargo test                                  376 tests, 0 fallos
+cargo test                                  380 tests, 0 fallos
 cargo build --release                       OK
 cargo run                                   autocalibra y anuncia los controles
 ```
 
-Reparto de los 376: `340` de librería, `16` del generador de assets, `8` de
+Reparto de los 380: `344` de librería, `16` del generador de assets, `8` de
 humo del render, `6` de sombras submarinas y `6` de la demo completa.
 
 ---
