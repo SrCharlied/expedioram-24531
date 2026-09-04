@@ -1611,9 +1611,10 @@ tercera; pulsar `L` y repetirlo todo; orbitar hasta perder el encuadre y
 pulsar `R`; y hacer clic directamente sobre las praderas, el acantilado y la
 bahía.
 
-Conviene añadir dos comprobaciones que salieron de la auditoría: hacer clic
-**sobre el Monolito** —no debe pasar nada—, y pulsar `L` y una región **a la
-vez**, que debe reiniciar sin dejar nada pintándose.
+De la auditoría se añade una sola comprobación más: hacer clic **sobre el
+Monolito**, que no debe pintar nada. La carrera entre `L` y una selección
+del mismo cuadro no entra en la lista manual —ver la decisión cerrada sobre
+el despintado por región—.
 
 El estado del hito es **no cerrado** hasta ese recorrido.
 
@@ -1795,6 +1796,25 @@ cristal, con las tres regiones ya pintadas.
 - **Dimensiones cero.** Las funciones públicas de cámara dividen por
   `width` y `height`. `ray_under_cursor` lo cubre rechazando todo cursor con
   rango vacío, y la precondición quedó documentada.
+
+#### Decisión cerrada — no hay despintado por región
+
+`L` devuelve los **cuatro** grupos al lienzo de golpe. No existe una tecla
+ni una función para despintar una región suelta, y no se añade.
+
+La razón no es de esfuerzo —sería `set_progress(grupo, 0.0)` y una tecla—
+sino de estado: despintar una región **después** del finale dejaría al
+Monolito pintado sobre un Continente incompleto, que contradice la regla del
+inventario. Resolverlo obligaría a decidir si despintar una región despinta
+también el finale, y con eso a inventar un estado que la narrativa de la
+obra no contempla: el arco va de lienzo a Monolito, y `L` ya permite
+repetirlo entero.
+
+Consecuencia para el recorrido de verificación: la comprobación de «`L` y
+una región en el mismo cuadro» **sale de la lista manual**. Los dos pulsos
+tendrían que caer en el mismo sondeo de unos `50 ms`, así que no se puede
+provocar a mano con fiabilidad. La cubre `FrameIntent` con un test
+determinista, en los dos órdenes de sondeo.
 
 #### Gates registrados
 
