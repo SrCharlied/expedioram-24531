@@ -50,6 +50,45 @@ impl RevealState {
         }
     }
 
+    /// El cuadro **más caro** que la demo puede presentar: el clímax, con
+    /// el Continente pintado y el grupo `Finale` a medio revelar.
+    ///
+    /// Es con lo que se calibra la ventana, y **no** con `painted()`. Las
+    /// dos razones son estructurales, no estadísticas:
+    ///
+    /// 1. Ningún estado con algo en lienzo es el peor. El material de
+    ///    lienzo no tiene techos ópticos, así que donde queda lienzo no se
+    ///    lanza un solo rayo secundario. El lienzo entero cuesta la mitad
+    ///    que cualquier estado revelado.
+    /// 2. Entre los estados revelados, el caro es el **intermedio**:
+    ///    `resolve` corta en `t <= 0` y en `t >= 1` con un muestreo de
+    ///    textura, y entre los extremos muestrea las dos y las mezcla.
+    ///
+    /// `Finale` y no una región porque `Finale` **no es solo el Monolito**:
+    /// son sus diez masas y las diez del arco costero, que juntas ocupan
+    /// casi todo el cuadro de la toma hero. Es el grupo cuya revelación
+    /// mueve más píxeles, y el único cuyo estado intermedio convive con las
+    /// tres regiones ya pintadas —`activate` no lo arranca antes—.
+    ///
+    /// Es un estado alcanzable y además inevitable: toda demostración
+    /// completa pasa por él.
+    ///
+    /// # Lo que la medición sí y no puede decir
+    ///
+    /// El barrido de `examples/interactive_frame_time.rs` confirma la banda:
+    /// el lienzo va aparte, abajo, y todo lo revelado se agrupa entre
+    /// `1.3x` y `1.6x` su coste. Dentro de esa banda **la dispersión de la
+    /// máquina es mayor que las diferencias**, así que el punto exacto no se
+    /// elige persiguiendo el máximo de una corrida: se elige por la
+    /// estructura de arriba, y el ejemplo avisa si alguna corrida encuentra
+    /// un punto que se salga de la banda.
+    pub fn worst_case() -> Self {
+        let mut estado = RevealState::painted();
+        estado.set_progress(RevealGroup::Finale, WORST_CASE_PROGRESS);
+
+        estado
+    }
+
     pub fn progress(&self, group: RevealGroup) -> f32 {
         self.progress_by_group[group.index()]
     }
@@ -192,6 +231,17 @@ pub enum RevealPhase {
     Revealing,
     Painted,
 }
+
+/// Progreso del grupo `Finale` en el peor cuadro de la transición.
+///
+/// El punto medio, y por una razón medida: el barrido de
+/// `examples/interactive_frame_time.rs` da una **meseta** entre `0.02` y
+/// `0.98` —el doble muestreo y los rayos secundarios están activos en todo
+/// el interior del intervalo, no crecen con `t`—, y dentro de la meseta las
+/// diferencias son menores que la dispersión de la máquina. Con una meseta,
+/// el punto medio es representativo; el máximo de una corrida sería ruido
+/// con nombre de constante.
+pub const WORST_CASE_PROGRESS: f32 = 0.5;
 
 /// Cuadros de transición que se exigen como mínimo.
 ///
@@ -1095,6 +1145,74 @@ mod tests {
             (transcurrido - duracion).abs() < 0.0490 * 2.0,
             "tardo {transcurrido} y la duracion es {duracion}"
         );
+    }
+
+    #[test]
+    fn el_peor_estado_no_tiene_nada_en_lienzo() {
+        // Es la primera de las dos razones por las que este estado es el
+        // caro: donde queda lienzo no hay techos opticos, y sin techos no
+        // se lanza un rayo secundario. Un estado con una region en cero no
+        // puede ser el peor.
+        let peor = RevealState::worst_case();
+
+        for grupo in RevealGroup::ALL {
+            assert_ne!(
+                peor.phase(grupo),
+                RevealPhase::Unpainted,
+                "{grupo:?} quedo en lienzo"
+            );
+        }
+    }
+
+    #[test]
+    fn el_peor_estado_tiene_el_finale_a_medio_revelar() {
+        // Y es la segunda razon: `resolve` solo muestrea las dos texturas
+        // en un progreso intermedio. Si el finale estuviera en `1.0`, el
+        // estado seria `painted()` y no habria doble muestreo en ninguna
+        // parte.
+        let peor = RevealState::worst_case();
+
+        assert_eq!(peor.phase(RevealGroup::Finale), RevealPhase::Revealing);
+        assert_eq!(peor.progress(RevealGroup::Finale), WORST_CASE_PROGRESS);
+        assert_ne!(peor, RevealState::painted());
+
+        for grupo in RevealGroup::ALL {
+            if grupo != RevealGroup::Finale {
+                assert_eq!(
+                    peor.phase(grupo),
+                    RevealPhase::Painted,
+                    "{grupo:?} tiene que estar pintada para que el finale pueda arrancar"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn el_peor_estado_es_alcanzable_por_la_demo() {
+        // No es un caso sintetico: es el estado por el que pasa **toda**
+        // demostracion completa. Si `activate` o `advance` cambiaran de
+        // forma que el finale no pudiera quedarse a medio camino sobre las
+        // tres regiones pintadas, calibrar con el dejaria de medir algo que
+        // el usuario ve.
+        let mut estado = RevealState::unpainted();
+
+        for grupo in RevealGroup::ALL {
+            if grupo != RevealGroup::Finale {
+                assert!(estado.activate(grupo));
+                estado.set_progress(grupo, 1.0);
+            }
+        }
+
+        // El autoarranque del finale, que es como ocurre de verdad.
+        assert!(estado.advance(0.001, 1.0));
+        assert_eq!(estado.phase(RevealGroup::Finale), RevealPhase::Revealing);
+
+        // Y desde ahi se llega al progreso de calibracion avanzando.
+        while estado.progress(RevealGroup::Finale) < WORST_CASE_PROGRESS {
+            estado.advance(0.1, 1.0);
+        }
+
+        assert_eq!(estado.phase(RevealGroup::Finale), RevealPhase::Revealing);
     }
 
     #[test]

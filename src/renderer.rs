@@ -30,8 +30,8 @@ pub const BACKGROUND_COLOR: u32 = FALLBACK_COLOR;
 
 /// Resolución a la que se dibujan los cuadros mientras algo se mueve.
 ///
-/// A `800 × 600` el nivel seguro refractivo tarda `0.2005 s` por cuadro
-/// —unos 5 fps—, y eso es latencia perceptible al orbitar. Mientras la
+/// A `800 × 600` el nivel seguro refractivo tarda `0.2581 s` por cuadro
+/// —unos 4 fps—, y eso es latencia perceptible al orbitar. Mientras la
 /// cámara o la revelación cambian se dibuja a menor resolución y se escala;
 /// al quedar todo quieto se produce un cuadro final a resolución completa.
 ///
@@ -40,10 +40,20 @@ pub const BACKGROUND_COLOR: u32 = FALLBACK_COLOR;
 /// eran de **antes** de la refracción y quedaron a menos de la mitad del
 /// costo real.
 ///
-/// Todas: preset `safe-refractive-water`, `reveal 1.0`, mediana de quince
-/// repeticiones en release; commit `afa92c2`, 3 de septiembre de 2026,
-/// Ryzen 7 6800H, rustc 1.97.0. Se rederivan con
-/// `cargo run --release --example interactive_frame_time`.
+/// Todas: preset `safe-refractive-water`, `reveal 1.0`, mediana de catorce
+/// muestras intercaladas en release; commit `2c7960a` con el árbol de la
+/// Tarea 7.1, 3 de septiembre de 2026, Ryzen 7 6800H, rustc 1.97.0. Se
+/// rederivan con `cargo run --release --example performance_matrix`.
+///
+/// # Ráfaga contra carga sostenida
+///
+/// Estas cifras son un `25 %` más altas que las que registró el Hito 6 para
+/// los mismos estados, y la diferencia no es ruido: las de entonces salían
+/// de una ráfaga de quince renders seguidos, y estas de una corrida que
+/// sostiene la carga medio minuto sobre diecisiete estados. La máquina
+/// baja de frecuencia. Las sostenidas son las que hay que usar para
+/// dimensionar —una sesión de la demo se parece más a eso que a una
+/// ráfaga—, y el sentido del sesgo es el seguro: sobreestiman el coste.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InteractiveProfile {
     pub width: usize,
@@ -51,15 +61,18 @@ pub struct InteractiveProfile {
 }
 
 impl InteractiveProfile {
-    /// Media resolución: `0.0518 s` medidos, unos 19 fps. Es el punto de
-    /// partida que fija el plan, y el que la ventana usa por defecto.
+    /// Media resolución: `0.0707 s` medidos con el volumen refractivo
+    /// pintado, unos 14 fps. Es el punto de partida que fija el plan, y el
+    /// que la ventana usa por defecto. En el peor cuadro de la transición
+    /// son `0.0768 s`.
     pub const MEDIA: InteractiveProfile = InteractiveProfile {
         width: 400,
         height: 300,
     };
 
-    /// Un paso más agresivo: `0.0340 s`, unos 29 fps. Reserva si la escena
-    /// crece y `MEDIA` deja de dar los quince cuadros de transición.
+    /// Un paso más agresivo, sin remedir desde el Hito 6: `0.0340 s` en
+    /// ráfaga, unos 29 fps. Reserva si la escena crece y `MEDIA` deja de dar
+    /// los quince cuadros de transición.
     pub const BAJA: InteractiveProfile = InteractiveProfile {
         width: 320,
         height: 240,
@@ -117,10 +130,10 @@ impl FramePlan {
     /// ¿Conviene dormir después de presentar?
     ///
     /// Solo en reposo. Dormir mientras algo se mueve le quita cuadros a la
-    /// animación: a `0.0490 s` por cuadro, dormir `16 ms` de más baja de
-    /// treinta cuadros a veintitrés en el segundo y medio de una
-    /// transición. Los quince del criterio se seguirían cumpliendo, pero se
-    /// pagarían sin recibir nada.
+    /// animación: a `0.0820 s` por cuadro, dormir `16 ms` de más baja de
+    /// dieciocho cuadros a quince en el segundo y medio de una transición.
+    /// Los quince del criterio se seguirían cumpliendo justo, y se pagarían
+    /// sin recibir nada.
     pub fn should_sleep(self) -> bool {
         self == FramePlan::Reuse
     }

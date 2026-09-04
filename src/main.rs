@@ -79,9 +79,6 @@ fn main() -> ExitCode {
     };
     let lights = luces_del_diorama(&diorama.anchors, &diorama.scale);
 
-    // Arranca con todo pintado: el picking de la Tarea 6.2 y la
-    // temporizacion de la 6.3 son las que lo vuelven interactivo. Mostrar el
-    // lienzo entero ahora dejaria una ventana de un solo color.
     // Arranca **sin pintar**, que es el estado inicial de la obra: un
     // diorama de lienzo esperando a que alguien lo pinte. Es también lo que
     // hace observable el picking, porque un clic sobre una región ya
@@ -126,10 +123,17 @@ fn main() -> ExitCode {
     // cuadros sin que nada avisara, y el gate de fluidez no llegaría a
     // dispararse nunca.
     //
-    // Se mide con `reveal 1.0`, que es el caso caro: en lienzo los techos
-    // del agua están interpolados desde cero y no se lanza un solo rayo
-    // secundario. Garantizar los quince cuadros con el tiempo del lienzo
-    // dejaría el final de la transición sin margen.
+    // Se mide con `RevealState::worst_case()`, que es el clímax: el
+    // Continente pintado y el grupo `Finale` a medio revelar.
+    //
+    // Antes se medía con `reveal 1.0` por la mitad de la razón correcta. Es
+    // cierto que el lienzo es el estado barato —sin techos ópticos no hay un
+    // solo rayo secundario, y sale a la mitad—, pero de ahí no se sigue que
+    // el pintado sea el caro: entre los dos extremos, `resolve` muestrea
+    // **las dos** texturas en vez de una. El cuadro más caro de la demo es
+    // intermedio, y calibrar con el final le quitaba margen justo al tramo
+    // que los quince cuadros existen para proteger. Ver
+    // `RevealState::worst_case` y `examples/interactive_frame_time.rs`.
     let mut calibracion = Vec::with_capacity(CUADROS_DE_CALIBRACION);
 
     for _ in 0..CUADROS_DE_CALIBRACION {
@@ -139,7 +143,7 @@ fn main() -> ExitCode {
             &scene,
             &accel,
             &lights,
-            &RevealState::painted(),
+            &RevealState::worst_case(),
             &camera,
             shading,
         );

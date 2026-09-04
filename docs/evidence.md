@@ -1532,6 +1532,13 @@ transición**. En lienzo los techos del agua están interpolados desde `0/0`,
 así que `kl = 1` y no se lanza un solo rayo secundario. La derivación toma
 el extremo pintado, que es el caso peor.
 
+> **Corregido en la Tarea 7.1.** La primera frase se sostiene; la última es
+> falsa. El extremo pintado **no** es el caso peor: entre los dos extremos
+> `resolve` muestrea las dos texturas en vez de una, y los dos estados que
+> se midieron aquí son justo los dos que evitan ese coste. El peor cuadro
+> es intermedio, cuesta un `7 %` más que el pintado completo y un `52 %`
+> más que el lienzo. Ver «El peor cuadro no era ninguno de los dos».
+
 ```text
 reveal_duration = clamp(15 x 0.0490, 1.5, 4.0) = 1.5 s   (piso)
 reveal_speed    = 0.667 por segundo
@@ -1890,6 +1897,231 @@ humo del render, `6` de sombras submarinas y `6` de la demo completa.
 
 ---
 
+## Hito 7 — Reserva técnica
+
+### Tarea 7.1 — El peor cuadro no era ninguno de los dos
+
+La revelación se anima con quince cuadros como mínimo, y esos quince salen
+de dividir una duración por un tiempo por cuadro **medido**. La medición que
+había medía dos estados —`reveal 0.0` y `reveal 1.0`— y se quedaba con el
+peor de los dos. El primer trabajo del Hito 7 era comprobar esa elección
+antes de gastar la reserva, y la elección estaba mal por una razón que el
+propio código dice a quien lo lea entero:
+
+```rust
+// reveal::resolve
+let albedo = if t <= 0.0 {
+    scene.albedo_at(&inicial, uv)          // un muestreo
+} else if t >= 1.0 {
+    scene.albedo_at(&final_, uv)           // un muestreo
+} else {
+    let a = scene.albedo_at(&inicial, uv); // dos, y una mezcla
+    let b = scene.albedo_at(&final_, uv);
+    a * (1.0 - t) + b * t
+};
+```
+
+Los dos atajos existen porque los extremos son el caso común. Y los dos
+estados que se medían eran, exactamente, los dos que toman un atajo. El
+cuadro que hay que garantizar —el de la transición— no estaba medido.
+
+#### El barrido
+
+`examples/interactive_frame_time.rs` pasó de medir dos puntos a barrer el
+intervalo. Diecisiete estados, treinta muestras cada uno, perfil interactivo
+`400 × 300`, preset `safe-refractive-water` con los ocho assets cargados:
+
+| Estado | mínimo | mediana | máximo | mín/lienzo |
+|---|---:|---:|---:|---:|
+| lienzo | `0.0469` | `0.0525` | `0.0588` | `1.00x` |
+| regiones `0.02` | `0.0565` | `0.0676` | `0.0759` | `1.21x` |
+| regiones `0.25` | `0.0599` | `0.0750` | `0.0869` | `1.28x` |
+| regiones `0.50` | `0.0653` | `0.0727` | `0.0813` | `1.39x` |
+| regiones `0.98` | `0.0611` | `0.0697` | `0.0797` | `1.30x` |
+| regiones `1.00` | `0.0595` | `0.0684` | `0.0847` | `1.27x` |
+| finale `0.02` | `0.0637` | `0.0732` | `0.0937` | `1.36x` |
+| finale `0.50` | `0.0704` | `0.0815` | `0.0909` | `1.50x` |
+| finale `0.98` | `0.0714` | `0.0820` | `0.0970` | **`1.52x`** |
+| todo pintado | `0.0666` | `0.0766` | `0.0858` | `1.42x` |
+
+`regiones t` son las tres regiones en el mismo progreso con el grupo
+`Finale` todavía en lienzo; `finale t` es el `Finale` en `t` sobre las tres
+regiones ya pintadas. La tabla completa la imprime el ejemplo.
+
+Lo que el barrido resuelve son **tres bandas**, no un máximo:
+
+| Banda | Coste | Qué la separa de la anterior |
+|---|---:|---|
+| lienzo | `1.00x` | — |
+| regiones reveladas | `1.21x .. 1.39x` | los techos ópticos: sin ellos no hay rayos secundarios |
+| `Finale` revelado | `1.36x .. 1.52x` | veinte primitivas más que dejan de ser lienzo, y casi todo el cuadro |
+
+Dentro de cada banda el progreso apenas mueve el coste; entre bandas hay un
+escalón. Y el escalón es el hallazgo, porque **no está donde yo lo buscaba**.
+
+#### `Finale` no es solo el Monolito
+
+Buscando el peor cuadro empecé por las tres regiones a la vez —tres teclas
+seguidas, el estado más caro que las regiones alcanzan— y resultó no ser el
+peor. El peor es el del grupo `Finale`, y la razón está en
+`scenes::continent::globales`: `RevealGroup::Finale` cubre las diez masas
+del Monolito **y las diez del arco costero**. Juntas ocupan casi todo el
+cuadro de la toma hero.
+
+Mientras se barren las regiones, ese grupo sigue en lienzo: se lleva su
+parte del cuadro sin pagar un solo rayo secundario. Por eso el barrido de
+las regiones se queda corto, y por eso el peor cuadro de la demo es el
+**clímax**: el Continente pintado y el Monolito revelándose sobre él. Toda
+demostración completa pasa por ahí.
+
+#### Lo que la máquina no puede resolver
+
+Tres corridas del mismo ejemplo movieron el suelo del lienzo entre `0.0389`
+y `0.0475 s`, un `16 %`, y el orden dentro de la banda alta cambió en cada
+una: el máximo cayó en `finale 0.98`, en `finale 0.75` y otra vez en
+`finale 0.98`. Las bandas reproducen; el ganador dentro de una banda, no.
+
+Eso obligó a tres decisiones de método:
+
+1. **Intercalar por ronda y no por bloque.** La primera versión agotaba
+   siete renders de un punto antes de pasar al siguiente, y daba diferencias
+   entre puntos vecinos de hasta un `19 %` que no reproducían: le cargaba el
+   calentamiento al punto que tocara. Con un cuadro de cada punto por ronda,
+   la deriva le toca a todos por igual.
+2. **Comparar por el mínimo y dimensionar por la mediana.** El mínimo
+   estima el suelo de coste; la mediana lo mezcla con la interferencia. Para
+   decir cuál de dos estados es más caro sirve el primero; para prometer un
+   tiempo, el segundo.
+3. **No elegir la constante persiguiendo el máximo.** `WORST_CASE_PROGRESS`
+   es `0.50` porque la banda es una meseta y el punto medio la representa,
+   no porque una corrida lo pusiera arriba. El ejemplo avisa si algún punto
+   se sale de la meseta por más de un `5 %`, que es la única forma en que un
+   aviso así puede significar algo.
+
+#### Qué cambió en el código
+
+| Dónde | Cambio |
+|---|---|
+| `reveal::WORST_CASE_PROGRESS` | nueva: el progreso del `Finale` en el peor cuadro |
+| `RevealState::worst_case()` | nuevo constructor: `painted()` con el `Finale` a medio revelar |
+| `main.rs`, autocalibración | calibra con `worst_case()` y ya no con `painted()` |
+| `examples/interactive_frame_time.rs` | barrido de diecisiete estados, intercalado por ronda |
+| `examples/performance_matrix.rs` | nuevo: la matriz de esta misma tarea |
+| `tests/demo_completa.rs`, `examples/demo_timeline.rs` | `FRAME_TIME` archivado: `0.0524` → `0.0820` |
+
+Tres tests amarran el estado, y ninguno mide tiempo: los tres comprueban lo
+que hace que ese estado sea el caro.
+
+| Test | Qué comprueba |
+|---|---|
+| `el_peor_estado_no_tiene_nada_en_lienzo` | ningún grupo en `Unpainted`: donde hay lienzo no hay rayos secundarios |
+| `el_peor_estado_tiene_el_finale_a_medio_revelar` | `Finale` en `Revealing` y las tres regiones en `Painted`, que es lo único que permite el doble muestreo |
+| `el_peor_estado_es_alcanzable_por_la_demo` | se llega a él con `activate` y `advance`, sin tocar `set_progress` |
+
+El tercero es el que importa a largo plazo: si `activate` cambiara y el
+`Finale` no pudiera quedarse a medio camino sobre las regiones pintadas, la
+ventana estaría calibrando con un estado que nadie ve.
+
+### Tarea 7.1 — La matriz, y cuánto presupuesto hay de verdad
+
+El plan nombra cinco presets sin definirlos. Cada fila declara su definición
+en las dos dimensiones que mueven el coste, porque confundirlas es lo que
+dio un benchmark optimista en el Hito 3:
+
+| Nombre del plan | Volumen | Revelación |
+|---|---|---|
+| `safe-canvas` | sin volumen, `159` | lienzo |
+| `safe-painted` | sin volumen, `159` | pintado |
+| `safe-water` | refractivo, `160` | pintado |
+| `safe-revealing` | refractivo, `160` | `worst_case()` |
+| `target-water` | nivel objetivo | pintado |
+
+Están ordenadas para que cada fila añada **un** coste sobre la anterior: las
+texturas del estado pintado, la óptica del volumen, el doble muestreo de la
+transición y, al final, la densidad del nivel objetivo. Así la diferencia
+entre dos filas consecutivas es atribuible.
+
+Release, catorce muestras por celda intercaladas por ronda:
+
+| Preset | Prim. | `800 × 600` | fps | `400 × 300` | fps |
+|---|---:|---:|---:|---:|---:|
+| `safe-canvas` | 159 | `0.1809` | 5.5 | `0.0465` | 21.5 |
+| `safe-painted` | 159 | `0.2129` | 4.7 | `0.0534` | 18.7 |
+| `safe-water` | 160 | `0.2581` | 3.9 | `0.0707` | 14.1 |
+| `safe-revealing` | 160 | `0.2703` | 3.7 | `0.0768` | 13.0 |
+| `target-water` | — | Pendiente | — | Pendiente | — |
+
+`target-water` no se mide porque **el nivel objetivo no existe**: es la
+Tarea 7.2, y decidir si se construye es justo para lo que sirve esta matriz.
+La fila se imprime como pendiente en vez de omitirse, para que se vea que
+falta y no que no hacía falta.
+
+Lo que cuesta cada cosa, con el rango de dos corridas:
+
+| Escalón | `400 × 300` | `800 × 600` |
+|---|---:|---:|
+| texturas del estado pintado | `+15 %` a `+24 %` | `+16 %` a `+18 %` |
+| volumen refractivo | `+19 %` a `+33 %` | `+21 %` a `+25 %` |
+| doble muestreo de la transición | `+7 %` a `+9 %` | `+5 %` a `+5 %` |
+
+#### El presupuesto
+
+El único gate que puede fallar es el de fluidez, y solo mira el perfil
+interactivo: el cuadro final se produce una vez al soltar los controles y
+nadie lo anima.
+
+```text
+peor estado interactivo    0.0768 s
+critico del gate           0.2667 s   = 4.0 s / 15 cuadros
+reserva                    3.5x en tiempo
+reveal_duration            1.50 s     (20 cuadros, piso)
+```
+
+**Hay reserva: un factor `3.5` en tiempo.** Con dos advertencias que la
+matriz obliga a escribir junto a la cifra:
+
+1. **La reserva está en tiempo, no en primitivas.** El coste no es lineal en
+   el conteo: la jerarquía poda el `92 %` de los tests. `3.5x` de tiempo no
+   son `3.5x` de primitivas, y averiguar cuántas son exige medir el nivel
+   objetivo, no dividir.
+2. **El escalón caro no es la densidad, es la óptica.** Pasar de `159`
+   primitivas sin volumen a `160` con volumen refractivo cuesta entre un
+   `19 %` y un `33 %`; la primitiva número ciento sesenta cuesta más que las
+   ciento cincuenta y nueve anteriores juntas, porque es la que enciende la
+   recursión. Cualquier detalle que se añada dentro de la bahía —detrás del
+   agua— se paga a través de los rayos refractados, no del conteo.
+
+#### Ráfaga contra carga sostenida
+
+Estas cifras son sistemáticamente un `25 %` más altas que las que el Hito 6
+registró para los mismos estados, y la diferencia no es ruido: las de
+entonces salían de una ráfaga de quince renders seguidos y estas de
+corridas que sostienen la carga medio minuto. La máquina baja de frecuencia.
+
+Las sostenidas son las buenas para dimensionar —una sesión de la demo se
+parece más a eso que a una ráfaga— y su sesgo va en el sentido seguro:
+sobreestiman el coste. Las cifras del perfil en `renderer.rs` se
+actualizaron a las sostenidas, con la nota de la diferencia.
+
+#### Gates registrados
+
+```text
+cargo fmt -- --check                        OK
+cargo clippy --all-targets -- -D warnings   0 avisos
+cargo test                                  383 tests, 0 fallos
+cargo build --release                       OK
+```
+
+Reparto de los 383: `347` de librería, `16` del generador de assets, `8` de
+humo del render, `6` de sombras submarinas y `6` de la demo completa. Los
+tres nuevos son los del peor estado.
+
+Procedencia de todas las cifras de esta sección: commit `2c7960a` con el
+árbol de la Tarea 7.1, 3 de septiembre de 2026, Ryzen 7 6800H, rustc 1.97.0,
+release.
+
+---
+
 ## Pendientes de medición
 
 Ninguna de estas filas puede completarse por estimación. Cada hito llena la suya.
@@ -1902,8 +2134,9 @@ Ninguna de estas filas puede completarse por estimación. Cada hito llena la suy
 | 3 | Benchmark `safe-opaque-water` (160 primitivas) — control de oclusión | **Registrado** |
 | 3 | `interactive_frame_time` del perfil interactivo | **Registrado** — perfil fijado en `MEDIA` (400 × 300) |
 | 5 | Calibración de `L-02`: `distance_boat`, `range`, `intensity` | **Registrado** — `0.192 S`, `0.30 S`, `2.8211` derivada |
-| 6 | `reveal_duration` derivada de `interactive_frame_time` | **Registrado** — `0.0524 s` por cuadro, `1.5 s` de duración, 28.6 cuadros; la ventana se autocalibra |
-| 7 | Matriz de rendimiento por preset | Pendiente |
+| 6 | `reveal_duration` derivada de `interactive_frame_time` | **Registrado** — corregido en la 7.1: `0.0820 s` en el peor estado, `1.5 s` de duración, 18 cuadros; la ventana se autocalibra |
+| 7 | Matriz de rendimiento por preset | **Registrado** — cuatro presets medidos en dos resoluciones; `target-water` pendiente de que exista el nivel objetivo |
+| 7 | Peor estado de revelación | **Registrado** — `Finale` a medio revelar sobre el Continente pintado, `1.52x` el lienzo |
 | 8 | Hardware de medición y tiempos finales en release | Pendiente |
 
 **Regla.** Todos los benchmarks se ejecutan en release. El perfil `dev` de este proyecto lleva `opt-level = 3` heredado de la base académica, así que un tiempo medido en debug **parece** comparable a release y no lo es.

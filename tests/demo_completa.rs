@@ -34,10 +34,16 @@ const ALTO: usize = 600;
 /// los tests comprueben la aritmética contra un valor conocido.
 ///
 /// Se rederiva con `cargo run --release --example interactive_frame_time`.
-/// Procedencia de esta: `400 x 300`, preset refractivo, mediana de quince
-/// repeticiones en el peor de `reveal 0.0` y `reveal 1.0`; commit `6402f3f`,
-/// 3 de septiembre de 2026, Ryzen 7 6800H, rustc 1.97.0.
-const FRAME_TIME: f32 = 0.0524;
+/// Procedencia: `400 x 300`, preset refractivo, el peor estado de la
+/// transición —`RevealState::worst_case()`, el Continente pintado y el
+/// grupo `Finale` a medio revelar—, mediana de treinta muestras
+/// intercaladas; commit `2c7960a` con el árbol de la Tarea 7.1, 3 de
+/// septiembre de 2026, Ryzen 7 6800H, rustc 1.97.0.
+///
+/// La anterior decía `0.0524 s` y salía del peor de `reveal 0.0` y
+/// `reveal 1.0`. Los dos extremos evitan el doble muestreo de texturas, así
+/// que ninguno era el peor cuadro; ver la Tarea 7.1.
+const FRAME_TIME: f32 = 0.0820;
 
 /// Aplica una tecla de la demo sobre el estado, como hace la ventana.
 fn pulsar(tecla: char, reveal: &mut RevealState) {
