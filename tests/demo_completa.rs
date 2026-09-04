@@ -10,6 +10,8 @@
 //! ratón apunte donde el usuario cree, y para eso está la revisión visual;
 //! todo lo demás sí.
 
+use std::collections::HashSet;
+
 use expedition33_continente_inacabado::accel::TraversalStats;
 use expedition33_continente_inacabado::input::{demo_action, pick_region, DemoAction};
 use expedition33_continente_inacabado::light::diorama as luces_del_diorama;
@@ -23,8 +25,17 @@ use expedition33_continente_inacabado::scenes::{safe_level, WaterPreset};
 const ANCHO: usize = 800;
 const ALTO: usize = 600;
 
-/// Tiempo por cuadro del perfil interactivo, medido en release.
-const FRAME_TIME: f32 = 0.0490;
+/// Tiempo por cuadro del perfil interactivo, **registrado**.
+///
+/// No es la cifra que usa la ventana: esa se **mide al arrancar**, en la
+/// máquina que corre. Esta es una medición archivada, y está aquí para que
+/// los tests comprueben la aritmética contra un valor conocido.
+///
+/// Se rederiva con `cargo run --release --example interactive_frame_time`.
+/// Procedencia de esta: `400 x 300`, preset refractivo, mediana de quince
+/// repeticiones en el peor de `reveal 0.0` y `reveal 1.0`; commit `6402f3f`,
+/// 3 de septiembre de 2026, Ryzen 7 6800H, rustc 1.97.0.
+const FRAME_TIME: f32 = 0.0524;
 
 /// Aplica una tecla de la demo sobre el estado, como hace la ventana.
 fn pulsar(tecla: char, reveal: &mut RevealState) {
@@ -231,13 +242,14 @@ fn las_tres_regiones_pueden_revelarse_a_la_vez() {
 }
 
 #[test]
-fn el_clic_llega_a_las_mismas_regiones_que_el_teclado() {
-    // Sin esto, el gate podria pasar por teclado y fallar con raton.
+fn los_grupos_alcanzables_por_raton_son_exactamente_las_tres_regiones() {
+    // Con conjuntos y no con tres `contains`: la igualdad es lo que ademas
+    // prueba que **no** se alcanza nada mas. Tres comprobaciones de
+    // pertenencia habrian pasado igual con `Finale` en la lista.
     let diorama = safe_level(WaterPreset::RefractiveWater);
     let camara = diorama.hero_camera();
 
-    // Se recorre el cuadro y se recogen las regiones que el raton alcanza.
-    let mut alcanzadas = Vec::new();
+    let mut alcanzadas = HashSet::new();
 
     for y in (0..ALTO).step_by(7) {
         for x in (0..ANCHO).step_by(7) {
@@ -246,23 +258,63 @@ fn el_clic_llega_a_las_mismas_regiones_que_el_teclado() {
             if let Some(grupo) =
                 pick_region(&diorama.scene, &diorama.accel, &camara, cursor, ANCHO, ALTO)
             {
-                if !alcanzadas.contains(&grupo) {
-                    alcanzadas.push(grupo);
-                }
+                alcanzadas.insert(grupo);
             }
         }
     }
 
-    for grupo in [
-        RevealGroup::Meadows,
-        RevealGroup::Breakwater,
-        RevealGroup::FlyingWaters,
-    ] {
-        assert!(
-            alcanzadas.contains(&grupo),
-            "el raton no alcanza {grupo:?} desde la toma hero"
-        );
+    assert_eq!(
+        alcanzadas,
+        HashSet::from([
+            RevealGroup::Meadows,
+            RevealGroup::Breakwater,
+            RevealGroup::FlyingWaters,
+        ]),
+        "el raton alcanza un conjunto distinto de las tres regiones"
+    );
+}
+
+#[test]
+fn el_monolito_ocupa_pixeles_y_aun_asi_no_es_seleccionable() {
+    // El test anterior podria pasar por vacio si el Monolito no se viera.
+    // Este comprueba que **si** se ve: hay rayos primarios que dan en el
+    // grupo del finale, y ninguno selecciona region.
+    let diorama = safe_level(WaterPreset::RefractiveWater);
+    let camara = diorama.hero_camera();
+
+    let mut pixeles_del_finale = 0;
+
+    for y in (0..ALTO).step_by(7) {
+        for x in (0..ANCHO).step_by(7) {
+            let rayo = camara.ray_from_pixel(x, y, ANCHO, ALTO);
+            let Some(impacto) =
+                diorama
+                    .accel
+                    .intersect(&diorama.scene, &rayo, &mut TraversalStats::default())
+            else {
+                continue;
+            };
+
+            let objeto = diorama.scene.objects[impacto.object_index];
+
+            if objeto.reveal_group != RevealGroup::Finale || !objeto.is_revealable() {
+                continue;
+            }
+
+            pixeles_del_finale += 1;
+
+            assert_eq!(
+                diorama.scene.paintable_group(impacto.object_index),
+                None,
+                "un objeto del finale resulto seleccionable"
+            );
+        }
     }
+
+    assert!(
+        pixeles_del_finale > 20,
+        "solo {pixeles_del_finale} muestras dan en el finale: el test pasaria por vacio"
+    );
 }
 
 #[test]
@@ -333,10 +385,16 @@ fn el_diorama_cambia_de_verdad_entre_lienzo_y_pintado() {
         lienzo.len()
     );
 
+    // Alcance de esta comprobacion, dicho con precision: **ninguna de las
+    // muestras geometricas del subconjunto evaluado** queda en negro. No se
+    // revisan los 480 000 pixeles del cuadro, ni el fondo, ni los pixeles
+    // entre muestras. La revision exhaustiva de negros del cuadro completo
+    // vive en `examples/gate_flying_waters`, que los cuenta uno por uno.
     for (indice, color) in pintado.iter().enumerate() {
         assert!(
             color.to_hex() & 0x00FF_FFFF != 0,
-            "la muestra {indice} quedo en negro absoluto"
+            "la muestra geometrica {indice} de {} quedo en negro absoluto",
+            pintado.len()
         );
     }
 }

@@ -90,6 +90,20 @@ impl ClusterPlan {
 /// También son lo que permite escribir un test que demuestre que un grupo
 /// fallado no llega a tocar sus primitivas.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+/// Política de empates: **gana el primero recorrido**.
+///
+/// Dos superficies a exactamente la misma distancia —caras coplanares, o un
+/// objeto que toca a otro sin solaparlo— dejan el resultado a merced del
+/// orden de recorrido, que es el de los grupos en `SpatialGroupId::ALL` y
+/// dentro de cada grupo el de inserción. La comparación usa `<` y no `<=`,
+/// así que el primero en llegar se queda.
+///
+/// Es determinista y estable entre corridas, que es lo que el proyecto
+/// necesita para que dos capturas se puedan comparar. No es una elección
+/// geométricamente significativa: si alguna vez importa cuál de dos caras
+/// coplanares se ve, hay que separarlas, no cambiar la desigualdad.
+///
+/// En la escena actual no hay empates a distancia exacta detectados.
 pub struct TraversalStats {
     pub group_bounds_tests: usize,
     pub cluster_bounds_tests: usize,

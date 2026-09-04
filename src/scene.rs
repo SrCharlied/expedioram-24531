@@ -43,7 +43,7 @@ pub enum SpatialGroupId {
 /// Grupo de revelación. Son exactamente cuatro, y el progreso es un escalar
 /// por grupo guardado centralmente en `RevealState` a partir de la Tarea
 /// 6.3. El objeto solo dice a cuál pertenece.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RevealGroup {
     Meadows,
     Breakwater,
@@ -137,6 +137,24 @@ impl SceneObject {
 }
 
 /// La escena completa: los objetos y la paleta que sus índices resuelven.
+///
+/// # Invariante: `objects` no se muta tras construir la aceleración
+///
+/// `Hit::object_index` es la **posición** en este vector, y `SceneAccel`
+/// guarda esas mismas posiciones en sus clusters. Insertar, borrar, ordenar
+/// o intercambiar elementos después de construir la aceleración
+/// desincronizaría las dos cosas en silencio: los impactos seguirían
+/// resolviéndose, contra el objeto equivocado.
+///
+/// El campo es público porque los constructores de región lo llenan, y todo
+/// el llenado ocurre **antes** de `SceneAccel::build`. A partir de ese punto
+/// la escena es de solo lectura, y el proyecto entero depende de ello: es
+/// también lo que permite que la revelación no invalide nunca la jerarquía.
+///
+/// Encapsularlo con un `ObjectId` opaco es la corrección estructural si
+/// alguna vez hace falta mutar la escena en caliente. Mientras no haga
+/// falta, la invariante se sostiene por construcción y queda documentada
+/// aquí en vez de asumida.
 #[derive(Debug, Default)]
 pub struct Scene {
     pub objects: Vec<SceneObject>,
@@ -189,15 +207,28 @@ impl Scene {
     /// clic se obtiene un grupo, no un objeto, no una cara y no una
     /// coordenada de textura.
     ///
-    /// Devuelve `None` para las entradas **inertes**, las que nacen y
-    /// mueren con el mismo material. Sin ese filtro, un clic en el plinto
-    /// —`G-01`, que ocupa toda la base del diorama— activaría el finale del
-    /// Monolito, porque comparte grupo con él por tipado. El plinto es
-    /// lienzo y nunca se pinta; pincharlo no debe hacer nada.
+    /// Devuelve `None` en dos casos:
+    ///
+    /// - Las entradas **inertes**, las que nacen y mueren con el mismo
+    ///   material. Sin ese filtro, un clic en el plinto —`G-01`, que ocupa
+    ///   toda la base del diorama— apuntaría al grupo del Monolito, porque
+    ///   comparte grupo con él por tipado. El plinto es lienzo y nunca se
+    ///   pinta; pincharlo no debe hacer nada.
+    /// - Todo lo que pertenezca a **`Finale`**. El Monolito no es una región
+    ///   que se elija: es la consecuencia de haber pintado las tres. Un clic
+    ///   sobre él lo adelantaría, y con eso se perdería el clímax del
+    ///   diorama —y la condición que lo gobierna quedaría en manos de dónde
+    ///   apunte el puntero—.
+    ///
+    /// El segundo filtro es la **primera** de dos capas: `RevealState`
+    /// también rechaza activar el finale antes de tiempo, para que ningún
+    /// otro llamador pueda saltarse la regla. Filtrar solo aquí dejaría la
+    /// invariante a merced de quien escriba el siguiente llamador.
     pub fn paintable_group(&self, object_index: usize) -> Option<RevealGroup> {
         let objeto = self.objects.get(object_index)?;
+        let elegible = objeto.is_revealable() && objeto.reveal_group != RevealGroup::Finale;
 
-        objeto.is_revealable().then_some(objeto.reveal_group)
+        elegible.then_some(objeto.reveal_group)
     }
 
     pub fn texture(&self, id: TextureId) -> &Texture {

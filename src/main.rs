@@ -11,7 +11,7 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use expedition33_continente_inacabado::framebuffer::Framebuffer;
-use expedition33_continente_inacabado::input::{demo_action, pick_region, DemoAction};
+use expedition33_continente_inacabado::input::{demo_action, pick_region, DemoAction, FrameIntent};
 use expedition33_continente_inacabado::light::diorama as luces_del_diorama;
 use expedition33_continente_inacabado::renderer::{
     plan_frame, render, FramePlan, InteractiveProfile, Shading,
@@ -37,17 +37,11 @@ const ZOOM_FRACTION: f32 = 0.06;
 /// solo se usa su signo.
 const WHEEL_STEPS: f32 = 1.0;
 
-/// Tiempo por cuadro del perfil interactivo, **medido**.
+/// Cuadros de calibración que se trazan al arrancar.
 ///
-/// `400 x 300`, preset refractivo y `reveal 1.0` —el caso más caro, porque
-/// el lienzo no lanza rayos secundarios y cuesta `0.0347 s—`, mediana de
-/// quince repeticiones en release.
-///
-/// No se hereda del Hito 3: aquella medición dio `0.0242 s` y fue **antes**
-/// de la óptica, que duplicó el costo. De aquí sale la duración de la
-/// revelación; medirlo mal alargaría o acortaría la animación sin que nada
-/// avisara.
-const INTERACTIVE_FRAME_TIME: f32 = 0.0490;
+/// Tres y no uno: el primero paga el calentamiento de cachés y sale
+/// sistemáticamente más lento. Se toma la mediana.
+const CUADROS_DE_CALIBRACION: usize = 3;
 
 fn main() -> ExitCode {
     let frame_delay = Duration::from_millis(16);
@@ -98,25 +92,6 @@ fn main() -> ExitCode {
     // `render_scene --reveal 1.0`.
     let mut reveal = RevealState::unpainted();
 
-    // Duración de la revelación, **derivada** del tiempo por cuadro medido
-    // en el perfil interactivo. No se elige: sale de la medición, con piso
-    // de 1.5 s y techo de 4.0 s. Si el perfil no diera para quince cuadros
-    // dentro del techo, esto aborta en vez de alargar la animación, que es
-    // lo que el plan prohíbe expresamente.
-    let duracion = match reveal_duration(INTERACTIVE_FRAME_TIME) {
-        Ok(duracion) => duracion,
-        Err(fallo) => {
-            eprintln!(
-                "error: el perfil interactivo falla el gate de fluidez: {:.4} s por cuadro\n  \
-                 quince cuadros exigirian {:.2} s y el techo son 4.00 s",
-                fallo.interactive_frame_time, fallo.required
-            );
-            eprintln!("  baja la resolucion del perfil en vez de alargar la animacion");
-            return ExitCode::FAILURE;
-        }
-    };
-    let velocidad = reveal_speed(duracion);
-
     // Encuadre hero **de la escena**, capturado antes de mover sus campos.
     // Los tres puntos salen de las anclas medidas del blockout; no hay
     // ninguna constante de cámara en este archivo ni en `input`.
@@ -143,6 +118,59 @@ fn main() -> ExitCode {
     let perfil = InteractiveProfile::default();
     let mut borrador = Framebuffer::new(perfil.width, perfil.height);
 
+    // ------------------------------------------------ autocalibración
+    //
+    // El tiempo por cuadro se mide **en esta máquina y ahora**, no se
+    // hereda de una constante. Una cifra escrita al compilar es la de la
+    // máquina de quien la escribió, y de ella sale la duración de la
+    // revelación: en un equipo más lento la animación se quedaría corta de
+    // cuadros sin que nada avisara, y el gate de fluidez no llegaría a
+    // dispararse nunca.
+    //
+    // Se mide con `reveal 1.0`, que es el caso caro: en lienzo los techos
+    // del agua están interpolados desde cero y no se lanza un solo rayo
+    // secundario. Garantizar los quince cuadros con el tiempo del lienzo
+    // dejaría el final de la transición sin margen.
+    let mut calibracion = Vec::with_capacity(CUADROS_DE_CALIBRACION);
+
+    for _ in 0..CUADROS_DE_CALIBRACION {
+        let inicio = Instant::now();
+        render(
+            &mut borrador,
+            &scene,
+            &accel,
+            &lights,
+            &RevealState::painted(),
+            &camera,
+            shading,
+        );
+        calibracion.push(inicio.elapsed().as_secs_f32());
+    }
+
+    calibracion.sort_by(|a, b| a.partial_cmp(b).expect("no hay NaN"));
+    let frame_time = calibracion[calibracion.len() / 2];
+
+    // Duración de la revelación, **derivada** de esa medición, con piso de
+    // 1.5 s y techo de 4.0 s. Si el perfil no diera para quince cuadros
+    // dentro del techo, esto aborta en vez de alargar la animación, que es
+    // lo que el plan prohíbe expresamente.
+    let duracion = match reveal_duration(frame_time) {
+        Ok(duracion) => duracion,
+        Err(fallo) => {
+            eprintln!(
+                "error: el perfil interactivo falla el gate de fluidez: {:.4} s por cuadro\n  \
+                 quince cuadros exigirian {:.2} s y el techo son 4.00 s",
+                fallo.interactive_frame_time, fallo.required
+            );
+            eprintln!("  baja la resolucion del perfil en vez de alargar la animacion");
+            return ExitCode::FAILURE;
+        }
+    };
+    let velocidad = reveal_speed(duracion);
+
+    // Un cuadro de calibración no es un cuadro presentado: el framebuffer
+    // sigue vacío, así que el primero de verdad se dibuja igual.
+
     println!("El Continente Inacabado");
     println!(
         "  escena   nivel seguro, {} primitivas, {} luces, {} texturas",
@@ -158,7 +186,8 @@ fn main() -> ExitCode {
     println!("  clic     pintar la region señalada     1 / 2 / 3  pintar por teclado");
     println!("  L        volver al lienzo     R  restaurar encuadre hero");
     println!(
-        "  revelado {duracion:.2} s por region, derivados de {INTERACTIVE_FRAME_TIME:.4} s por cuadro"
+        "  revelado {duracion:.2} s por region, {:.0} cuadros, medidos {frame_time:.4} s por cuadro",
+        duracion / frame_time
     );
 
     // El primer cuadro cuenta como cambio pendiente, para que la ventana
@@ -173,6 +202,16 @@ fn main() -> ExitCode {
     // Reloj del avance. Se toma justo antes del ciclo para que el primer
     // delta no incluya el tiempo de cargar los assets.
     let mut ultimo_cuadro = Instant::now();
+
+    // La cámara con la que se dibujó **lo que está en pantalla**.
+    //
+    // El picking tiene que usar esta y no la actual. El usuario hace clic
+    // sobre la imagen que ve, y esa imagen se trazó con la cámara del cuadro
+    // anterior: si sostiene una flecha mientras pincha, la cámara ya rotó
+    // antes de llegar al clic y el rayo apuntaría a una escena que todavía
+    // no se ha mostrado. La diferencia es de un cuadro, y es justo el cuadro
+    // en el que el usuario decidió dónde pinchar.
+    let mut camara_presentada = camera;
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let orbit = [
@@ -232,23 +271,31 @@ fn main() -> ExitCode {
         // del área de dibujo, que es la misma política que aplica
         // `input::ray_under_cursor`. Se dejan las dos: la de minifb evita el
         // trabajo y la de la librería es la que se puede probar sin ventana.
+        // Se recogen **todas** las acciones del cuadro y se reducen antes
+        // de aplicar ninguna. Un solo `Option` dejaba que la última ganara
+        // —un clic y una tecla, o `1`, `2` y `3` en el mismo sondeo— y que
+        // una selección se aplicara después de un reinicio del mismo
+        // cuadro, sobre el lienzo recién limpiado. Ver `input::FrameIntent`.
+        let mut acciones = Vec::new();
+
         let boton = window.get_mouse_down(MouseButton::Left);
         let clic = boton && !boton_anterior;
         boton_anterior = boton;
 
-        let mut elegida = None;
-
         if clic {
             if let Some(cursor) = window.get_mouse_pos(MouseMode::Discard) {
-                elegida = pick_region(&scene, &accel, &camera, cursor, WIDTH, HEIGHT);
+                // Contra `camara_presentada`: el clic apunta a lo que se ve.
+                if let Some(grupo) =
+                    pick_region(&scene, &accel, &camara_presentada, cursor, WIDTH, HEIGHT)
+                {
+                    acciones.push(DemoAction::Paint(grupo));
+                }
             }
         }
 
-        // Las teclas de la demo pasan por `input::demo_action`, que es la
-        // única lista de qué hace cada una. Aquí solo se traduce de
-        // `minifb::Key` al carácter que esa lista entiende.
-        let mut reinicio = false;
-
+        // Las teclas pasan por `input::demo_action`, que es la única lista
+        // de qué hace cada una. Aquí solo se traduce de `minifb::Key` al
+        // carácter que esa lista entiende.
         for (tecla, caracter) in [
             (Key::Key1, '1'),
             (Key::Key2, '2'),
@@ -256,39 +303,40 @@ fn main() -> ExitCode {
             (Key::L, 'L'),
             (Key::R, 'R'),
         ] {
-            if !window.is_key_pressed(tecla, KeyRepeat::No) {
-                continue;
-            }
-
-            match demo_action(caracter) {
-                Some(DemoAction::Paint(grupo)) => elegida = Some(grupo),
-                Some(DemoAction::ResetCanvas) => {
-                    reveal = RevealState::unpainted();
-                    reinicio = true;
-
-                    println!("  reiniciado al lienzo");
-                }
-                Some(DemoAction::ResetCamera) => {
-                    // El encuadre lo aporta la escena, no esta tecla.
-                    camera.restore(hero);
-                    reinicio = true;
-
-                    println!("  encuadre hero restaurado");
-                }
-                None => {}
+            if window.is_key_pressed(tecla, KeyRepeat::No) {
+                acciones.extend(demo_action(caracter));
             }
         }
 
-        let region_cambio = match elegida {
+        let intent = FrameIntent::from_actions(acciones);
+        let mut reinicio = false;
+
+        if intent.reset_canvas {
+            reveal = RevealState::unpainted();
+            reinicio = true;
+
+            println!("  reiniciado al lienzo");
+        }
+
+        if intent.reset_camera {
+            // El encuadre lo aporta la escena, no esta tecla.
+            camera.restore(hero);
+            reinicio = true;
+
+            println!("  encuadre hero restaurado");
+        }
+
+        // `paints` ya respeta la precedencia: con un reinicio en el mismo
+        // cuadro, la lista viene vacía.
+        let mut region_cambio = false;
+
+        for grupo in intent.paints() {
             // Activar, no saltar: el avance lo hace el reloj más abajo.
-            Some(grupo) if reveal.activate(grupo) => {
+            if reveal.activate(grupo) {
                 println!("  pintando {grupo:?}");
-                true
+                region_cambio = true;
             }
-            // Un clic sobre una región ya pintada o ya en curso no cambia
-            // nada, y no debe costar un cuadro.
-            _ => false,
-        };
+        }
 
         // ------------------------------------------------ avance por reloj
         //
@@ -329,6 +377,7 @@ fn main() -> ExitCode {
                     shading,
                 );
                 framebuffer.blit_upscaled(&borrador);
+                camara_presentada = camera;
             }
             FramePlan::Final => {
                 // Todo quieto: una sola pasada a resolución completa.
@@ -342,6 +391,7 @@ fn main() -> ExitCode {
                     shading,
                 );
                 cuadro_final_pendiente = false;
+                camara_presentada = camera;
             }
             // Nada cambió: se reutiliza el framebuffer sin trazar.
             FramePlan::Reuse => {}

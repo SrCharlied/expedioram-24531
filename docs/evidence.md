@@ -1611,6 +1611,204 @@ tercera; pulsar `L` y repetirlo todo; orbitar hasta perder el encuadre y
 pulsar `R`; y hacer clic directamente sobre las praderas, el acantilado y la
 bahía.
 
+Conviene añadir dos comprobaciones que salieron de la auditoría: hacer clic
+**sobre el Monolito** —no debe pasar nada—, y pulsar `L` y una región **a la
+vez**, que debe reiniciar sin dejar nada pintándose.
+
+El estado del hito es **no cerrado** hasta ese recorrido.
+
+---
+
+#### Auditoría del gate y correcciones
+
+El gate no cerró en el primer intento. Una revisión externa encontró tres
+bloqueos de integración y varios claims sobredichos; todos quedaron
+corregidos, y los que eran bugs llevan test.
+
+##### Bloqueo 1 · el picking podía elegir el finale
+
+`paintable_group` filtraba las entradas inertes pero no el grupo `Finale`,
+así que un clic sobre el Monolito —que **es** revelable— lo adelantaba. Con
+eso se perdía el clímax del diorama y la condición que lo gobierna quedaba
+en manos de dónde apuntara el puntero.
+
+La corrección es **defensa en dos capas**:
+
+1. `Scene::paintable_group` rechaza `Finale`. El ratón solo alcanza las tres
+   regiones.
+2. `RevealState::activate` rechaza `Finale` mientras las tres regiones no
+   estén pintadas. Una regla que solo vive en la política de entrada se la
+   salta el siguiente llamador, y esta es la invariante del inventario.
+
+El autoarranque no se ve afectado: `advance` llama a `activate(Finale)`
+justo después de comprobar `all_regions_painted`.
+
+Los tests nuevos usan **conjuntos** y no tres `contains`. La diferencia
+importa: tres comprobaciones de pertenencia habrían pasado igual con
+`Finale` en la lista.
+
+| Test | Qué fija |
+|---|---|
+| `los_grupos_alcanzables_por_raton_son_exactamente_las_tres_regiones` | igualdad de conjuntos sobre el cuadro completo |
+| `el_monolito_ocupa_pixeles_y_aun_asi_no_es_seleccionable` | que el anterior no pase por vacío: hay más de 20 muestras que dan en el finale |
+| `activate_del_finale_falla_hasta_que_las_tres_regiones_esten_pintadas` | la segunda capa, con cero, una y dos regiones |
+| `una_region_a_medias_no_habilita_el_finale` | pintadas, no en curso |
+| `un_clic_sobre_algo_del_finale_no_selecciona_nada` | con un objeto revelable del finale, no inerte |
+
+##### Bloqueo 2 · `L` reiniciaba y volvía a pintar en el mismo cuadro
+
+El ciclo guardaba la selección en un solo `Option`, y `L` reemplazaba el
+estado **antes** de que esa selección se aplicara. Resultado: la consola
+decía «reiniciado al lienzo» y el estado tenía una región revelándose.
+
+El mismo `Option` hacía que varias selecciones del mismo cuadro —un clic y
+una tecla, o `1`, `2` y `3` en el mismo sondeo— se pisaran y solo
+sobreviviera la última.
+
+La corrección es `input::FrameIntent`, un reducer de las acciones del cuadro
+que se prueba **sin abrir una ventana**: recoge todo, reduce, y el ciclo
+aplica después. `ResetCanvas` domina sobre `Paint`, `ResetCamera` convive
+con todo, y los `Paint` distintos se conservan sin duplicar.
+
+El test que afirmaba probar la revelación paralela activaba tres grupos
+directamente y no atravesaba esta integración; ahora la política tiene sus
+seis tests propios.
+
+##### Bloqueo 3 · un tirón finito convertía la transición en corte
+
+`advance` rechazaba `NaN` e infinito, pero aceptaba cualquier delta finito.
+Si la ventana se suspende, se arrastra o se bloquea más de la duración de la
+revelación, el cuadro siguiente trae un delta perfectamente válido que lleva
+el progreso de casi cero a uno **de golpe**: exactamente el corte que los
+quince cuadros existen para evitar. La medición de rendimiento protege el
+caso normal, no los tirones.
+
+`MAX_PROGRESS_PER_TICK = 1 / 15` es el paso de un cuadro del criterio. Un
+tirón deja de completar la transición y solo consume un cuadro.
+
+Lo que se sacrifica queda declarado: la sincronía estricta con el reloj de
+pared **durante una suspensión**. Tras un bloqueo largo la transición
+termina más tarde de lo que diría el reloj, y es la elección deliberada,
+porque la alternativa es que la animación haya ocurrido mientras la ventana
+estaba congelada. Lo que el criterio protege es que se vea.
+
+El paso normal es `0.0286`, muy por debajo del tope de `0.0667`: el caso
+corriente no lo toca, y hay un test que lo comprueba.
+
+##### El picking apuntaba a un encuadre no presentado
+
+El clic se resolvía contra la cámara **actual**, y las teclas de órbita se
+procesan antes en el mismo cuadro. Sosteniendo una flecha mientras se
+pincha, la cámara ya había rotado y el rayo apuntaba a una escena que
+todavía no se había mostrado. La diferencia es de un cuadro, y es justo el
+cuadro en el que el usuario decidió dónde pinchar.
+
+Ahora el ciclo guarda `camara_presentada` —la cámara con la que se dibujó lo
+que está en pantalla— y el picking usa esa. `Camera` pasó a `Copy` para
+poder hacerlo sin razonar sobre préstamos en el camino de la entrada.
+
+##### La cifra de la duración ya no se hereda
+
+`0.0490` estaba escrito en cuatro sitios y de él dependía `reveal_duration`.
+Los tests probaban la aritmética **alrededor** de esa cifra; ninguno probaba
+que siguiera siendo cierta. Y una cifra escrita al compilar es la de la
+máquina de quien la escribió: en un equipo más lento la animación se
+quedaría corta de cuadros sin que nada avisara, y el gate de fluidez no
+llegaría a dispararse nunca.
+
+Dos cambios:
+
+- **La ventana se autocalibra.** Traza tres cuadros al arrancar —el primero
+  paga el calentamiento de cachés— y deriva la duración de la mediana. El
+  gate de fluidez pasa a evaluarse en la máquina que corre.
+- **Existe un probe que rederiva la cifra registrada**:
+  `cargo run --release --example interactive_frame_time`.
+
+`interactive_probe` no servía: usa `InteriorVisible` en vez del preset
+refractivo, mide una sola pasada en vez de una distribución, y no separa el
+lienzo del estado pintado.
+
+Medición registrada, con su procedencia:
+
+| | |
+|---|---|
+| Perfil | `400 × 300`, `InteractiveProfile::MEDIA` |
+| Preset | `safe-refractive-water`, 160 primitivas, 8 texturas |
+| Repeticiones | 15 por estado |
+| `reveal 0.0` | mín `0.0350`, mediana `0.0363`, máx `0.0397` |
+| `reveal 1.0` | mín `0.0501`, mediana **`0.0524`**, máx `0.0703` |
+| `interactive_frame_time` | `0.0524 s`, la peor de las dos medianas |
+| `reveal_duration` | `1.50 s` (piso) |
+| Cuadros de transición | `28.6` |
+| Margen al crítico | `5.1×` |
+| Commit | `6402f3f` |
+| Fecha | 3 de septiembre de 2026 |
+| Hardware | AMD Ryzen 7 6800H |
+| Toolchain | `rustc 1.97.0` |
+
+Se toma el **peor** de los dos estados: el lienzo no lanza rayos secundarios
+y sale más barato, así que garantizar los quince cuadros con su tiempo
+dejaría el final de la transición sin margen.
+
+##### Un tiempo por cuadro nulo o negativo ahora es error
+
+`reveal_duration(0.0)` y `reveal_duration(-1.0)` devolvían `Ok(1.5)`, con el
+argumento de que «no hay quince cuadros que garantizar si el cuadro no
+cuesta nada». El argumento estaba mal: un cuadro no cuesta cero segundos
+nunca, así que un cero es una medición **inválida**, y una medición inválida
+que produce una duración de aspecto razonable es peor que una que falla.
+
+##### Claims corregidos
+
+**`demo_timeline` no es end-to-end.** Su descripción decía «simula el
+recorrido de la presentación», y no lo hace: no pasa por `demo_action` ni
+por `pick_region`, no procesa eventos de `minifb`, no ejerce el antirrebote
+del botón, no usa `plan_frame` ni el perfil interactivo —renderiza siempre a
+`800 × 600`— y no prueba `L` ni `R`. Se redescribió como lo que es: **un
+generador de estados visuales representativos de la línea temporal**.
+
+**«Ningún píxel negro» estaba sobredicho.** El test usa la escena sin
+assets, submuestrea cada 23 píxeles y solo considera rayos que impactan
+geometría. La afirmación correcta es que **ninguna muestra geométrica del
+subconjunto evaluado** queda en negro. El recuento exhaustivo del cuadro
+completo vive en `examples/gate_flying_waters`.
+
+**Faltaba el intermedio del Monolito.** La secuencia demostraba extremos
+coherentes pero no que el finale se interpola. Se añadió
+`5-monolito-a-medias.png`: el Monolito en marfil pálido a medio camino del
+cristal, con las tres regiones ya pintadas.
+
+##### Hallazgos menores documentados
+
+- **Identidad por índice.** `Hit::object_index` es la posición en
+  `Scene::objects`, y `SceneAccel` guarda esas mismas posiciones. Insertar,
+  borrar u ordenar tras construir la aceleración las desincronizaría en
+  silencio. La invariante se sostiene por construcción —todo el llenado
+  ocurre antes de `build`— y ahora está escrita en el doc de `Scene`, junto
+  con la corrección estructural que haría falta si alguna vez hay que mutar
+  la escena en caliente.
+- **Empates geométricos.** Dos superficies a distancia exacta dejan ganar al
+  primero recorrido, por el orden de `SpatialGroupId::ALL` y de inserción.
+  Es determinista y estable entre corridas, que es lo que el proyecto
+  necesita; no es geométricamente significativo. Queda como política escrita
+  en `accel`.
+- **Dimensiones cero.** Las funciones públicas de cámara dividen por
+  `width` y `height`. `ray_under_cursor` lo cubre rechazando todo cursor con
+  rango vacío, y la precondición quedó documentada.
+
+#### Gates registrados
+
+```text
+cargo fmt -- --check                        OK
+cargo clippy --all-targets -- -D warnings   0 avisos
+cargo test                                  376 tests, 0 fallos
+cargo build --release                       OK
+cargo run                                   autocalibra y anuncia los controles
+```
+
+Reparto de los 376: `340` de librería, `16` del generador de assets, `8` de
+humo del render, `6` de sombras submarinas y `6` de la demo completa.
+
 ---
 
 ## Pendientes de medición
@@ -1625,7 +1823,7 @@ Ninguna de estas filas puede completarse por estimación. Cada hito llena la suy
 | 3 | Benchmark `safe-opaque-water` (160 primitivas) — control de oclusión | **Registrado** |
 | 3 | `interactive_frame_time` del perfil interactivo | **Registrado** — perfil fijado en `MEDIA` (400 × 300) |
 | 5 | Calibración de `L-02`: `distance_boat`, `range`, `intensity` | **Registrado** — `0.192 S`, `0.30 S`, `2.8211` derivada |
-| 6 | `reveal_duration` derivada de `interactive_frame_time` | **Registrado** — `0.0490 s` por cuadro, `1.5 s` de duración, 31 cuadros |
+| 6 | `reveal_duration` derivada de `interactive_frame_time` | **Registrado** — `0.0524 s` por cuadro, `1.5 s` de duración, 28.6 cuadros; la ventana se autocalibra |
 | 7 | Matriz de rendimiento por preset | Pendiente |
 | 8 | Hardware de medición y tiempos finales en release | Pendiente |
 

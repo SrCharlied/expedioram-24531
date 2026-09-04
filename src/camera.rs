@@ -41,6 +41,12 @@ pub struct CameraPreset {
 /// Separarlos tiene una consecuencia que conviene tener presente: el pitch
 /// de la vista deja de ser igual a la elevación del ojo sobre la esfera
 /// orbital. La elevación se elige; el pitch se deriva.
+/// `Copy` a propósito: el ciclo de la ventana guarda una copia de la cámara
+/// con la que dibujó el cuadro presentado, para que el picking apunte a lo
+/// que el usuario ve y no a un encuadre que todavía no se ha mostrado. Son
+/// cuatro vectores y tres escalares; copiarlos es más barato que razonar
+/// sobre préstamos en el camino de la entrada.
+#[derive(Debug, Clone, Copy)]
 pub struct Camera {
     pub eye: Vec3,
     /// Punto del eje vertical alrededor del cual gira el ojo.
@@ -243,6 +249,15 @@ impl Camera {
     ///
     /// `screen_x` y `screen_y` van de `-1` a `1`, con la `y` ya invertida
     /// respecto del orden de filas de la imagen.
+    ///
+    /// # Precondición
+    ///
+    /// `width` y `height` **mayores que cero**. Con cualquiera en cero, el
+    /// aspect ratio sale no finito y la dirección resultante también: el
+    /// rayo no falla, recorre la escena sin impactar nada y devuelve cielo.
+    /// `input::ray_under_cursor` lo cubre rechazando todo cursor cuando el
+    /// rango está vacío; una llamada directa desde el renderer no puede
+    /// llegar ahí, porque el framebuffer no existe con lado cero.
     ///
     /// Es la única implementación de la perspectiva del proyecto. Extraerla
     /// es lo que hace **cierta** la promesa de que un clic apunta al píxel

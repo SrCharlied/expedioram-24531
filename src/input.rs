@@ -161,6 +161,74 @@ pub fn demo_action(key: char) -> Option<DemoAction> {
     }
 }
 
+/// Lo que un cuadro de entrada le pide al estado, ya resuelto.
+///
+/// El ciclo de la ventana puede recibir varias acciones en el **mismo**
+/// cuadro: un clic y una tecla, o `1`, `2` y `3` en el mismo sondeo. Con
+/// una sola variable `elegida` el último ganaba y los otros se perdían en
+/// silencio, y un `ResetCanvas` no impedía que una selección del mismo
+/// cuadro se aplicara **después** sobre el lienzo recién reiniciado: la
+/// consola decía «reiniciado» y el estado tenía una región revelándose.
+///
+/// Reducir primero y aplicar después arregla las dos cosas, y deja la
+/// política probable sin abrir una ventana.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct FrameIntent {
+    /// Grupos a activar, sin repetir. Cuatro caben siempre: son todos los
+    /// que existen.
+    paint: [Option<RevealGroup>; RevealGroup::COUNT],
+    /// Volver al lienzo. **Domina** sobre `paint` del mismo cuadro.
+    pub reset_canvas: bool,
+    /// Restaurar el encuadre hero. Convive con todo lo demás: mover la
+    /// cámara y pintar son cosas independientes.
+    pub reset_camera: bool,
+}
+
+impl FrameIntent {
+    /// Reduce las acciones de un cuadro a una intención.
+    pub fn from_actions(actions: impl IntoIterator<Item = DemoAction>) -> Self {
+        let mut intent = FrameIntent::default();
+
+        for action in actions {
+            match action {
+                DemoAction::Paint(grupo) => intent.add_paint(grupo),
+                DemoAction::ResetCanvas => intent.reset_canvas = true,
+                DemoAction::ResetCamera => intent.reset_camera = true,
+            }
+        }
+
+        intent
+    }
+
+    /// Añade un grupo a pintar, sin duplicarlo.
+    pub fn add_paint(&mut self, group: RevealGroup) {
+        if self.paint.contains(&Some(group)) {
+            return;
+        }
+
+        if let Some(hueco) = self.paint.iter_mut().find(|g| g.is_none()) {
+            *hueco = Some(group);
+        }
+    }
+
+    /// Los grupos a pintar **después** de aplicar la precedencia.
+    ///
+    /// Con `reset_canvas` la lista queda vacía: volver al lienzo y pintar en
+    /// el mismo cuadro es contradictorio, y de las dos lecturas la que
+    /// respeta lo que el usuario acaba de pedir es reiniciar. La otra deja
+    /// el estado y la consola diciendo cosas distintas.
+    pub fn paints(&self) -> impl Iterator<Item = RevealGroup> + '_ {
+        let vacio = self.reset_canvas;
+
+        self.paint.iter().flatten().copied().filter(move |_| !vacio)
+    }
+
+    /// ¿Este cuadro no pide nada?
+    pub fn is_empty(&self) -> bool {
+        !self.reset_canvas && !self.reset_camera && self.paint.iter().all(Option::is_none)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -542,5 +610,157 @@ mod tests {
             .collect();
 
         assert_eq!(alcanzables, DEMO_REGIONS.to_vec());
+    }
+
+    #[test]
+    fn un_clic_sobre_algo_del_finale_no_selecciona_nada() {
+        // El Monolito no es una region que se elija: es la consecuencia de
+        // haber pintado las tres. Un clic sobre el lo adelantaria, y la
+        // condicion que gobierna el climax quedaria en manos de donde
+        // apunte el puntero.
+        let mut scene = Scene::new();
+        let lienzo = scene.add_material(Material::new(Color::new(0.9, 0.87, 0.79)));
+        let cristal = scene.add_material(Material::new(Color::new(0.62, 0.86, 0.92)));
+
+        // Revelable **y** del finale: es el caso que la capa de picking
+        // tiene que rechazar, y no por inerte.
+        scene.add_object(SceneObject {
+            primitive: Cuboid::centrado(Vec3::zeros(), Vec3::new(2.0, 6.0, 2.0)).into(),
+            initial_material: lienzo,
+            final_material: cristal,
+            spatial_group: SpatialGroupId::Monolith,
+            reveal_group: RevealGroup::Finale,
+        });
+
+        let accel = SceneAccel::build(&scene).expect("hay geometria");
+        let camara = Camera::new(
+            Vec3::new(0.0, 0.0, 14.0),
+            Vec3::zeros(),
+            Vec3::zeros(),
+            Vec3::new(0.0, 1.0, 0.0),
+            DEFAULT_VERTICAL_FOV,
+        );
+
+        let objeto = scene.objects[0];
+        assert!(
+            objeto.is_revealable(),
+            "el objeto de prueba debe ser revelable"
+        );
+
+        // El rayo si da en el Monolito.
+        let centro = (400.0, 300.0);
+        let rayo = ray_under_cursor(&camara, centro, ANCHO, ALTO).expect("cursor dentro");
+        assert!(accel
+            .intersect(&scene, &rayo, &mut TraversalStats::default())
+            .is_some());
+
+        // Y aun asi no selecciona region.
+        assert_eq!(
+            pick_region(&scene, &accel, &camara, centro, ANCHO, ALTO),
+            None
+        );
+    }
+
+    // ------------------------------------------------- reducer del cuadro
+
+    #[test]
+    fn reset_canvas_domina_sobre_pintar_en_el_mismo_cuadro() {
+        // El fallo que este reducer existe para cerrar: `L` reemplazaba el
+        // estado y la seleccion del mismo cuadro se aplicaba despues, sobre
+        // el lienzo recien reiniciado. La consola decia «reiniciado» y una
+        // region quedaba revelandose.
+        let intent = FrameIntent::from_actions([
+            DemoAction::Paint(RevealGroup::Meadows),
+            DemoAction::ResetCanvas,
+        ]);
+
+        assert!(intent.reset_canvas);
+        assert_eq!(intent.paints().count(), 0, "el pintado sobrevivio al reset");
+
+        // Y en el orden contrario da lo mismo: la precedencia no depende de
+        // que tecla se sondeo antes.
+        let alreves = FrameIntent::from_actions([
+            DemoAction::ResetCanvas,
+            DemoAction::Paint(RevealGroup::Meadows),
+        ]);
+
+        assert_eq!(alreves, intent);
+    }
+
+    #[test]
+    fn varias_selecciones_del_mismo_cuadro_se_conservan_todas() {
+        // Con una sola variable, `1 + 2 + 3` en el mismo sondeo dejaba solo
+        // la ultima.
+        let intent = FrameIntent::from_actions([
+            DemoAction::Paint(RevealGroup::Meadows),
+            DemoAction::Paint(RevealGroup::Breakwater),
+            DemoAction::Paint(RevealGroup::FlyingWaters),
+        ]);
+
+        let grupos: Vec<RevealGroup> = intent.paints().collect();
+
+        assert_eq!(grupos.len(), 3, "se perdio alguna seleccion");
+        assert_eq!(grupos, DEMO_REGIONS.to_vec());
+    }
+
+    #[test]
+    fn una_seleccion_repetida_no_se_duplica() {
+        // Un clic y una tecla sobre la misma region son una sola cosa.
+        let intent = FrameIntent::from_actions([
+            DemoAction::Paint(RevealGroup::Breakwater),
+            DemoAction::Paint(RevealGroup::Breakwater),
+        ]);
+
+        assert_eq!(intent.paints().count(), 1);
+    }
+
+    #[test]
+    fn reset_camera_convive_con_todo() {
+        // Mover la camara y pintar son independientes: `R` no cancela nada
+        // ni nada lo cancela a el.
+        let intent = FrameIntent::from_actions([
+            DemoAction::Paint(RevealGroup::Meadows),
+            DemoAction::ResetCamera,
+        ]);
+
+        assert!(intent.reset_camera);
+        assert_eq!(intent.paints().count(), 1);
+
+        // Incluso junto a un reset de lienzo, que si borra el pintado.
+        let con_lienzo = FrameIntent::from_actions([
+            DemoAction::Paint(RevealGroup::Meadows),
+            DemoAction::ResetCanvas,
+            DemoAction::ResetCamera,
+        ]);
+
+        assert!(con_lienzo.reset_camera, "el reset de camara sobrevive");
+        assert!(con_lienzo.reset_canvas);
+        assert_eq!(con_lienzo.paints().count(), 0);
+    }
+
+    #[test]
+    fn un_cuadro_sin_entrada_no_pide_nada() {
+        let intent = FrameIntent::from_actions([]);
+
+        assert!(intent.is_empty());
+        assert_eq!(intent.paints().count(), 0);
+        assert!(!intent.reset_canvas);
+        assert!(!intent.reset_camera);
+
+        // Y cualquier accion lo deja de estar.
+        assert!(!FrameIntent::from_actions([DemoAction::ResetCamera]).is_empty());
+    }
+
+    #[test]
+    fn el_reducer_no_desborda_con_mas_acciones_que_grupos() {
+        // Cuatro huecos, y el finale no llega por picking; aun asi el
+        // reducer no debe indexar fuera de rango si alguien insiste.
+        let muchas: Vec<DemoAction> = (0..50)
+            .map(|i| DemoAction::Paint(RevealGroup::ALL[i % RevealGroup::COUNT]))
+            .collect();
+
+        let intent = FrameIntent::from_actions(muchas);
+
+        assert_eq!(intent.paints().count(), RevealGroup::COUNT);
     }
 }

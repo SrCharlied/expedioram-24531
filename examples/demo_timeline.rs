@@ -1,16 +1,25 @@
-//! Evidencia visual del gate del Hito 6: la demo, cuadro por hito.
+//! Genera estados visuales representativos de la línea temporal de
+//! revelación.
 //!
 //! ```text
 //! cargo run --release --example demo_timeline
 //! ```
 //!
-//! Simula el recorrido de la presentación —lienzo, las tres regiones una a
-//! una, el Monolito que arranca solo— con el mismo reloj y la misma
-//! velocidad derivada que usa la ventana, y guarda un render en cada
-//! momento que importa.
+//! # Lo que es, y lo que NO es
 //!
-//! Es la evidencia que acompaña al recorrido humano, no su sustituto: lo que
-//! no se puede comprobar aquí es que el ratón apunte donde el usuario cree.
+//! Es un **generador de estados**: mueve `RevealState` con un reloj
+//! sintético y renderiza en los puntos que importan. Sirve para ver que la
+//! interpolación produce estados coherentes y que el Monolito arranca solo,
+//! y sale idéntico en cada corrida.
+//!
+//! **No es una reproducción de la ventana.** No pasa por `demo_action` ni
+//! por `pick_region`, no procesa eventos de `minifb`, no ejerce el
+//! antirrebote del botón, no usa `plan_frame` ni el perfil interactivo
+//! —renderiza siempre a `800 x 600`—, no prueba `L` ni `R`, y usa un tiempo
+//! por cuadro fijo en vez de medir el de la máquina.
+//!
+//! Lo que sí atraviesa esa integración es `tests/demo_completa.rs` para el
+//! estado, y el recorrido humano para el resto.
 
 use std::path::PathBuf;
 
@@ -27,9 +36,17 @@ use expedition33_continente_inacabado::scenes::{safe_level_con, WaterPreset};
 const ANCHO: usize = 800;
 const ALTO: usize = 600;
 
-/// Tiempo por cuadro del perfil interactivo, medido en release. El mismo
-/// que usa la ventana.
-const FRAME_TIME: f32 = 0.0490;
+/// Tiempo por cuadro del perfil interactivo, **registrado**.
+///
+/// No es la cifra que usa la ventana: esa se **mide al arrancar**, en la
+/// máquina que corre. Esta es una medición archivada, y está aquí para que
+/// esta línea de tiempo salga idéntica en cada corrida.
+///
+/// Se rederiva con `cargo run --release --example interactive_frame_time`.
+/// Procedencia de esta: `400 x 300`, preset refractivo, mediana de quince
+/// repeticiones en el peor de `reveal 0.0` y `reveal 1.0`; commit `6402f3f`,
+/// 3 de septiembre de 2026, Ryzen 7 6800H, rustc 1.97.0.
+const FRAME_TIME: f32 = 0.0524;
 
 /// Carga el nivel con los assets, o aborta.
 ///
@@ -142,6 +159,14 @@ fn main() {
     while reveal.phase(RevealGroup::Finale) == RevealPhase::Revealing {
         reveal.advance(FRAME_TIME, velocidad);
         cuadros += 1;
+
+        // Un intermedio del finale: es lo que respalda que el Monolito
+        // **se interpola** y no aparece de golpe. Sin el, la secuencia solo
+        // demuestra extremos coherentes.
+        if cuadros == 15 {
+            println!("      Monolito a medio pintar, cuadro 15");
+            dibujar(&reveal, "5-monolito-a-medias");
+        }
     }
 
     println!("  6 · Monolito pintado en {cuadros} cuadros");
