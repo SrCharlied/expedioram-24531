@@ -48,10 +48,10 @@ pub const BACKGROUND_COLOR: u32 = FALLBACK_COLOR;
 ///
 /// # La toma hero no es el peor encuadre
 ///
-/// Estas cifras son del encuadre que se presenta. La vista cenital pegada
-/// al radio mínimo cuesta **`3.6x`** esto, porque llena la pantalla de
-/// bahía refractiva. Esa es la que la ventana usa para calibrar; ver
-/// `Blockout::worst_case_camera`.
+/// Estas cifras son del encuadre que se presenta. Los dos encuadres pegados
+/// al radio mínimo cuestan **más del triple** que esto, porque llenan la
+/// pantalla de bahía refractiva. Son con los que la ventana calibra; ver
+/// `Blockout::calibration_cameras`.
 ///
 /// # Ráfaga contra carga sostenida
 ///

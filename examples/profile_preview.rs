@@ -71,16 +71,15 @@ fn main() {
     let diorama = nivel_texturizado();
     let luces = luces_del_diorama(&diorama.anchors, &diorama.scale);
 
-    // El peor encuadre de la rejilla, buscado por su etiqueta y no por una
-    // posición: si la rejilla cambia, esto sigue apuntando al mismo sitio o
-    // falla diciéndolo.
-    let camaras = diorama.measurement_cameras();
-    let peor: &(String, Camera) = camaras
-        .iter()
-        .find(|(etiqueta, _)| etiqueta == "y+0 e+35 cerca")
-        .expect("la rejilla tiene que contener el zoom cercano de la toma hero");
+    // Los encuadres caros son **los dos** con los que calibra la ventana, no
+    // uno elegido a mano: entre ellos no hay campeón y la inspección visual
+    // tiene que cubrir los dos. Ver `Blockout::calibration_cameras`.
+    let hero = diorama.hero_camera();
+    let calibracion = diorama.calibration_cameras();
 
-    let encuadres = [("hero", &diorama.hero_camera()), ("cerca", &peor.1)];
+    let encuadres: Vec<(&str, &Camera)> = std::iter::once(("hero", &hero))
+        .chain(calibracion.iter().map(|(nombre, camara)| (*nombre, camara)))
+        .collect();
 
     // El estado más caro, que además es el que más detalle fino tiene en
     // pantalla: el Continente pintado con el Monolito a medio revelar.
@@ -112,7 +111,9 @@ fn main() {
             camara,
             Shading::Material,
         );
-        guardar(&completo, &format!("{SALIDA}/{nombre_encuadre}-final.png"));
+        let ranura = nombre_encuadre.replace([' ', '+'], "");
+
+        guardar(&completo, &format!("{SALIDA}/{ranura}-final.png"));
 
         for (nombre_perfil, perfil) in [
             ("media", InteractiveProfile::MEDIA),
@@ -132,10 +133,7 @@ fn main() {
             let mut ampliado = Framebuffer::new(ANCHO, ALTO);
             ampliado.blit_upscaled(&borrador);
 
-            guardar(
-                &ampliado,
-                &format!("{SALIDA}/{nombre_encuadre}-{nombre_perfil}.png"),
-            );
+            guardar(&ampliado, &format!("{SALIDA}/{ranura}-{nombre_perfil}.png"));
         }
     }
 

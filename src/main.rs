@@ -102,10 +102,10 @@ fn main() -> ExitCode {
     // escala medida: ni la altura ni la distancia se eligieron a mano.
     let mut camera = diorama.hero_camera();
 
-    // El encuadre con el que se calibra: el más caro que el usuario puede
-    // alcanzar. Se captura aquí, antes de consumir el blockout, por lo
-    // mismo que la hero.
-    let camara_de_calibracion = diorama.worst_case_camera();
+    // Los encuadres con los que se calibra: los dos más caros de la
+    // rejilla medida. Se capturan aquí, antes de consumir el blockout, por
+    // lo mismo que la hero.
+    let camaras_de_calibracion = diorama.calibration_cameras();
 
     // La cámara se construye antes de consumir el blockout: `hero_camera`
     // necesita las anclas y la escala, que viven junto a la escena.
@@ -128,48 +128,48 @@ fn main() -> ExitCode {
     // cuadros sin que nada avisara, y el gate de fluidez no llegaría a
     // dispararse nunca.
     //
-    // Se mide con el estado y el encuadre más caros que la demo puede
+    // Se mide con el estado y los encuadres más caros que la demo puede
     // presentar: `RevealState::worst_case()` —el clímax, con el Continente
-    // pintado y el `Finale` a medio revelar— en `worst_case_camera()`, que
-    // es la vista cenital pegada al radio mínimo.
+    // pintado y el `Finale` a medio revelar— en las dos cámaras de
+    // `calibration_cameras()`, y se toma la peor de las dos medianas.
     //
-    // Las dos elecciones son por lo mismo. La duración se fija **una vez**
+    // Las tres elecciones son por lo mismo. La duración se fija **una vez**
     // al arrancar, y después el usuario puede pintar, orbitar y acercarse
-    // mientras la transición corre. Una cifra tomada del encuadre que se
-    // presenta prometería quince cuadros que un zoom bastaría para
-    // incumplir, sin que nada avisara. Calibrar con el peor encuadre alarga
-    // un poco la animación donde sobran cuadros a cambio de que el criterio
-    // se cumpla en cualquier sitio al que el usuario pueda llegar.
+    // mientras la transición corre. Una cifra tomada del estado o del
+    // encuadre que se presentan prometería quince cuadros que un clic o un
+    // zoom bastarían para incumplir, sin que nada avisara. Calibrar con lo
+    // caro alarga un poco la animación donde sobran cuadros a cambio de que
+    // el criterio se cumpla en cualquier sitio al que el usuario pueda
+    // llegar.
+    //
+    // Dos cámaras y no una porque entre esas dos no hay campeón: se turnan
+    // el máximo entre corridas, dentro de la dispersión de la máquina. Ver
+    // `Blockout::calibration_cameras`.
     //
     // Antes se medía con `reveal 1.0` en la toma hero, que eran las dos
     // elecciones baratas a la vez. Ver la Tarea 7.1.
-    //
-    // Antes se medía con `reveal 1.0` por la mitad de la razón correcta. Es
-    // cierto que el lienzo es el estado barato —sin techos ópticos no hay un
-    // solo rayo secundario, y sale a la mitad—, pero de ahí no se sigue que
-    // el pintado sea el caro: entre los dos extremos, `resolve` muestrea
-    // **las dos** texturas en vez de una. El cuadro más caro de la demo es
-    // intermedio, y calibrar con el final le quitaba margen justo al tramo
-    // que los quince cuadros existen para proteger. Ver
-    // `RevealState::worst_case` y `examples/interactive_frame_time.rs`.
-    let mut calibracion = Vec::with_capacity(CUADROS_DE_CALIBRACION);
+    let mut frame_time = 0.0_f32;
 
-    for _ in 0..CUADROS_DE_CALIBRACION {
-        let inicio = Instant::now();
-        render(
-            &mut borrador,
-            &scene,
-            &accel,
-            &lights,
-            &RevealState::worst_case(),
-            &camara_de_calibracion,
-            shading,
-        );
-        calibracion.push(inicio.elapsed().as_secs_f32());
+    for (_, camara) in camaras_de_calibracion {
+        let mut muestras = Vec::with_capacity(CUADROS_DE_CALIBRACION);
+
+        for _ in 0..CUADROS_DE_CALIBRACION {
+            let inicio = Instant::now();
+            render(
+                &mut borrador,
+                &scene,
+                &accel,
+                &lights,
+                &RevealState::worst_case(),
+                &camara,
+                shading,
+            );
+            muestras.push(inicio.elapsed().as_secs_f32());
+        }
+
+        muestras.sort_by(|a, b| a.partial_cmp(b).expect("no hay NaN"));
+        frame_time = frame_time.max(muestras[muestras.len() / 2]);
     }
-
-    calibracion.sort_by(|a, b| a.partial_cmp(b).expect("no hay NaN"));
-    let frame_time = calibracion[calibracion.len() / 2];
 
     // Duración de la revelación, **derivada** de esa medición, con piso de
     // 1.5 s y techo de 4.0 s. Si el perfil no diera para quince cuadros

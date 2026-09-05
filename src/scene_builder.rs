@@ -356,41 +356,73 @@ impl Blockout {
         camaras
     }
 
-    /// El encuadre más caro de la rejilla: cenital y pegado al radio
-    /// mínimo.
+    /// Los dos encuadres caros de la rejilla, para calibrar con el peor de
+    /// los **dos** en vez de apostar por uno.
     ///
-    /// # Para qué existe
+    /// # Para qué existen
     ///
-    /// La ventana **calibra con esta** y no con la toma hero. La duración de
-    /// la revelación se fija una sola vez al arrancar, y a partir de ahí el
+    /// La ventana calibra con estos y no con la toma hero. La duración de la
+    /// revelación se fija una sola vez al arrancar, y a partir de ahí el
     /// usuario puede orbitar y acercarse mientras la transición corre: si la
     /// cifra saliera del encuadre que se presenta, bastaría con acercarse
     /// para que los quince cuadros dejaran de cumplirse sin que nada avisara.
     ///
-    /// Calibrar con el peor encuadre alarga un poco la animación en la toma
+    /// Calibrar con el encuadre caro alarga un poco la animación en la toma
     /// hero —donde sobran cuadros— a cambio de que el criterio se cumpla en
-    /// **cualquier** encuadre alcanzable. Es el mismo intercambio que ya hace
+    /// cualquier encuadre alcanzable. Es el mismo intercambio que ya hace
     /// `RevealState::worst_case` con el estado.
     ///
-    /// # Por qué esta celda
+    /// # Por qué estos dos
     ///
-    /// Es medida, no supuesta. En la rejilla de la Tarea 7.1 el coste lo
-    /// manda el radio, y a radio mínimo lo manda la elevación: mirar el
-    /// diorama desde arriba pone la bahía refractiva entera en pantalla. Dos
-    /// corridas dieron el máximo en `y+0 e+84 cerca` y en `y+90 e+84 cerca`,
-    /// separadas por un `0.1 %`: el yaw ya no distingue desde el cenit, así
-    /// que se fija el de la toma hero.
+    /// Son el primero y el segundo de la rejilla **por mínimo**, y en las
+    /// tres corridas de la matriz, en ese orden:
     ///
-    /// Si una remedición encontrara una celda más cara, el aviso del
-    /// ejemplo lo dice y esto hay que moverlo.
-    pub fn worst_case_camera(&self) -> Camera {
+    /// | Celda | Corrida 1 | Corrida 2 | Corrida 3 |
+    /// |---|---:|---:|---:|
+    /// | `y+0 e+35 cerca` | `0.0959` | `0.0980` | `0.1056` |
+    /// | `y+0 e+84 cerca` | `0.0948` | `0.0947` | `0.1039` |
+    /// | `y+90 e+84 cerca` | `0.0922` | `0.0918` | `0.1001` |
+    /// | `y+270 e+84 cerca` | `0.0915` | `0.0913` | `0.0983` |
+    ///
+    /// El eje que manda es el **radio**, y a radio mínimo le sigue la
+    /// elevación alta: es la que pone la bahía refractiva entera en
+    /// pantalla. Sobre eso, el yaw de la toma hero es el más caro, que es
+    /// coherente con que sea el que encara el borde roto.
+    ///
+    /// # Por qué dos y no uno
+    ///
+    /// Porque por **mediana** el orden se deshace: una corrida coronó
+    /// `y+270 e+84 cerca` y otra `y+0 e+35 cerca`, con diferencias dentro de
+    /// la dispersión de la máquina. El mínimo estima el suelo de coste y
+    /// reproduce; la mediana mezcla coste con interferencia y no.
+    ///
+    /// Así que se usa cada estadístico para lo suyo: el **mínimo** para
+    /// elegir qué celdas representan la banda cara, y la **mediana** de esas
+    /// celdas para derivar el tiempo con el que se dimensiona.
+    ///
+    /// Una versión anterior de esta función devolvía solo la cenital y la
+    /// documentaba como «el encuadre más caro de la rejilla». No lo era —ni
+    /// siquiera era la primera por mínimo—, y ascender un representante a
+    /// máximo es exactamente el error que la Tarea 7.1 lleva corrigiendo
+    /// desde el principio.
+    ///
+    /// Ninguna de las dos es el máximo del espacio continuo de cámaras: la
+    /// rejilla son cuarenta y ocho puntos.
+    pub fn calibration_cameras(&self) -> [(&'static str, Camera); 2] {
         const ELEVACION_EXTREMA: f32 = 84.0;
         const HASTA_EL_TOPE: f32 = 1.0e6;
 
-        let mut camara = self.camera_at(HERO_YAW_DEGREES, ELEVACION_EXTREMA);
-        camara.zoom(-HASTA_EL_TOPE);
+        let cerca = |elevacion: f32| {
+            let mut camara = self.camera_at(HERO_YAW_DEGREES, elevacion);
+            camara.zoom(-HASTA_EL_TOPE);
 
-        camara
+            camara
+        };
+
+        [
+            ("e+35 cerca", cerca(EYE_ELEVATION_DEGREES)),
+            ("e+84 cerca", cerca(ELEVACION_EXTREMA)),
+        ]
     }
 
     /// Índice de la toma hero dentro de `measurement_cameras`.
@@ -491,39 +523,59 @@ mod tests {
     }
 
     #[test]
-    fn la_camara_de_calibracion_es_una_celda_de_la_rejilla() {
-        // Si dejaran de coincidir, la ventana estaria calibrando con un
-        // encuadre que el banco no mide, y el aviso del ejemplo no podria
+    fn las_camaras_de_calibracion_son_celdas_de_la_rejilla() {
+        // Si dejaran de coincidir, la ventana estaria calibrando con
+        // encuadres que el banco no mide, y el aviso del ejemplo no podria
         // avisar de nada.
         let nivel = crate::scenes::safe_level(crate::scenes::WaterPreset::RefractiveWater);
-        let calibracion = nivel.worst_case_camera();
+        let rejilla = nivel.measurement_cameras();
 
-        let coincide = nivel
-            .measurement_cameras()
-            .into_iter()
-            .find(|(_, c)| (c.eye - calibracion.eye).magnitude() < 1e-4);
+        let etiquetas: Vec<String> = nivel
+            .calibration_cameras()
+            .iter()
+            .map(|(_, calibracion)| {
+                let (etiqueta, _) = rejilla
+                    .iter()
+                    .find(|(_, c)| (c.eye - calibracion.eye).magnitude() < 1e-4)
+                    .expect("una camara de calibracion no esta en la rejilla");
 
-        let (etiqueta, _) = coincide.expect("la camara de calibracion no esta en la rejilla");
-        assert_eq!(etiqueta, "y+0 e+84 cerca");
+                etiqueta.clone()
+            })
+            .collect();
+
+        assert_eq!(etiquetas, ["y+0 e+35 cerca", "y+0 e+84 cerca"]);
     }
 
     #[test]
-    fn la_camara_de_calibracion_esta_mas_cerca_y_mas_alta_que_la_hero() {
-        // Las dos propiedades que la hacen cara, comprobadas por separado
-        // para que un cambio de una de ellas no se cuele en la otra.
+    fn las_camaras_de_calibracion_estan_al_radio_minimo_y_por_encima_de_la_hero() {
+        // Las dos propiedades que las hacen caras, comprobadas por separado
+        // para que un cambio de una no se cuele en la otra. El radio es el
+        // eje que manda, asi que se exige el minimo exacto y no «mas cerca».
         let nivel = crate::scenes::safe_level(crate::scenes::WaterPreset::RefractiveWater);
         let centro = nivel.anchors.orbit_center;
         let hero = nivel.hero_camera();
-        let calibracion = nivel.worst_case_camera();
+        let minimo = nivel.scale.scene_radius * MIN_RADIUS_FACTOR;
 
-        assert!(
-            (calibracion.eye - centro).magnitude() < (hero.eye - centro).magnitude(),
-            "la de calibracion tiene que estar mas cerca"
-        );
-        assert!(
-            elevacion(&calibracion, centro) > elevacion(&hero, centro),
-            "y mas alta"
-        );
+        for (nombre, camara) in nivel.calibration_cameras() {
+            assert!(
+                ((camara.eye - centro).magnitude() - minimo).abs() < 1e-3,
+                "{nombre} no esta al radio minimo"
+            );
+            assert!(
+                elevacion(&camara, centro) >= elevacion(&hero, centro) - 1e-3,
+                "{nombre} no esta al menos tan alta como la hero"
+            );
+        }
+    }
+
+    #[test]
+    fn las_dos_camaras_de_calibracion_son_distintas() {
+        // Calibrar con el peor de dos no sirve de nada si las dos son la
+        // misma: el punto entero es que ninguna se proclame campeona.
+        let nivel = crate::scenes::safe_level(crate::scenes::WaterPreset::RefractiveWater);
+        let [(_, a), (_, b)] = nivel.calibration_cameras();
+
+        assert!((a.eye - b.eye).magnitude() > 1e-2);
     }
 
     #[test]

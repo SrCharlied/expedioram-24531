@@ -2277,10 +2277,10 @@ sigue siendo `800 × 600`.
 La comparación visual está en `evidence/hito7/`, generada con
 `cargo run --release --example profile_preview`: los dos perfiles ya
 **ampliados** con el mismo `blit_upscaled` que dibuja la ventana, junto al
-cuadro final de referencia, en la toma hero y en el peor encuadre. Ampliados y
-no a su tamaño a propósito: un PNG de `320 × 240` visto al `100 %` parecería
-más nítido que el de `800 × 600`, que es lo contrario de lo que pasa en
-pantalla.
+cuadro final de referencia, en la toma hero y en **los dos** encuadres de
+calibración. Ampliados y no a su tamaño a propósito: un PNG de `320 × 240`
+visto al `100 %` parecería más nítido que el de `800 × 600`, que es lo
+contrario de lo que pasa en pantalla.
 
 #### La ventana calibraba en el encuadre equivocado
 
@@ -2290,12 +2290,35 @@ da `1.5 s` de duración; si el usuario se acercaba durante la transición, el
 cuadro subía a `0.126 s` y la animación entregaba doce cuadros. El gate se
 cumplía en la medición y no en la obra.
 
-La duración se fija **una sola vez** al arrancar, así que tiene que salir del
-peor encuadre alcanzable y no del que se presenta. `Blockout::worst_case_camera()`
-—cenital, pegada al radio mínimo— es con la que calibra ahora. Cuesta `0.4 s`
-de arranque y a cambio los quince cuadros se cumplen en cualquier sitio al que
-el usuario pueda llegar. Es el mismo intercambio que ya hacía
-`RevealState::worst_case` con el estado.
+La duración se fija **una sola vez** al arrancar, así que tiene que salir de
+lo caro y no de lo que se presenta. `Blockout::calibration_cameras()` devuelve
+los **dos** encuadres caros —radio mínimo, elevación hero y cenital— y la
+ventana se queda con la peor de las dos medianas. Cuesta `0.8 s` de arranque y
+a cambio los quince cuadros se cumplen en cualquier sitio al que el usuario
+pueda llegar. Es el mismo intercambio que ya hacía `RevealState::worst_case`
+con el estado.
+
+**Dos y no una, y esto es una corrección sobre la versión anterior.** La
+primera implementación devolvía solo la cenital y la documentaba como «el
+encuadre más caro de la rejilla». No lo era, y encima no era ni la primera:
+
+| Celda, por mínimo | Corrida 1 | Corrida 2 | Corrida 3 |
+|---|---:|---:|---:|
+| `y+0 e+35 cerca` | `0.0959` | `0.0980` | `0.1056` |
+| `y+0 e+84 cerca` | `0.0948` | `0.0947` | `0.1039` |
+| `y+90 e+84 cerca` | `0.0922` | `0.0918` | `0.1001` |
+| `y+270 e+84 cerca` | `0.0915` | `0.0913` | `0.0983` |
+
+Por **mínimo** el orden es estable en las tres corridas y las dos primeras son
+las dos del yaw hero. Por **mediana** se deshace: una corrida coronó
+`y+270 e+84 cerca` y otra `y+0 e+35 cerca`, con diferencias dentro de la
+dispersión de la máquina.
+
+De ahí la regla, que además reconcilia los dos estadísticos: el **mínimo**
+estima el suelo de coste y sirve para elegir qué celdas representan la banda
+cara; la **mediana** de esas celdas sirve para derivar el tiempo con el que se
+dimensiona. Se calibra con la peor de las dos medianas y se deja de apostar
+por una.
 
 Y eso destapó un fallo de contabilidad en `tests/demo_completa.rs`: metía un
 `advance` extra «para activar el Monolito» y empezaba a contar después, así
@@ -2377,19 +2400,34 @@ rejilla vieja, con la nueva costaba `0.1241 s`. Lo que reproduce son los
 cocientes dentro de una corrida, y son los cocientes los que sostienen todas
 las conclusiones de arriba.
 
+#### La fase 3 tenía una puerta lateral
+
+El ejemplo podía imprimir que la configuración aplicada **falla el gate** y
+terminar con código cero: `recomendar` no devolvía nada y el código de salida
+solo miraba la derivación de la fase 2. Era la misma puerta que el Hito 5
+cerró en los tres generadores de evidencia, reabierta justo en la fase que
+decide.
+
+Ahora `recomendar` devuelve el veredicto de **la configuración que el código
+tiene puesta** —no si alguna combinación cumple, que no sirve de nada si la
+que se envía no es esa— y ese veredicto entra en el código de salida. Se
+comprobó forzándolo: con el margen exigido puesto en un valor imposible, el
+ejemplo sale con `1`.
+
 #### Gates registrados
 
 ```text
 cargo fmt -- --check                        OK
 cargo clippy --all-targets -- -D warnings   0 avisos
-cargo test                                  396 tests, 0 fallos
+cargo test                                  397 tests, 0 fallos
 cargo build --release                       OK
-cargo run --release --example interactive_frame_time   codigo 0: el gate pasa
+cargo run --release --example interactive_frame_time   codigo 0; con margen
+                                            imposible, codigo 1
 cargo run --release --example performance_matrix       codigo 0: el gate pasa
-cargo run                                   320 x 240, 15 cuadros, 0.0972 s
+cargo run                                   320 x 240, 15 cuadros, 0.1107 s
 ```
 
-Reparto de los 396: `360` de librería, `16` del generador de assets, `8` de
+Reparto de los 397: `361` de librería, `16` del generador de assets, `8` de
 humo del render, `6` de sombras submarinas y `6` de la demo completa.
 
 ---
@@ -2412,7 +2450,7 @@ Ninguna de estas filas puede completarse por estimación. Cada hito llena la suy
 | 7 | Peor encuadre alcanzable | **Registrado** — rejilla de 48 cámaras; el peor es la vista cenital al radio mínimo, `3.2x` la toma hero |
 | 7 | Perfil interactivo por defecto | **Cerrado** — `BAJA` `320 × 240`, medido contra `MEDIA` en las dos palancas |
 | 7 | Límite de zoom | **Cerrado** — `min_radius = 1.8 S`, elegido con `2.34x` de margen sobre el crítico |
-| 7 | Encuadre de calibración de la ventana | **Registrado** — `worst_case_camera()`, no la toma hero: la duración se fija una vez y el usuario puede acercarse después |
+| 7 | Encuadre de calibración de la ventana | **Registrado** — `calibration_cameras()`, las dos caras y no la toma hero: la duración se fija una vez y el usuario puede acercarse después |
 | 7 | Caracterización completa del rango interactivo | **Abierto** — la rejilla son 48 puntos de un espacio continuo |
 | 8 | Hardware de medición y tiempos finales en release | Pendiente |
 

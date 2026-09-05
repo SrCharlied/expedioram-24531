@@ -42,10 +42,10 @@ const ALTO: usize = 600;
 /// máquina que corre. Esta es una medición archivada, y está aquí para que
 /// esta línea de tiempo salga idéntica en cada corrida.
 ///
-/// Se rederiva con `cargo run --release --example interactive_frame_time`.
-/// Es lo que la ventana mide al arrancar: el estado **y el encuadre** más
-/// caros que la demo puede presentar —`RevealState::worst_case()` en
-/// `Blockout::worst_case_camera()`— con el perfil interactivo que se envía.
+/// Es lo que la ventana mide al arrancar: el estado **y los encuadres** más
+/// caros que la demo puede presentar —`RevealState::worst_case()` en las dos
+/// cámaras de `Blockout::calibration_cameras()`, la peor de las dos— con el
+/// perfil interactivo que se envía.
 ///
 /// Procedencia: `320 x 240`, preset refractivo, mediana de quince rondas
 /// intercaladas y rotadas; árbol de la Tarea 7.1 sobre `20e0f37`, 4 de

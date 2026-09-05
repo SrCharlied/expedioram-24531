@@ -374,7 +374,7 @@ fn fase_de_mitigaciones(diorama: &Blockout, direccion: &Punto) -> Vec<(String, f
 /// combinación que los mete en `3.95 s` pasa hoy y falla mañana: seis
 /// corridas de este ejemplo dejaron el mismo encuadre a los dos lados del
 /// límite. Por eso se exige un margen explícito, y no un aprobado.
-fn recomendar(resultados: &[(String, f64, bool, f64)]) {
+fn recomendar(resultados: &[(String, f64, bool, f64)]) -> bool {
     println!("\n  con margen exigido de {MARGEN_EXIGIDO:.2}x sobre el critico");
 
     let holgadas: Vec<&(String, f64, bool, f64)> = resultados
@@ -385,7 +385,7 @@ fn recomendar(resultados: &[(String, f64, bool, f64)]) {
     if holgadas.is_empty() {
         println!("  NINGUNA de las combinaciones medidas deja ese margen.");
         println!("  Hay que bajar mas la resolucion o recortar mas el zoom.");
-        return;
+        return false;
     }
 
     // Cuál de las que cumplen es «la mejor» no lo decide esta función: las
@@ -415,19 +415,39 @@ fn recomendar(resultados: &[(String, f64, bool, f64)]) {
         println!("    {nombre:<16} {margen:.2}x{marca}");
     }
 
-    match resultados.iter().find(|(n, _, _, _)| *n == aplicada) {
+    // El veredicto que importa: no si **alguna** combinación cumple, sino si
+    // la que el código tiene puesta cumple. Que exista una configuración
+    // buena no sirve de nada si la que se envía no es esa.
+    let al_dia = match resultados.iter().find(|(n, _, _, _)| *n == aplicada) {
         Some((_, _, true, margen)) if *margen >= MARGEN_EXIGIDO => {
-            println!("\n  la configuracion aplicada ({aplicada}) deja {margen:.2}x. Al dia.")
+            println!("\n  la configuracion aplicada ({aplicada}) deja {margen:.2}x. Al dia.");
+            true
         }
-        Some((_, _, _, margen)) => {
-            println!("\n  AVISO: la configuracion aplicada ({aplicada}) solo deja {margen:.2}x.")
+        Some((_, _, true, margen)) => {
+            println!("\n  AVISO: la configuracion aplicada ({aplicada}) solo deja {margen:.2}x,");
+            println!(
+                "  por debajo del {MARGEN_EXIGIDO:.2}x exigido. Pasa el gate hoy y no manana."
+            );
+            false
         }
-        None => println!("\n  AVISO: la configuracion aplicada ({aplicada}) no esta medida aqui."),
-    }
+        Some((_, _, false, margen)) => {
+            println!(
+                "\n  AVISO: la configuracion aplicada ({aplicada}) FALLA el gate ({margen:.2}x)."
+            );
+            false
+        }
+        None => {
+            println!("\n  AVISO: la configuracion aplicada ({aplicada}) no esta medida aqui.");
+            println!("  Anadir su radio minimo a RADIOS_MINIMOS.");
+            false
+        }
+    };
 
     println!("\n  Bajar el perfil por defecto o recortar el zoom son decisiones de");
     println!("  presentacion, no correcciones de medicion: cambian lo que el usuario");
     println!("  ve. Esta fase las mide; elegirlas es del humano.");
+
+    al_dia
 }
 
 fn main() {
@@ -646,12 +666,18 @@ fn main() {
     // veredicto oscilando, saber qué da el otro perfil no es información
     // opcional.
     let mitigaciones = fase_de_mitigaciones(&diorama, &camaras[peor_camara]);
-    recomendar(&mitigaciones);
+    let configuracion_al_dia = recomendar(&mitigaciones);
 
     println!("\n  Registrar junto a la cifra: commit, fecha, arbol, hardware y toolchain.");
     println!("  Un tiempo solo significa algo junto a los que se midieron con el.");
 
-    if fallo_de_gate {
+    // El veredicto de la fase 3 llega al código de salida.
+    //
+    // Una versión anterior lo imprimía y salía con cero: el ejemplo podía
+    // gritar que la configuración aplicada falla el gate y terminar en
+    // éxito. Es la misma puerta lateral que el Hito 5 cerró en los
+    // generadores de evidencia, reabierta en la fase que decide.
+    if fallo_de_gate || !configuracion_al_dia {
         std::process::exit(1);
     }
 }
