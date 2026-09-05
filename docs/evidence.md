@@ -2335,7 +2335,7 @@ cae **dentro** de la llamada que completa la última región.
 |---|---|---|
 | Selección del peor punto | por el mínimo | por la **mediana**: el mínimo es el mejor cuadro que se llegó a ver, y de un presupuesto interesa el coste típico |
 | Referencia de los cocientes | `camaras[0]`, asumiendo que la hero es la primera | `hero_index()`, porque en la rejilla no lo es |
-| Procedencia | árbol sin commitear sobre `2c7960a` | árbol de esta tarea sobre `20e0f37` |
+| Procedencia | árbol sin commitear sobre `2c7960a` | el commit que las contiene, `20a974e` |
 
 #### La matriz, reejecutada
 
@@ -2390,7 +2390,8 @@ cargo run --release --example performance_matrix        (la matriz)
 cargo run --release --example profile_preview           (los seis PNG)
 ```
 
-Árbol de la Tarea 7.1 sobre `20e0f37`; Ryzen 7 6800H; rustc 1.97.0; release.
+Árbol de la Tarea 7.1 sobre `20e0f37`, commiteado después como `20a974e`;
+Ryzen 7 6800H; rustc 1.97.0; release.
 
 Las tablas de encuadres de esta sección y las de la sección anterior **no son
 comparables entre sí en valor absoluto**: la rejilla de cuarenta y ocho
@@ -2432,7 +2433,14 @@ humo del render, `6` de sombras submarinas y `6` de la demo completa.
 
 ---
 
-### Tarea 7.2 — Primer lote incremental en Aguas Voladoras
+### Tarea 7.2 — Lote 1, submarino: experimento descartado
+
+> **Rechazado como target, aprobado como experimento.** Está aislado, medido
+> y reproducible, y produjo una conclusión válida que decidió el lote 2. Las
+> quince piezas **no** siguen en el código: el lote 2 parte otra vez de las
+> `160` del nivel seguro. La evidencia visual queda archivada en
+> `evidence/hito7/densidad/lote-1-submarino/`, que es lo que justifica el
+> rechazo.
 
 El lote autorizado, quince primitivas y todas dentro de la bahía:
 
@@ -2546,20 +2554,13 @@ que ese píxel enseña.
 
 #### Veredicto
 
-El lote **cabe** —`2.57x` de reserva, muy por encima del `1.30x` operativo— y
-**no aporta lectura**: un `0.05 %` del cuadro que se presenta. Por el criterio
-de la propia autorización, la recomendación es retirarlo.
+El lote **cabía** —`2.57x` de reserva, muy por encima del `1.30x` operativo— y
+**no aportaba lectura**: un `0.05 %` del cuadro que se presenta. Aceptarlo
+porque cabe habría convertido la reserva en una colección de objetos que
+existen para el renderer y desaparecen para quien mira.
 
-Retirarlo es cambiar `Density::Safe` por defecto donde haga falta, que es lo
-que ya hace todo el código que se envía: el candidato existe solo para
-medirlo. La decisión de composición es del humano, y esta sección es el
-material para tomarla.
-
-Si en su lugar se quiere un lote que sí se lea, el diagnóstico apunta fuera
-del agua y dentro de la misma región: `A-11`, el borde roto, está en primer
-plano y **no** detrás de la superficie refractiva. Ahí quince primitivas
-ocuparían píxeles de verdad. No se propone como hecho: se propone como el
-siguiente experimento, con el mismo procedimiento de medir, mirar y decidir.
+Retirado. Y con una conclusión que se cobró en el lote siguiente: el
+diagnóstico apuntaba fuera del agua y dentro de la misma región.
 
 #### Gates registrados
 
@@ -2577,6 +2578,136 @@ Reparto de los 402: `366` de librería, `16` del generador de assets, `8` de
 humo del render, `6` de sombras submarinas y `6` de la demo completa.
 
 Procedencia: árbol de la Tarea 7.2 sobre `518c1e5`, 5 de septiembre de 2026,
+Ryzen 7 6800H, rustc 1.97.0, release.
+
+---
+
+### Tarea 7.2 — Lote 2, piezas hero: cuatro primitivas
+
+El lote **reemplaza** al anterior, no se acumula sobre él. Parte otra vez de
+las `160`:
+
+| Entrada | Seguro | Lote | Objetivo | Máximo del inventario |
+|---|---:|---:|---:|---:|
+| `A-03` casco | 12 | `+2` | 14 | 20 |
+| `A-11` borde roto | 8 | `+2` | 10 | **10** |
+| **Aguas Voladoras** | **58** | **+4** | **62** | |
+| **Escena** | **160** | **+4** | **164** | |
+
+Cuatro y no las siete que la autorización permitía. La reserva no premia
+llenarla: si estas cuatro se leen, hay margen para pedir más; si no, se han
+gastado cuatro.
+
+#### Dónde van, y por qué ahí
+
+Lo que el lote 1 enseñó al fallar: dentro de la bahía el reflejo del agua se
+come el detalle, así que las primitivas caras de trazar son además las que
+menos se leen. Las cuatro de este lote son piezas **hero**:
+
+- **`A-11`, dos bloques que continúan el desgarro** por los dos extremos, en
+  `t = -1` y `t = 8`. Están en primer plano y **no** detrás de la superficie
+  refractiva, y caen en los extremos, lejos del centro por donde bajan la
+  cadena y el ancla. Van fuera del bucle de los ocho para que los del nivel
+  seguro salgan bit a bit iguales: el reordenado de la muesca ordena un array
+  de ocho, y ampliarlo a diez cambiaría qué bloque recibe qué altura.
+- **`A-03`, un tablón de cubierta levantado y una tabla del costado
+  desprendida.** Silueta rota y suspendida, que es la prioridad visual que
+  declara el inventario; no precisión naval. Las dos al lado de babor y hacia
+  popa, en `-Z` y `-X` locales: la cadena baja hacia `+X` y `+Z`, y hay un
+  test que prohíbe invadir ese corredor.
+
+#### Lo que costó
+
+| Preset | Prim. | `320 × 240` | 2os rayos |
+|---|---:|---:|---:|
+| `safe-revealing` | 160 | `0.0507` | `14 355` |
+| `target-revealing` | 164 | `0.0510` | `14 151` |
+
+```text
++4 primitivas cuestan      +2.1 %   (pareado)
+rayos secundarios          -204
+```
+
+**El lote reduce los rayos secundarios.** Los dos bloques del borde roto
+ocluyen parte de la cara frontal del agua desde la cámara, así que menos
+rayos primarios llegan a la superficie refractiva. Es densidad que se paga
+sola: cuatro primitivas más de recorrido a cambio de doscientos rayos menos
+de óptica.
+
+```text
+peor cuadro interactivo    0.0811 s   (y+0 e+35 cerca)
+critico del gate           0.2667 s
+reserva                    3.29x en tiempo
+umbral operativo           1.30x   ->  el lote cabe
+```
+
+#### Lo que compró
+
+| Encuadre | Lote 1 (15 piezas) | Lote 2 (4 piezas) |
+|---|---:|---:|
+| hero | `0.05 %` | **`0.95 %`** |
+| `e+35 cerca` | `0.09 %` | `2.08 %` |
+| `e+84 cerca` | `0.24 %` | `1.19 %` |
+
+Píxeles que cambian de forma perceptible, con el mismo umbral de `8/255`.
+**Diecinueve veces más lectura en la toma hero con cuatro piezas en vez de
+quince**, y a menos de un tercio del coste.
+
+Y el orden de las tres cifras dice de dónde viene. En el lote 1 crecía hacia
+el cenit —`0.05`, `0.09`, `0.24`—, que es la única vista que mira dentro de
+la bahía. En el lote 2 el máximo está en `e+35 cerca`, la vista casi
+horizontal, que es donde el borde roto en primer plano ocupa más cuadro. El
+detalle que se lee es el que está delante, no el que está dentro.
+
+Eso también deja una hipótesis sin comprobar y hay que decirlo: **la
+descomposición entre `A-03` y `A-11` no está medida**. Por el mismo argumento,
+las dos piezas del casco —que están dentro del agua— probablemente aporten
+poco de ese `0.95 %`. Medirlo exigiría un tercer nivel con solo el borde, y
+no se ha hecho.
+
+#### Veredicto
+
+El lote **cabe** con `3.29x` y **se lee**. La decisión de conservarlo es de
+composición y es del humano; los pares de `evidence/hito7/densidad/lote-2-hero/`
+son el material.
+
+#### Correcciones de la matriz
+
+Cuatro, pedidas antes de medir otro lote:
+
+| Qué | Antes | Ahora |
+|---|---|---|
+| Reserva por debajo del umbral | se imprimía y salía con `0` | entra en el código de salida |
+| Columna relativa de la rejilla | dividía por `camaras[0]` | `hero_index()` |
+| Test de contención | X y Z | X, **Y** y Z |
+| Procedencia | `20e0f37` | `20a974e` |
+
+La segunda no era cosmética. `camaras[0]` es `y+0 e-84 cerca`, la vista desde
+debajo del plinto: la celda **más barata** de las cuarenta y ocho, con cero
+rayos secundarios porque desde ahí la bahía no se ve. El peor encuadre
+aparecía como un `+300 %` sobre «la hero» cuando sobre la hero de verdad es un
+`+64 %`. El número estaba inflado más de cuatro veces.
+
+Y el preview escribe en `evidence/hito7/densidad/<lote>/`, para que el
+siguiente candidato no borre la evidencia que justifica el rechazo del
+anterior.
+
+#### Gates registrados
+
+```text
+cargo fmt -- --check                        OK
+cargo clippy --all-targets -- -D warnings   0 avisos
+cargo test                                  404 tests, 0 fallos
+cargo build --release                       OK
+cargo run --release --example interactive_frame_time   codigo 0, margen 3.4x
+cargo run --release --example performance_matrix       codigo 0, reserva 3.29x
+cargo run --release --example density_preview          6 PNG y el delta de pixeles
+```
+
+Reparto de los 404: `368` de librería, `16` del generador de assets, `8` de
+humo del render, `6` de sombras submarinas y `6` de la demo completa.
+
+Procedencia: árbol de la Tarea 7.2 sobre `20a974e`, 5 de septiembre de 2026,
 Ryzen 7 6800H, rustc 1.97.0, release.
 
 ---
@@ -2601,9 +2732,10 @@ Ninguna de estas filas puede completarse por estimación. Cada hito llena la suy
 | 7 | Límite de zoom | **Cerrado** — `min_radius = 1.8 S`, elegido con `2.34x` de margen sobre el crítico |
 | 7 | Encuadre de calibración de la ventana | **Registrado** — `calibration_cameras()`, las dos caras y no la toma hero: la duración se fija una vez y el usuario puede acercarse después |
 | 7 | Caracterización completa del rango interactivo | **Abierto** — la rejilla son 48 puntos de un espacio continuo |
-| 7 | Coste del primer lote de densidad | **Registrado** — `+15` primitivas, `+7.3 %` de tiempo, **cero** rayos secundarios; reserva `2.57x` |
-| 7 | Lectura del primer lote de densidad | **Registrado** — `0.05 %` del cuadro hero cambia de forma perceptible: no aporta |
-| 7 | Segundo lote de densidad | **Abierto** — el diagnóstico apunta a `A-11`, en primer plano y no detrás del agua |
+| 7 | Lote 1 de densidad, submarino | **Descartado** — `+15` primitivas, `+7.3 %` de tiempo y `0.05 %` del cuadro hero: cabía y no se leía |
+| 7 | Lote 2 de densidad, piezas hero | **Registrado** — `+4` primitivas, `+2.1 %`, **−204** rayos secundarios, `0.95 %` del cuadro hero; reserva `3.29x` |
+| 7 | Reparto de la lectura entre `A-03` y `A-11` | **Abierto** — exigiría un tercer nivel con solo el borde |
+| 7 | Lote 3 de densidad | **Abierto** — no autorizado; el criterio es detenerse cuando la imagen deja de mejorar |
 | 8 | Hardware de medición y tiempos finales en release | Pendiente |
 
 **Regla.** Todos los benchmarks se ejecutan en release. El perfil `dev` de este proyecto lleva `opt-level = 3` heredado de la base académica, así que un tiempo medido en debug **parece** comparable a release y no lo es.

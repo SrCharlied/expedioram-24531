@@ -93,7 +93,7 @@ use expedition33_continente_inacabado::reveal::{
 };
 use expedition33_continente_inacabado::scene_builder::Blockout;
 use expedition33_continente_inacabado::scenes::{
-    safe_level_con, target_level_con, Density, WaterPreset,
+    safe_level_con, target_level_con, Density, WaterPreset, SAFE, TARGET,
 };
 use expedition33_continente_inacabado::stats::{median_ratio, summarize};
 
@@ -342,11 +342,17 @@ fn main() {
         })
         .expect("hay camaras");
 
+    // La hero **no** es la primera de la rejilla: se pide por indice y no se
+    // asume. Una version anterior dividia por `camaras[0]`, que es
+    // `y+0 e-84 cerca` —la vista desde debajo del plinto, la mas barata de
+    // las cuarenta y ocho—, e inflaba el cociente sin avisar.
+    let hero_i = niveles[2].hero_index();
+
     println!(
         "\n  peor camara  {}   {:.4} s   ({:+.1} % sobre la hero, pareado)",
         peor_camara.nombre,
         summarize(&peor_camara.tiempos).median,
-        100.0 * (median_ratio(&peor_camara.tiempos, &camaras[0].tiempos) - 1.0)
+        100.0 * (median_ratio(&peor_camara.tiempos, &camaras[hero_i].tiempos) - 1.0)
     );
 
     // ------------------------------------------------ el presupuesto
@@ -368,7 +374,8 @@ fn main() {
 
     println!("\n  el lote de la Tarea 7.2");
     println!(
-        "  +15 primitivas cuestan     {:+.1} %   (target-revealing vs safe-revealing, pareado)",
+        "  +{} primitivas cuestan      {:+.1} %   (target-revealing vs safe-revealing, pareado)",
+        TARGET.total() - SAFE.total(),
         100.0 * (coste_del_lote - 1.0)
     );
     println!(
@@ -385,13 +392,19 @@ fn main() {
 
     println!("  reserva                    {reserva:.2}x en tiempo");
 
-    if reserva < MARGEN_MINIMO {
+    // El veredicto llega al codigo de salida. Una version anterior lo
+    // imprimia y salia con cero: la matriz podia decir que el candidato no
+    // cabe y terminar en exito, que es la misma puerta lateral que la Tarea
+    // 7.1 cerro en la fase 3 del otro ejemplo.
+    let cabe = reserva >= MARGEN_MINIMO;
+
+    if cabe {
+        println!("  umbral operativo           {MARGEN_MINIMO:.2}x   ->  el lote cabe");
+    } else {
         println!(
             "\n  AVISO: el candidato deja {reserva:.2}x y el umbral operativo es {MARGEN_MINIMO:.2}x."
         );
         println!("  El lote hay que retirarlo o recortarlo.");
-    } else {
-        println!("  umbral operativo           {MARGEN_MINIMO:.2}x   ->  el lote cabe");
     }
 
     match reveal_duration(peor as f32) {
@@ -410,4 +423,8 @@ fn main() {
     println!("  objetivo. Y el escalon mas caro de la tabla no es el conteo sino la");
     println!("  optica: mirar la columna de rayos secundarios junto a los tiempos.");
     println!("\n  Registrar junto a las cifras: commit, fecha, arbol, hardware y toolchain.");
+
+    if !cabe {
+        std::process::exit(1);
+    }
 }

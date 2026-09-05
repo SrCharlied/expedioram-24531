@@ -41,9 +41,9 @@ pub const BACKGROUND_COLOR: u32 = FALLBACK_COLOR;
 /// costo real.
 ///
 /// Todas: preset `safe-refractive-water`, estado pintado, **toma hero**,
-/// mediana de quince rondas intercaladas y rotadas en release; árbol de la
-/// Tarea 7.1 sobre `20e0f37`, 4 de septiembre de 2026, Ryzen 7 6800H, rustc
-/// 1.97.0. Se rederivan con
+/// mediana de quince rondas intercaladas y rotadas en release; commit
+/// `20a974e`, 4 de septiembre de 2026, Ryzen 7 6800H, rustc 1.97.0. Se
+/// rederivan con
 /// `cargo run --release --example performance_matrix`.
 ///
 /// # La toma hero no es el peor encuadre

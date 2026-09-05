@@ -48,8 +48,8 @@ const ALTO: usize = 600;
 /// perfil interactivo que se envía.
 ///
 /// Procedencia: `320 x 240`, preset refractivo, mediana de quince rondas
-/// intercaladas y rotadas; árbol de la Tarea 7.1 sobre `20e0f37`, 4 de
-/// septiembre de 2026, Ryzen 7 6800H, rustc 1.97.0. Se rederiva con
+/// intercaladas y rotadas; commit `20a974e`, 4 de septiembre de 2026,
+/// Ryzen 7 6800H, rustc 1.97.0. Se rederiva con
 /// `cargo run --release --example interactive_frame_time`.
 ///
 /// # Las tres versiones anteriores

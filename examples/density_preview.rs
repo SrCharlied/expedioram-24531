@@ -40,6 +40,14 @@ use expedition33_continente_inacabado::scenes::{
 const ANCHO: usize = 800;
 const ALTO: usize = 600;
 
+/// Nombre del lote que se esta midiendo.
+///
+/// Va en la ruta a proposito. El lote 1 —quince primitivas submarinas— se
+/// rechazo, y sus PNG son la evidencia que justifica el rechazo: si el
+/// siguiente lote escribiera encima, la conclusion se quedaria sin respaldo.
+/// Cada lote tiene su carpeta y ninguno pisa al anterior.
+const LOTE: &str = "lote-2-hero";
+
 const SALIDA: &str = "evidence/hito7/densidad";
 
 fn nivel(densidad: Density) -> Blockout {
@@ -118,13 +126,15 @@ fn main() {
         ("target", nivel(Density::Target)),
     ];
 
-    if let Err(e) = std::fs::create_dir_all(SALIDA) {
-        eprintln!("error: no se pudo crear {SALIDA}: {e}");
+    let salida = format!("{SALIDA}/{LOTE}");
+
+    if let Err(e) = std::fs::create_dir_all(&salida) {
+        eprintln!("error: no se pudo crear {salida}: {e}");
         std::process::exit(1);
     }
 
     println!(
-        "density_preview · el lote de la Tarea 7.2
+        "density_preview {LOTE} · el lote de la Tarea 7.2
 "
     );
 
@@ -164,7 +174,7 @@ fn main() {
             );
 
             let ranura = encuadre.replace([' ', '+'], "");
-            guardar(&framebuffer, &format!("{SALIDA}/{ranura}-{nombre}.png"));
+            guardar(&framebuffer, &format!("{salida}/{ranura}-{nombre}.png"));
             cuadros.push(framebuffer);
         }
 

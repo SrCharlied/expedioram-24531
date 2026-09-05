@@ -50,14 +50,14 @@ pub fn aguas_voladoras(
 ) -> f32 {
     let superficie = ancla.y + ALTURA_SUPERFICIE;
 
-    lecho(scene, paleta, ancla, densidad);
-    casco(scene, paleta, ancla);
+    lecho(scene, paleta, ancla);
+    casco(scene, paleta, ancla, densidad);
     mastil(scene, paleta, ancla);
     cadena(scene, paleta, ancla);
     ancla_del_barco(scene, paleta, ancla);
-    kelp(scene, paleta, ancla, densidad);
-    rocas(scene, paleta, ancla, densidad);
-    borde_roto(scene, paleta, borde);
+    kelp(scene, paleta, ancla);
+    rocas(scene, paleta, ancla);
+    borde_roto(scene, paleta, borde, densidad);
 
     // `A-01` va al final para que su presencia o ausencia no desplace los
     // índices de lo que hay dentro.
@@ -66,6 +66,34 @@ pub fn aguas_voladoras(
     }
 
     superficie
+}
+
+/// Cuántas primitivas produce cada entrada del nivel objetivo.
+///
+/// Existe para que el test de los máximos del inventario cuente la escena en
+/// vez de releer la constante que declara el conteo: si el generador y el
+/// presupuesto discreparan, releer el presupuesto no lo notaría.
+pub struct EntradasDelObjetivo {
+    pub casco: usize,
+    pub borde_roto: usize,
+}
+
+/// Cuenta `A-03` y `A-11` en el nivel objetivo, construyéndolas aisladas.
+pub fn entradas_del_objetivo() -> EntradasDelObjetivo {
+    let ancla = Vec3::zeros();
+
+    let mut escena_casco = Scene::new();
+    let paleta = Palette::registrar(&mut escena_casco);
+    casco(&mut escena_casco, &paleta, ancla, Density::Target);
+
+    let mut escena_borde = Scene::new();
+    let paleta = Palette::registrar(&mut escena_borde);
+    borde_roto(&mut escena_borde, &paleta, ancla, Density::Target);
+
+    EntradasDelObjetivo {
+        casco: escena_casco.objects.len(),
+        borde_roto: escena_borde.objects.len(),
+    }
 }
 
 /// Caja del volumen de agua: centro y tamaño, dada el ancla de la bahía.
@@ -127,35 +155,15 @@ fn volumen_de_agua(scene: &mut Scene, canvas: MaterialId, material: MaterialId, 
     masa(scene, centro, tamano, canvas, material, GRUPO, REVELA);
 }
 
-/// `A-02` · masas del lecho: cinco en nivel seguro, ocho en objetivo.
-///
-/// Las tres del lote de la Tarea 7.2 no son relleno: son escalones bajos
-/// contra las paredes de la bahía, donde el lecho plano dejaba un ángulo
-/// recto que se leía como caja. Van colocadas a mano y no generadas porque
-/// el lecho es la silueta que enmarca todo lo demás.
-fn lecho(scene: &mut Scene, paleta: &Palette, ancla: Vec3, densidad: Density) {
-    let base = [
+/// `A-02` · cinco masas de lecho.
+fn lecho(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
+    let masas = [
         (Vec3::new(0.0, 0.25, 0.0), Vec3::new(9.0, 0.8, 5.4)),
         (Vec3::new(-2.6, 0.60, -1.1), Vec3::new(3.2, 0.7, 2.2)),
         (Vec3::new(2.4, 0.55, 1.0), Vec3::new(2.8, 0.6, 2.0)),
         (Vec3::new(0.6, 0.70, -1.7), Vec3::new(2.2, 0.5, 1.4)),
         (Vec3::new(-3.2, 0.45, 1.5), Vec3::new(2.0, 0.5, 1.6)),
     ];
-
-    // Las tres caben dentro de la caja del volumen con holgura, y hay un
-    // test que lo exige: la primera version las puso rozando la pared y dos
-    // de ellas asomaban por fuera del agua, que es justo lo que el lote no
-    // puede hacer.
-    let lote = [
-        (Vec3::new(3.3, 0.40, -1.5), Vec3::new(1.5, 0.45, 1.4)),
-        (Vec3::new(-1.4, 0.50, 1.8), Vec3::new(2.4, 0.55, 1.1)),
-        (Vec3::new(1.7, 0.62, 1.9), Vec3::new(1.7, 0.5, 1.0)),
-    ];
-
-    let masas: Vec<(Vec3, Vec3)> = match densidad {
-        Density::Safe => base.to_vec(),
-        Density::Target => base.iter().chain(lote.iter()).copied().collect(),
-    };
 
     for (offset, tamano) in masas {
         masa(
@@ -203,9 +211,36 @@ pub fn centro_visible_del_barco(ancla: Vec3) -> Vec3 {
 /// `A-03` · casco del barco, doce primitivas.
 ///
 /// Se prioriza la silueta rota y suspendida, no la precisión naval.
-fn casco(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
+fn casco(scene: &mut Scene, paleta: &Palette, ancla: Vec3, densidad: Density) {
     let madera = madera_del_pecio(scene, paleta);
     let centro = ancla_del_casco(ancla);
+
+    // El lote 2 de la Tarea 7.2: dos piezas que **rompen la silueta**, que
+    // es la prioridad visual que declara el inventario para `A-03`. No es
+    // precisión naval: es un tablón de cubierta levantado sobre la brecha y
+    // una tabla del costado desprendida.
+    //
+    // Las dos van al lado de babor y hacia popa, en `-Z` y `-X` locales, a
+    // propósito: la cadena baja del casco hacia `+X` y `+Z`, y el criterio
+    // de la autorización prohíbe taparla.
+    if densidad == Density::Target {
+        for (offset, tamano) in [
+            // El tablón levantado, suspendido sobre la rotura.
+            (Vec3::new(-0.62, 0.42, -0.18), Vec3::new(0.72, 0.13, 0.58)),
+            // La tabla del costado, colgando de la brecha.
+            (Vec3::new(-0.45, -0.05, -0.70), Vec3::new(1.10, 0.42, 0.12)),
+        ] {
+            masa(
+                scene,
+                centro + offset,
+                tamano,
+                paleta.canvas,
+                madera,
+                GRUPO,
+                REVELA,
+            );
+        }
+    }
 
     // Cuerpo: cinco secciones que se estrechan hacia proa.
     for i in 0..5 {
@@ -531,27 +566,20 @@ fn verde_submarino(scene: &mut Scene, paleta: &Palette) -> MaterialId {
     scene.add_material(kelp)
 }
 
-/// `A-07` · grupos de kelp sobre el lecho: doce en seguro, veinte en
-/// objetivo.
+/// `A-07` · doce grupos de kelp sobre el lecho.
 ///
 /// Reutiliza `meadow` con el tinte submarino de `verde_submarino`; no se
 /// crea un sexto material final solo para el kelp.
 ///
-/// El lote de la Tarea 7.2 son ocho frondas más del **mismo generador con
-/// la misma semilla**, así que las doce primeras salen idénticas a las del
-/// nivel seguro y las ocho nuevas continúan la secuencia. Eso hace que la
-/// diferencia entre los dos niveles sea exactamente el lote, y no una
-/// redistribución de todo el kelp.
-fn kelp(scene: &mut Scene, paleta: &Palette, ancla: Vec3, densidad: Density) {
+/// El primer lote de la Tarea 7.2 le añadió ocho frondas y se **retiró**:
+/// una fronda mide `0.14` de ancho, que a la distancia de la toma hero es un
+/// píxel, y ocho más no cambiaron nada que se pudiera ver. Ver la evidencia
+/// del lote 1.
+fn kelp(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
     let verde = verde_submarino(scene, paleta);
     let mut azar = Xorshift32::new(0x4B45_4C50);
 
-    let cuantos = match densidad {
-        Density::Safe => 12,
-        Density::Target => 20,
-    };
-
-    for _ in 0..cuantos {
+    for _ in 0..12 {
         let alto = 0.7 + 0.9 * azar.siguiente();
         let offset = Vec3::new(3.6 * azar.simetrico(), 0.0, 2.0 * azar.simetrico());
 
@@ -567,19 +595,11 @@ fn kelp(scene: &mut Scene, paleta: &Palette, ancla: Vec3, densidad: Density) {
     }
 }
 
-/// `A-08` · rocas submarinas: seis en nivel seguro, diez en objetivo.
-///
-/// Como el kelp, el lote continúa la secuencia del mismo generador: las
-/// seis primeras son las del nivel seguro, bit a bit.
-fn rocas(scene: &mut Scene, paleta: &Palette, ancla: Vec3, densidad: Density) {
+/// `A-08` · seis rocas submarinas.
+fn rocas(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
     let mut azar = Xorshift32::new(0x524F_4341);
 
-    let cuantas = match densidad {
-        Density::Safe => 6,
-        Density::Target => 10,
-    };
-
-    for _ in 0..cuantas {
+    for _ in 0..6 {
         let lado = 0.34 + 0.42 * azar.siguiente();
         let offset = Vec3::new(3.4 * azar.simetrico(), 0.0, 1.9 * azar.simetrico());
 
@@ -624,7 +644,7 @@ const MUESCA_DEL_BORDE: [usize; 2] = [5, 6];
 /// cadena-ancla lo suficiente para salir de detrás del bloque alto exigía
 /// unas dos unidades en `x`, que lo metían debajo del casco, y levantarlo
 /// dejaba el ancla flotando sobre el lecho.
-fn borde_roto(scene: &mut Scene, paleta: &Palette, borde: Vec3) {
+fn borde_roto(scene: &mut Scene, paleta: &Palette, borde: Vec3, densidad: Density) {
     let mut azar = Xorshift32::new(0x0B0D_DE00);
 
     let mut anchos = [0.0_f32; 8];
@@ -654,6 +674,39 @@ fn borde_roto(scene: &mut Scene, paleta: &Palette, borde: Vec3) {
             scene,
             borde + Vec3::new(-3.5 + t * 1.0, -1.2 + altura * 0.5, deltas[i]),
             Vec3::new(anchos[i], altura, 1.1),
+            paleta.canvas,
+            paleta.wet_basalt,
+            GRUPO,
+            REVELA,
+        );
+    }
+
+    if densidad != Density::Target {
+        return;
+    }
+
+    // El lote 2 de la Tarea 7.2: dos bloques más que **continúan el
+    // desgarro** por los dos extremos, en `t = -1` y `t = 8`.
+    //
+    // Van aquí y no dentro del bucle para que los ocho del nivel seguro
+    // salgan bit a bit iguales: el reordenado de la muesca ordena un array
+    // de ocho, y ampliarlo a diez cambiaría qué bloque recibe qué altura.
+    // Los dos nuevos consumen la secuencia **después**, así que no tocan
+    // nada de lo anterior.
+    //
+    // Están en primer plano y **no** detrás de la superficie refractiva, que
+    // es la lección del lote 1: dentro del agua el reflejo se come el
+    // detalle. Y caen en los extremos, lejos del centro por donde bajan la
+    // cadena y el ancla.
+    for t in [-1.0_f32, 8.0] {
+        let ancho = 0.85 + 0.5 * azar.siguiente();
+        let altura = 2.2 + 1.0 * azar.siguiente();
+        let delta = 0.35 * azar.simetrico();
+
+        masa(
+            scene,
+            borde + Vec3::new(-3.5 + t, -1.2 + altura * 0.5, delta),
+            Vec3::new(ancho, altura, 1.1),
             paleta.canvas,
             paleta.wet_basalt,
             GRUPO,
@@ -804,7 +857,7 @@ mod tests {
         // volumen y tambien asoma.
         let mut scene = Scene::new();
         let paleta = Palette::registrar(&mut scene);
-        borde_roto(&mut scene, &paleta, BORDE);
+        borde_roto(&mut scene, &paleta, BORDE, Density::Safe);
 
         let delante: Vec<_> = scene.objects.iter().map(|o| o.primitive.bounds()).collect();
 
@@ -935,8 +988,7 @@ mod tests {
         // entrada y no solo en el total: un casco que se pase de largo y un
         // mástil que se quede corto se cancelarían en la suma.
         for (nombre, entrada, esperado) in [
-            ("A-03 casco", casco as fn(&mut Scene, &Palette, Vec3), 12),
-            ("A-04 mastil", mastil, 3),
+            ("A-04 mastil", mastil as fn(&mut Scene, &Palette, Vec3), 3),
             ("A-05 cadena", cadena, 8),
             ("A-06 ancla", ancla_del_barco, 3),
         ] {
@@ -952,7 +1004,7 @@ mod tests {
         // se lea como un casco roto: se estrecha hacia proa, la cubierta va
         // partida en tres con hueco en medio, y la popa es la pieza más
         // alta.
-        let (scene, _) = solo(casco);
+        let (scene, _) = con_densidad(casco, Density::Safe);
         let cajas: Vec<_> = scene.objects.iter().map(|o| o.primitive.bounds()).collect();
 
         // Se estrecha: el ancho en Z de las cinco secciones del cuerpo
@@ -1009,7 +1061,7 @@ mod tests {
             "el mastil apenas asoma: {cima} contra {superficie}"
         );
 
-        let (scene_casco, _) = solo(casco);
+        let (scene_casco, _) = con_densidad(casco, Density::Safe);
 
         // Del casco solo la popa rompe la superficie, y eso es parte de la
         // silueta: un pecio escorado con la popa levantada se lee mucho
@@ -1169,14 +1221,17 @@ mod tests {
         // pero nada del barco debe asomar por los lados de la bahia.
         let (centro, tamano) = caja_del_volumen(ANCLA);
 
-        for entrada in [
-            casco as fn(&mut Scene, &Palette, Vec3),
-            mastil,
-            cadena,
-            ancla_del_barco,
-        ] {
-            let (scene, _) = solo(entrada);
+        // El casco en las dos densidades: el lote 2 le añade dos piezas y
+        // tienen que caber igual que las doce originales.
+        let escenas = [
+            con_densidad(casco, Density::Safe).0,
+            con_densidad(casco, Density::Target).0,
+            solo(mastil).0,
+            solo(cadena).0,
+            solo(ancla_del_barco).0,
+        ];
 
+        for scene in escenas {
             for objeto in &scene.objects {
                 let caja = objeto.primitive.bounds();
 
@@ -1196,7 +1251,7 @@ mod tests {
 
     #[test]
     fn el_kelp_usa_verde_submarino_y_no_cesped_de_pradera() {
-        let (scene, paleta) = con_densidad(kelp, Density::Safe);
+        let (scene, paleta) = solo(kelp);
         let pradera = scene.material(paleta.meadow);
 
         assert_eq!(scene.objects.len(), 12, "A-07 son doce frondas");
@@ -1412,7 +1467,7 @@ mod tests {
     fn el_casco_y_el_mastil_usan_la_madera_del_pecio() {
         let mut scene = Scene::new();
         let paleta = Palette::registrar(&mut scene);
-        casco(&mut scene, &paleta, ANCLA);
+        casco(&mut scene, &paleta, ANCLA, Density::Safe);
         mastil(&mut scene, &paleta, ANCLA);
 
         for objeto in &scene.objects {
