@@ -34,25 +34,26 @@ const ALTO: usize = 600;
 /// los tests comprueben la aritmética contra un valor conocido.
 ///
 /// Se rederiva con `cargo run --release --example interactive_frame_time`.
-/// Es la cifra de la **toma hero**, que es el encuadre con el que la
-/// ventana se calibra al arrancar. Otras cámaras alcanzables cuestan mucho
-/// más —el zoom más cercano llega a `0.26 s`— y eso no cabe en una
-/// constante: vive en el presupuesto de la matriz.
+/// Es lo que la ventana mide al arrancar: el estado **y el encuadre** más
+/// caros que la demo puede presentar —`RevealState::worst_case()` en
+/// `Blockout::worst_case_camera()`— con el perfil interactivo que se envía.
 ///
-/// Procedencia: `400 x 300`, preset refractivo, `RevealState::worst_case()`
-/// en la toma hero, mediana de quince rondas intercaladas y rotadas;
-/// **árbol de trabajo sin commitear** sobre `2c7960a`, 4 de septiembre de
-/// 2026, Ryzen 7 6800H, rustc 1.97.0. Se rederiva con
+/// Procedencia: `320 x 240`, preset refractivo, mediana de quince rondas
+/// intercaladas y rotadas; árbol de la Tarea 7.1 sobre `20e0f37`, 4 de
+/// septiembre de 2026, Ryzen 7 6800H, rustc 1.97.0. Se rederiva con
 /// `cargo run --release --example interactive_frame_time`.
 ///
-/// # Las dos versiones anteriores
+/// # Las tres versiones anteriores
 ///
-/// `0.0524` salía del peor de `reveal 0.0` y `reveal 1.0`, y los dos
-/// extremos son justo los que evitan el doble muestreo de texturas.
-/// `0.0820` ya medía el estado correcto, pero con una mediana mal calculada
-/// —el mayor de los dos centrales de un conteo par— y sin rotar el orden de
-/// la ronda, que favorece a los primeros puntos. Ver la Tarea 7.1.
-const FRAME_TIME: f32 = 0.0736;
+/// | Valor | Qué medía | Qué le faltaba |
+/// |---|---|---|
+/// | `0.0524` | el peor de `reveal 0.0` y `reveal 1.0`, toma hero | los dos extremos son los que evitan el doble muestreo |
+/// | `0.0820` | el estado correcto, toma hero | mediana mal calculada y orden de ronda sin rotar |
+/// | `0.0736` | el estado correcto con el instrumento arreglado | seguía siendo un solo encuadre, y el encuadre manda |
+///
+/// La cuarta cambia de perfil además de encuadre, así que no es comparable
+/// con las tres anteriores como serie. Ver la Tarea 7.1.
+const FRAME_TIME: f32 = 0.1259;
 
 /// Aplica una tecla de la demo sobre el estado, como hace la ventana.
 fn pulsar(tecla: char, reveal: &mut RevealState) {
@@ -153,12 +154,23 @@ fn la_demo_completa_va_de_lienzo_a_monolito() {
     }
 
     // Y el finale, que nadie eligió: arranca solo al completarse las tres.
-    // Un tick lo activa y otra duración lo pinta.
-    reveal.advance(FRAME_TIME, velocidad);
+    //
+    // Arranca **en el mismo tick** que termina la última región, no en el
+    // siguiente: `advance` avanza los grupos en curso y después comprueba
+    // `all_regions_painted`, así que la activación cae dentro de la llamada
+    // que completó Aguas Voladoras.
+    //
+    // Una versión anterior de este test metía aquí un `advance` extra «para
+    // activarlo» y empezaba a contar después. El Monolito recibía sus quince
+    // cuadros y el contador veía catorce, porque uno se gastaba fuera. No se
+    // notó mientras `reveal_duration` estuvo pegada a su piso de `1.5 s`, que
+    // daba veinte cuadros y de sobra; al calibrar con el peor encuadre la
+    // duración dejó de estar en el piso, el margen pasó a ser exactamente
+    // cero y el cuadro perdido apareció como un fallo.
     assert_eq!(
         reveal.phase(RevealGroup::Finale),
         RevealPhase::Revealing,
-        "el Monolito no arranco al terminar el Continente"
+        "el Monolito no arranco en el mismo tick que termino el Continente"
     );
 
     let (cuadros, _) = dejar_correr_hasta(&mut reveal, velocidad, RevealGroup::Finale);

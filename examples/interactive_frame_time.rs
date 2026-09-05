@@ -33,17 +33,24 @@
 //! ángulos. Medir en un solo encuadre promete un margen que el primer giro
 //! puede gastarse. Ver `Blockout::measurement_cameras`.
 //!
+//! La primera corrección de esta tarea barrió yaw y zoom, y dejó fuera la
+//! **elevación** con el argumento de que la ventana no la expone. Era falso:
+//! `Key::Up` y `Key::Down` llaman a `Camera::orbit`. La rejilla actual cruza
+//! los tres ejes.
+//!
 //! # Método
 //!
-//! `400 x 300` —el perfil interactivo—, preset `safe-refractive-water` con
-//! los ocho assets cargados, o aborta: sin texturas no hay doble muestreo y
-//! la medición perdería justo lo que busca.
+//! El perfil interactivo **que envía el programa** —`InteractiveProfile::
+//! default()`, no una resolución escrita aquí— y el preset
+//! `safe-refractive-water` con los ocho assets cargados, o aborta: sin
+//! texturas no hay doble muestreo y la medición perdería justo lo que busca.
 //!
-//! **Fase 1**, los estados de revelación en la toma hero. **Fase 2**, el
-//! peor estado en las diez cámaras alcanzables. **Fase 3**, el cruce de los
-//! dos perfiles interactivos con el mejor y el peor encuadre, que es lo que
-//! hace falta para decidir un perfil y no solo para diagnosticar. Las tres
-//! comparten tres decisiones de método:
+//! **Fase 1**, los estados de revelación en la toma hero. **Fase 2**, el peor
+//! estado en la rejilla de cuarenta y ocho cámaras. **Fase 3**, el cruce de
+//! los dos perfiles interactivos con cuatro radios mínimos sobre la dirección
+//! más cara: las dos palancas de mitigación, medidas juntas y con su margen,
+//! que es lo que hace falta para decidir y no solo para diagnosticar. Las
+//! tres comparten cuatro decisiones de método:
 //!
 //! 1. **Un cuadro de cada punto por ronda, y el orden de la ronda rota.**
 //!    Intercalar reparte la deriva térmica entre todos los puntos; rotar
@@ -59,6 +66,10 @@
 //! 3. **Los cocientes son pareados.** Para decir cuánto cuesta un estado
 //!    frente a otro se divide ronda contra ronda y se toma la mediana de los
 //!    cocientes, no el cociente de las medianas. Ver `stats::median_ratio`.
+//! 4. **El peor punto se elige por la mediana.** El mínimo reproduce mejor
+//!    entre corridas, y aun así no sirve para esto: es el mejor cuadro que se
+//!    llegó a ver, y de un presupuesto interesa el coste típico. El mínimo se
+//!    imprime al lado, que es donde sí ayuda: para leer la dispersión.
 //!
 //! # Lo que este ejemplo no puede decir
 //!
@@ -81,7 +92,7 @@ use expedition33_continente_inacabado::reveal::{
     WORST_CASE_PROGRESS,
 };
 use expedition33_continente_inacabado::scene::RevealGroup;
-use expedition33_continente_inacabado::scene_builder::Blockout;
+use expedition33_continente_inacabado::scene_builder::{Blockout, MIN_RADIUS_FACTOR};
 use expedition33_continente_inacabado::scenes::{safe_level_con, WaterPreset};
 use expedition33_continente_inacabado::stats::{median_ratio, summarize, Distribution};
 
@@ -213,10 +224,19 @@ fn medir(puntos: &mut [Punto], diorama: &Blockout, framebuffer: &mut Framebuffer
     }
 }
 
-/// Imprime una fase y devuelve el índice de su punto más caro por mínimo.
+/// Imprime una fase y devuelve el índice de su punto más caro **por
+/// mediana**.
+///
+/// Por mediana y no por mínimo. Una versión anterior elegía por el mínimo
+/// con el argumento de que reproduce mejor entre corridas; el argumento es
+/// cierto y la conclusión no se seguía. El mínimo es el mejor cuadro que se
+/// llegó a ver, y de un presupuesto lo que interesa es el coste típico: si
+/// dos puntos tienen mínimos parecidos y medianas muy distintas, el caro es
+/// el de la mediana alta, y es el que hay que llevarse a la derivación. El
+/// mínimo sigue en la tabla, para leer la dispersión.
 fn reportar(puntos: &[Punto], referencia: usize, nombre_referencia: &str) -> usize {
     println!(
-        "\n  {:<16} {:>9} {:>9} {:>9} {:>12}",
+        "\n  {:<20} {:>9} {:>9} {:>9} {:>12}",
         "punto", "minimo", "mediana", "maximo", nombre_referencia
     );
 
@@ -225,15 +245,14 @@ fn reportar(puntos: &[Punto], referencia: usize, nombre_referencia: &str) -> usi
     for (i, punto) in puntos.iter().enumerate() {
         let d = punto.resumen();
 
-        if d.min > puntos[peor].resumen().min {
+        if d.median > puntos[peor].resumen().median {
             peor = i;
         }
 
-        // El cociente es pareado; el `min` de la izquierda solo ordena.
         let relativo = median_ratio(&punto.tiempos, &puntos[referencia].tiempos);
 
         println!(
-            "  {:<16} {:>9.4} {:>9.4} {:>9.4} {relativo:>11.2}x",
+            "  {:<20} {:>9.4} {:>9.4} {:>9.4} {relativo:>11.2}x",
             punto.etiqueta, d.min, d.median, d.max
         );
     }
@@ -241,26 +260,57 @@ fn reportar(puntos: &[Punto], referencia: usize, nombre_referencia: &str) -> usi
     peor
 }
 
-/// Mide un punto en los dos perfiles interactivos y dice cuál pasa el gate.
+/// Radios mínimos que se prueban, en múltiplos de `scene_radius`.
 ///
-/// Existe porque el fallo del gate no es una conclusión, es una pregunta:
-/// el plan dice que lo que se baja es la resolución, y quien lea el fallo
-/// necesita saber **qué** resolución alcanza. Las rondas se intercalan entre
-/// los dos perfiles por la misma razón que en las otras fases.
-fn fase_de_perfiles(diorama: &Blockout, encuadres: &[&Punto]) {
+/// `1.2` es el vigente y el que falla el gate. El resto es el rango que la
+/// revisión pidió probar: por debajo de `1.7` el margen no aparece, y por
+/// encima de `1.9` el zoom deja de ser útil como recurso de presentación.
+const RADIOS_MINIMOS: [f32; 4] = [1.2, 1.7, 1.8, 1.9];
+
+/// Margen que se le exige a una combinación para recomendarla.
+///
+/// `1.30x` sobre el crítico, y la cifra sale de la propia dispersión: entre
+/// corridas del mismo día, la mediana del peor encuadre se movió de `0.2496`
+/// a `0.2901 s`, un `16 %`. Una combinación que solo pasara por un `10 %`
+/// estaría dentro del ruido de la máquina, que es como se llega a un gate
+/// que aprueba un día y falla al siguiente.
+const MARGEN_EXIGIDO: f64 = 1.30;
+
+/// Cruza radio mínimo x perfil sobre la dirección más cara encontrada, y
+/// dice qué combinaciones pasan el gate y con cuánto margen.
+///
+/// Es la fase que convierte el fallo en una decisión. Las dos palancas son
+/// independientes —la resolución del perfil y hasta dónde deja acercarse el
+/// zoom— y las dos son de presentación, así que hay que verlas juntas y con
+/// su margen, no elegir la primera que pase.
+///
+/// Las ocho celdas se miden en una sola tanda de rondas rotadas: es la única
+/// forma de que se comparen entre sí y no contra el estado térmico de su
+/// turno.
+fn fase_de_mitigaciones(diorama: &Blockout, direccion: &Punto) -> Vec<(String, f64, bool, f64)> {
     let luces = luces_del_diorama(&diorama.anchors, &diorama.scale);
-    let perfiles = [
+    let centro = diorama.anchors.orbit_center;
+    let escala = diorama.scale.scene_radius;
+
+    // La dirección del peor encuadre, con el ojo recolocado a cada radio.
+    // Se conserva la dirección y solo cambia la distancia, que es
+    // exactamente lo que hace `Camera::zoom` contra su recorte.
+    let direccion_unitaria = (direccion.camara.eye - centro).normalize();
+
+    let celdas: Vec<(String, InteractiveProfile, Camera)> = [
         ("MEDIA", InteractiveProfile::MEDIA),
         ("BAJA", InteractiveProfile::BAJA),
-    ];
+    ]
+    .iter()
+    .flat_map(|(nombre, perfil)| {
+        RADIOS_MINIMOS.iter().map(move |&factor| {
+            let mut camara = direccion.camara;
+            camara.eye = centro + direccion_unitaria * (factor * escala);
 
-    // Las cuatro celdas del cruce, en una sola tanda de rondas rotadas: es
-    // la única forma de que los dos perfiles y los dos encuadres se
-    // comparen entre sí y no contra el estado térmico de su turno.
-    let celdas: Vec<(&str, InteractiveProfile, &Punto)> = perfiles
-        .iter()
-        .flat_map(|(nombre, perfil)| encuadres.iter().map(move |p| (*nombre, *perfil, *p)))
-        .collect();
+            (format!("{nombre} · {factor:.1} S"), *perfil, camara)
+        })
+    })
+    .collect();
 
     let mut buffers: Vec<Framebuffer> = celdas
         .iter()
@@ -278,42 +328,113 @@ fn fase_de_perfiles(diorama: &Blockout, encuadres: &[&Punto]) {
                 &diorama.scene,
                 &diorama.accel,
                 &luces,
-                &celdas[i].2.estado,
-                &celdas[i].2.camara,
+                &direccion.estado,
+                &celdas[i].2,
                 Shading::Material,
             );
             tiempos[i].push(inicio.elapsed().as_secs_f64());
         }
     }
 
-    println!("\n=== Fase 3 · que perfil aguanta, y en que encuadre");
     println!(
-        "  {:<8} {:>11} {:<12} {:>9} {:>11} {:>14}",
-        "perfil", "resolucion", "encuadre", "mediana", "15 cuadros", "gate"
+        "\n=== Fase 3 · mitigaciones sobre la direccion mas cara ({})",
+        direccion.etiqueta
+    );
+    println!("  worst_case() con el ojo recolocado a cada radio minimo\n");
+    println!(
+        "  {:<16} {:>11} {:>9} {:>11} {:>16} {:>8}",
+        "combinacion", "resolucion", "mediana", "15 cuadros", "gate", "margen"
     );
 
-    for (i, (nombre, perfil, punto)) in celdas.iter().enumerate() {
+    let mut resultados = Vec::with_capacity(celdas.len());
+
+    for (i, (nombre, perfil, _)) in celdas.iter().enumerate() {
         let d = summarize(&tiempos[i]);
         let exigidos = MINIMUM_REVEAL_FRAMES * d.median as f32;
-        let veredicto = match reveal_duration(d.median as f32) {
-            Ok(duracion) => format!("PASA ({duracion:.2} s)"),
-            Err(_) => "FALLA".to_string(),
-        };
+        let critico = REVEAL_DURATION_CEILING / MINIMUM_REVEAL_FRAMES;
+        let margen = critico as f64 / d.median;
+        let pasa = reveal_duration(d.median as f32).is_ok();
+        let veredicto = if pasa { "PASA" } else { "FALLA" };
 
         println!(
-            "  {nombre:<8} {:>5} x {:<3} {:<12} {:>9.4} {exigidos:>9.2} s {veredicto:>14}",
-            perfil.width, perfil.height, punto.etiqueta, d.median
+            "  {nombre:<16} {:>5} x {:<3} {:>9.4} {exigidos:>9.2} s {veredicto:>16} {margen:>7.2}x",
+            perfil.width, perfil.height, d.median
         );
+
+        resultados.push((nombre.clone(), d.median, pasa, margen));
     }
 
-    println!("\n  Bajar el perfil por defecto es una decision de presentacion, no una");
-    println!("  correccion de medicion: cambia lo que el usuario ve mientras orbita.");
-    println!("  Queda planteada, no aplicada.");
+    resultados
+}
+
+/// Recomienda una combinación: la más barata de las que dejan **margen**, no
+/// la primera que pasa.
+///
+/// «Pasar» aquí significa que quince cuadros caben en cuatro segundos, y una
+/// combinación que los mete en `3.95 s` pasa hoy y falla mañana: seis
+/// corridas de este ejemplo dejaron el mismo encuadre a los dos lados del
+/// límite. Por eso se exige un margen explícito, y no un aprobado.
+fn recomendar(resultados: &[(String, f64, bool, f64)]) {
+    println!("\n  con margen exigido de {MARGEN_EXIGIDO:.2}x sobre el critico");
+
+    let holgadas: Vec<&(String, f64, bool, f64)> = resultados
+        .iter()
+        .filter(|(_, _, pasa, margen)| *pasa && *margen >= MARGEN_EXIGIDO)
+        .collect();
+
+    if holgadas.is_empty() {
+        println!("  NINGUNA de las combinaciones medidas deja ese margen.");
+        println!("  Hay que bajar mas la resolucion o recortar mas el zoom.");
+        return;
+    }
+
+    // Cuál de las que cumplen es «la mejor» no lo decide esta función: las
+    // dos palancas cuestan cosas distintas —resolución mientras se mueve
+    // contra alcance del zoom— y no hay forma de ordenarlas sin decidir por
+    // el humano. Lo que sí puede hacer el ejemplo es señalar **la que el
+    // código tiene aplicada**, para que el instrumento cierre el circuito
+    // con la configuración que se envía.
+    let perfil = InteractiveProfile::default();
+    let aplicada = format!(
+        "{} · {:.1} S",
+        if perfil == InteractiveProfile::BAJA {
+            "BAJA"
+        } else {
+            "MEDIA"
+        },
+        MIN_RADIUS_FACTOR
+    );
+
+    println!("  cumplen {} de {}:", holgadas.len(), resultados.len());
+    for (nombre, _, _, margen) in &holgadas {
+        let marca = if **nombre == aplicada {
+            "  <- aplicada en el codigo"
+        } else {
+            ""
+        };
+        println!("    {nombre:<16} {margen:.2}x{marca}");
+    }
+
+    match resultados.iter().find(|(n, _, _, _)| *n == aplicada) {
+        Some((_, _, true, margen)) if *margen >= MARGEN_EXIGIDO => {
+            println!("\n  la configuracion aplicada ({aplicada}) deja {margen:.2}x. Al dia.")
+        }
+        Some((_, _, _, margen)) => {
+            println!("\n  AVISO: la configuracion aplicada ({aplicada}) solo deja {margen:.2}x.")
+        }
+        None => println!("\n  AVISO: la configuracion aplicada ({aplicada}) no esta medida aqui."),
+    }
+
+    println!("\n  Bajar el perfil por defecto o recortar el zoom son decisiones de");
+    println!("  presentacion, no correcciones de medicion: cambian lo que el usuario");
+    println!("  ve. Esta fase las mide; elegirlas es del humano.");
 }
 
 fn main() {
     let diorama = nivel_texturizado();
-    let perfil = InteractiveProfile::MEDIA;
+    // El perfil que **envia** el programa, no uno fijo: si el defecto
+    // cambia, esta medicion tiene que cambiar con el.
+    let perfil = InteractiveProfile::default();
     let mut framebuffer = Framebuffer::new(perfil.width, perfil.height);
     let hero = diorama.hero_camera();
 
@@ -396,10 +517,16 @@ fn main() {
         .map(|(etiqueta, camara)| Punto::nuevo(etiqueta, RevealState::worst_case(), camara))
         .collect();
 
-    println!("\n=== Fase 2 · worst_case() en las camaras alcanzables");
+    // La hero **no** es la primera de la rejilla, así que la referencia de
+    // los cocientes se pide por índice y no se asume.
+    let hero_i = diorama.hero_index();
+
+    println!("\n=== Fase 2 · worst_case() en la rejilla yaw x elevacion x radio");
+    println!("  y+G e+E r  =  giro G sobre el yaw hero, elevacion E, radio r");
+    println!("  la rejilla es una muestra representativa, no el rango completo");
 
     medir(&mut camaras, &diorama, &mut framebuffer);
-    let peor_camara = reportar(&camaras, 0, "vs hero");
+    let peor_camara = reportar(&camaras, hero_i, "vs hero");
 
     // ------------------------------------------------ la derivación
     //
@@ -412,7 +539,7 @@ fn main() {
         .find(|p| p.estado == RevealState::worst_case())
         .expect("worst_case tiene que estar en el barrido de estados")
         .resumen();
-    let calibrado_f2 = camaras[0].resumen();
+    let calibrado_f2 = camaras[hero_i].resumen();
 
     println!("\n  reproducibilidad del instrumento");
     println!(
@@ -468,7 +595,7 @@ fn main() {
 
     println!("\n  aviso 2 · el encuadre");
 
-    let exceso_camara = median_ratio(&camaras[peor_camara].tiempos, &camaras[0].tiempos) - 1.0;
+    let exceso_camara = median_ratio(&camaras[peor_camara].tiempos, &camaras[hero_i].tiempos) - 1.0;
 
     println!(
         "  {:<16} {:.4} s   ({:+.0} % sobre la hero, pareado)",
@@ -518,7 +645,8 @@ fn main() {
     // este ejemplo lo dejaron a un lado y al otro del crítico. Con el
     // veredicto oscilando, saber qué da el otro perfil no es información
     // opcional.
-    fase_de_perfiles(&diorama, &[&camaras[0], &camaras[peor_camara]]);
+    let mitigaciones = fase_de_mitigaciones(&diorama, &camaras[peor_camara]);
+    recomendar(&mitigaciones);
 
     println!("\n  Registrar junto a la cifra: commit, fecha, arbol, hardware y toolchain.");
     println!("  Un tiempo solo significa algo junto a los que se midieron con el.");

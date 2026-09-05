@@ -102,6 +102,11 @@ fn main() -> ExitCode {
     // escala medida: ni la altura ni la distancia se eligieron a mano.
     let mut camera = diorama.hero_camera();
 
+    // El encuadre con el que se calibra: el más caro que el usuario puede
+    // alcanzar. Se captura aquí, antes de consumir el blockout, por lo
+    // mismo que la hero.
+    let camara_de_calibracion = diorama.worst_case_camera();
+
     // La cámara se construye antes de consumir el blockout: `hero_camera`
     // necesita las anclas y la escala, que viven junto a la escena.
     let scene = diorama.scene;
@@ -123,12 +128,21 @@ fn main() -> ExitCode {
     // cuadros sin que nada avisara, y el gate de fluidez no llegaría a
     // dispararse nunca.
     //
-    // Se mide con `RevealState::worst_case()`, un representante de los
-    // cuadros más caros: el clímax, con el Continente pintado y el grupo
-    // `Finale` a medio revelar. En el encuadre hero, que es el que la
-    // ventana presenta al arrancar; otras cámaras alcanzables cuestan algo
-    // más, y eso lo cubre el presupuesto de la matriz, no esta
-    // calibración.
+    // Se mide con el estado y el encuadre más caros que la demo puede
+    // presentar: `RevealState::worst_case()` —el clímax, con el Continente
+    // pintado y el `Finale` a medio revelar— en `worst_case_camera()`, que
+    // es la vista cenital pegada al radio mínimo.
+    //
+    // Las dos elecciones son por lo mismo. La duración se fija **una vez**
+    // al arrancar, y después el usuario puede pintar, orbitar y acercarse
+    // mientras la transición corre. Una cifra tomada del encuadre que se
+    // presenta prometería quince cuadros que un zoom bastaría para
+    // incumplir, sin que nada avisara. Calibrar con el peor encuadre alarga
+    // un poco la animación donde sobran cuadros a cambio de que el criterio
+    // se cumpla en cualquier sitio al que el usuario pueda llegar.
+    //
+    // Antes se medía con `reveal 1.0` en la toma hero, que eran las dos
+    // elecciones baratas a la vez. Ver la Tarea 7.1.
     //
     // Antes se medía con `reveal 1.0` por la mitad de la razón correcta. Es
     // cierto que el lienzo es el estado barato —sin techos ópticos no hay un
@@ -148,7 +162,7 @@ fn main() -> ExitCode {
             &accel,
             &lights,
             &RevealState::worst_case(),
-            &camera,
+            &camara_de_calibracion,
             shading,
         );
         calibracion.push(inicio.elapsed().as_secs_f32());

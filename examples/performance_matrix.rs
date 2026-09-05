@@ -225,7 +225,8 @@ fn main() {
         .map(|n| luces_del_diorama(&n.anchors, &n.scale))
         .collect();
 
-    let perfil = InteractiveProfile::MEDIA;
+    // El perfil que envia el programa. Ver el bloque de mitigaciones.
+    let perfil = InteractiveProfile::default();
     let hero = niveles[1].hero_camera();
 
     let presets = || {

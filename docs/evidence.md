@@ -351,6 +351,10 @@ punto de partida, no una meta.
 La mitigación se ejecutó de inmediato, como manda su disparador. El perfil
 elegido es **`MEDIA`, 400 × 300**, con `BAJA` (320 × 240) en reserva.
 
+> **Cambiado en la Tarea 7.1.** `BAJA` dejó de ser la reserva y pasó a ser
+> el perfil de serie: `MEDIA` no aguanta el peor encuadre alcanzable con
+> margen. Ver «La mitigación, medida y aplicada».
+
 | Perfil | Trazado | Escalado | Total | Frente al cuadro final | Píxeles distintos |
 |---|---:|---:|---:|---:|---:|
 | `MEDIA` 400 × 300 | 0.0244 s | 0.0008 s | **0.0252 s** | 3.8× más rápido | 4.6 % |
@@ -2047,6 +2051,12 @@ dentro de una corrida aunque no lo sea entre ellas.
 
 ### Tarea 7.1 — La matriz
 
+> **Superada por «La mitigación, medida y aplicada».** Las cifras de abajo
+> son de antes de recortar el zoom y bajar el perfil, y de una rejilla de
+> diez cámaras que no cruzaba la elevación. Se conservan porque son el
+> punto de partida contra el que se lee la mitigación; para la matriz
+> vigente, ir a la sección final.
+
 El plan nombra cinco presets sin definirlos. Cada fila declara su definición
 en las dos dimensiones que mueven el coste:
 
@@ -2086,6 +2096,11 @@ Los conteos de rayos son lo que convierte la tabla en una explicación: los
 dos primeros escalones compran rayos y el tercero no compra ninguno.
 
 ### Tarea 7.1 — El presupuesto, y lo que autoriza
+
+> **Superada por «La mitigación, medida y aplicada».** El presupuesto de
+> abajo se midió sin el eje de elevación, y por eso su peor encuadre no era
+> el peor: con la rejilla completa el gate fallaba por un `63 %`, no por un
+> `2 %`. La reserva vigente es `2.1x`, después de la mitigación.
 
 El único gate que puede fallar es el de fluidez, y solo mira el perfil
 interactivo: el cuadro final se produce una vez al soltar los controles y
@@ -2203,6 +2218,182 @@ silencioso que el Hito 5 corrigió.
 
 ---
 
+### Tarea 7.1 — La mitigación, medida y aplicada
+
+La revisión pidió cerrar el hueco antes de tocar una sola primitiva, y
+empezó por un claim mío que era falso.
+
+#### La elevación sí era alcanzable
+
+Escribí en `measurement_cameras` que «la elevación no se barre: la ventana no
+la expone». `main.rs` mapea `Key::Up` y `Key::Down` a
+`Camera::orbit(0, ∓ROTATION_SPEED)`, con el pitch recortado a `±84.3°`. La
+elevación es tan alcanzable como el yaw, y mirar el diorama desde arriba es
+justo lo que pone la bahía refractiva entera en pantalla.
+
+La rejilla pasó de diez cámaras a **cuarenta y ocho**: cuatro cuadrantes de
+yaw × cuatro elevaciones × tres radios. Y el eje que faltaba escondía un caso
+mucho peor que el que había encontrado:
+
+| Encuadre | Mediana | vs hero |
+|---|---:|---:|
+| `y+0 e+35 cerca` (el «zoom cerca» de antes) | `0.4342` | `3.56x` |
+| `y+0 e+84 cerca` | `0.4018` | `3.22x` |
+| `y+90 e+84 cerca` | `0.4014` | `3.02x` |
+| hero | `0.1241` | `1.00x` |
+
+Quince cuadros a `0.4342 s` exigen **`6.51 s`** contra un techo de `4.0 s`. No
+era un margen estrecho: el gate fallaba por un `63 %`.
+
+Un detalle que sirve de control: `y+0 e-84 cerca` —mirando desde debajo del
+plinto— traza **cero** rayos secundarios. La bahía no se ve desde ahí, y el
+coste lo dice.
+
+#### Las dos palancas, medidas juntas
+
+El gate se corrige bajando la resolución del perfil o recortando el zoom, y
+las dos son decisiones de presentación. Medirlas por separado habría dado dos
+respuestas parciales, así que se cruzaron sobre la dirección más cara:
+
+| Radio mínimo | `MEDIA` `400 × 300` | `BAJA` `320 × 240` |
+|---|---:|---:|
+| `1.2 S` | `0.3994` — **falla** | `0.2467` — `1.08x` |
+| `1.7 S` | `0.1867` — `1.43x` | `0.1336` — `2.00x` |
+| **`1.8 S`** | `0.1807` — `1.48x` | **`0.1124` — `2.34x`** |
+| `1.9 S` | `0.1598` — `1.67x` | `0.1063` — `2.51x` |
+
+El margen se exige contra el crítico de `0.2667 s`, y el umbral para
+recomendar es `1.30x`. Sale de la dispersión de la propia máquina: entre
+corridas del mismo día la mediana del peor encuadre se movió un `16 %`, así
+que una combinación que solo pasara por un `10 %` estaría dentro del ruido.
+`BAJA · 1.2 S` pasa por `1.08x`, que es exactamente eso.
+
+**Aplicado: `InteractiveProfile::default() = BAJA` y `MIN_RADIUS_FACTOR =
+1.8`.** `MEDIA · 1.8 S` también cumple, con `1.48x`; se eligió `BAJA` porque
+`2.34x` sobrevive a un día malo y `1.48x` no necesariamente. Lo que se paga es
+resolución **mientras algo se mueve**: al soltar los controles el cuadro final
+sigue siendo `800 × 600`.
+
+La comparación visual está en `evidence/hito7/`, generada con
+`cargo run --release --example profile_preview`: los dos perfiles ya
+**ampliados** con el mismo `blit_upscaled` que dibuja la ventana, junto al
+cuadro final de referencia, en la toma hero y en el peor encuadre. Ampliados y
+no a su tamaño a propósito: un PNG de `320 × 240` visto al `100 %` parecería
+más nítido que el de `800 × 600`, que es lo contrario de lo que pasa en
+pantalla.
+
+#### La ventana calibraba en el encuadre equivocado
+
+Con la mitigación aplicada el banco pasaba, y el programa seguía sin cumplir.
+`main.rs` calibraba con `RevealState::worst_case()` en la **toma hero**, que
+da `1.5 s` de duración; si el usuario se acercaba durante la transición, el
+cuadro subía a `0.126 s` y la animación entregaba doce cuadros. El gate se
+cumplía en la medición y no en la obra.
+
+La duración se fija **una sola vez** al arrancar, así que tiene que salir del
+peor encuadre alcanzable y no del que se presenta. `Blockout::worst_case_camera()`
+—cenital, pegada al radio mínimo— es con la que calibra ahora. Cuesta `0.4 s`
+de arranque y a cambio los quince cuadros se cumplen en cualquier sitio al que
+el usuario pueda llegar. Es el mismo intercambio que ya hacía
+`RevealState::worst_case` con el estado.
+
+Y eso destapó un fallo de contabilidad en `tests/demo_completa.rs`: metía un
+`advance` extra «para activar el Monolito» y empezaba a contar después, así
+que el Monolito recibía sus quince cuadros y el contador veía catorce. No se
+notó mientras `reveal_duration` estuvo pegada a su piso de `1.5 s`, que daba
+veinte cuadros y de sobra. Al calibrar con el peor encuadre la duración dejó
+de estar en el piso, el margen pasó a ser exactamente cero y el cuadro perdido
+apareció como un fallo. El `advance` extra sobraba: la activación del finale
+cae **dentro** de la llamada que completa la última región.
+
+#### Las otras tres correcciones de instrumento
+
+| Qué | Antes | Ahora |
+|---|---|---|
+| Selección del peor punto | por el mínimo | por la **mediana**: el mínimo es el mejor cuadro que se llegó a ver, y de un presupuesto interesa el coste típico |
+| Referencia de los cocientes | `camaras[0]`, asumiendo que la hero es la primera | `hero_index()`, porque en la rejilla no lo es |
+| Procedencia | árbol sin commitear sobre `2c7960a` | árbol de esta tarea sobre `20e0f37` |
+
+#### La matriz, reejecutada
+
+Release, quince rondas intercaladas y rotadas, perfil de serie `320 × 240`:
+
+| Preset | Prim. | `800 × 600` | `320 × 240` | 2os rayos |
+|---|---:|---:|---:|---:|
+| `safe-canvas` | 159 | `0.2897` | `0.0476` | `597` |
+| `safe-painted` | 159 | `0.3439` | `0.0579` | `8 819` |
+| `safe-water` | 160 | `0.4463` | `0.0715` | `14 124` |
+| `safe-revealing` | 160 | `0.4508` | `0.0717` | `14 355` |
+| `target-water` | — | Pendiente | Pendiente | — |
+
+| Escalón | `320 × 240` | `800 × 600` | 2os rayos |
+|---|---:|---:|---:|
+| lienzo → materiales pintados | `+17.3 %` | `+18.7 %` | `+8 222` |
+| volumen refractivo | `+20.1 %` | `+24.8 %` | `+5 305` |
+| doble muestreo de la transición | `+5.7 %` | `+4.5 %` | `+231` |
+
+```text
+peor cuadro interactivo    0.1259 s   (y+0 e+84 cerca)
+critico del gate           0.2667 s
+reserva                    2.1x en tiempo
+reveal_duration            1.89 s     (15 cuadros)
+```
+
+**La reserva es `2.1x`, y ahora es del peor encuadre alcanzable y no de uno
+solo.** Es la primera cifra de esta tarea que significa lo que dice.
+
+#### Estado
+
+| Tarea | Estado |
+|---|---|
+| 7.1 | instrumento suficiente para detectar la regresión; **no** es una caracterización completa del rango interactivo —la rejilla son cuarenta y ocho puntos de un espacio continuo— |
+| 7.2 | **no autorizada**. Con `2.1x` hay margen para probar densidad en Aguas de forma incremental, con remedición entre lotes; no para la densidad objetivo completa |
+| 7.3 | no activada. El permiso para hexágonos sigue detrás de mitigación y densidad |
+
+Lo que sigue abierto y hay que decir en voz alta: el peor cuadro **medido** es
+el peor de una rejilla, no el peor del espacio. Entre dos celdas hay
+encuadres sin medir, y la única defensa es que el coste varía de forma suave
+con los tres ejes —lo que la propia rejilla muestra— y que el aviso del
+ejemplo se dispara si alguna corrida encuentra un punto fuera de banda.
+
+#### Procedencia
+
+Todas las cifras de esta sección salen de dos corridas del 4 de septiembre de
+2026 sobre el mismo binario:
+
+```text
+cargo run --release --example interactive_frame_time    (fases 1, 2 y 3)
+cargo run --release --example performance_matrix        (la matriz)
+cargo run --release --example profile_preview           (los seis PNG)
+```
+
+Árbol de la Tarea 7.1 sobre `20e0f37`; Ryzen 7 6800H; rustc 1.97.0; release.
+
+Las tablas de encuadres de esta sección y las de la sección anterior **no son
+comparables entre sí en valor absoluto**: la rejilla de cuarenta y ocho
+cámaras sostiene mucha más carga que el barrido de diez, y la máquina baja de
+frecuencia. En la misma corrida en que la hero costaba `0.0743 s` con la
+rejilla vieja, con la nueva costaba `0.1241 s`. Lo que reproduce son los
+cocientes dentro de una corrida, y son los cocientes los que sostienen todas
+las conclusiones de arriba.
+
+#### Gates registrados
+
+```text
+cargo fmt -- --check                        OK
+cargo clippy --all-targets -- -D warnings   0 avisos
+cargo test                                  396 tests, 0 fallos
+cargo build --release                       OK
+cargo run --release --example interactive_frame_time   codigo 0: el gate pasa
+cargo run --release --example performance_matrix       codigo 0: el gate pasa
+cargo run                                   320 x 240, 15 cuadros, 0.0972 s
+```
+
+Reparto de los 396: `360` de librería, `16` del generador de assets, `8` de
+humo del render, `6` de sombras submarinas y `6` de la demo completa.
+
+---
+
 ## Pendientes de medición
 
 Ninguna de estas filas puede completarse por estimación. Cada hito llena la suya.
@@ -2213,13 +2404,16 @@ Ninguna de estas filas puede completarse por estimación. Cada hito llena la suy
 | 2 | `orbit_radius` derivado por bisección, con `framing_margin` usado | **Registrado** |
 | 3 | Benchmark `safe-interior-visible` (159 primitivas) — mín/mediana/máx | **Registrado** |
 | 3 | Benchmark `safe-opaque-water` (160 primitivas) — control de oclusión | **Registrado** |
-| 3 | `interactive_frame_time` del perfil interactivo | **Registrado** — perfil fijado en `MEDIA` (400 × 300) |
+| 3 | `interactive_frame_time` del perfil interactivo | **Registrado** — perfil fijado en `MEDIA` (400 × 300); movido a `BAJA` (320 × 240) en la 7.1 |
 | 5 | Calibración de `L-02`: `distance_boat`, `range`, `intensity` | **Registrado** — `0.192 S`, `0.30 S`, `2.8211` derivada |
 | 6 | `reveal_duration` derivada de `interactive_frame_time` | **Registrado** — corregido dos veces en la 7.1: `0.0736 s` en el peor estado **de la toma hero**, `1.5 s` de duración, 20 cuadros; la ventana se autocalibra |
 | 7 | Matriz de rendimiento por preset | **Registrado** — cuatro presets en dos resoluciones y diez cámaras, con conteos de rayos; `target-water` pendiente de que exista el nivel objetivo |
 | 7 | Peor estado de revelación | **Registrado** — `Finale` a medio revelar sobre el Continente pintado, `1.58x` el lienzo |
-| 7 | Peor encuadre alcanzable | **Registrado** — `zoom cerca`, `3.6x` la toma hero: el gate de fluidez **falla** con el perfil `MEDIA` |
-| 7 | Perfil interactivo por defecto | **Abierto** — `MEDIA` no aguanta el peor encuadre y `BAJA` sí, con `1.4x`; es decisión de presentación |
+| 7 | Peor encuadre alcanzable | **Registrado** — rejilla de 48 cámaras; el peor es la vista cenital al radio mínimo, `3.2x` la toma hero |
+| 7 | Perfil interactivo por defecto | **Cerrado** — `BAJA` `320 × 240`, medido contra `MEDIA` en las dos palancas |
+| 7 | Límite de zoom | **Cerrado** — `min_radius = 1.8 S`, elegido con `2.34x` de margen sobre el crítico |
+| 7 | Encuadre de calibración de la ventana | **Registrado** — `worst_case_camera()`, no la toma hero: la duración se fija una vez y el usuario puede acercarse después |
+| 7 | Caracterización completa del rango interactivo | **Abierto** — la rejilla son 48 puntos de un espacio continuo |
 | 8 | Hardware de medición y tiempos finales en release | Pendiente |
 
 **Regla.** Todos los benchmarks se ejecutan en release. El perfil `dev` de este proyecto lleva `opt-level = 3` heredado de la base académica, así que un tiempo medido en debug **parece** comparable a release y no lo es.

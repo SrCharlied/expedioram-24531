@@ -43,25 +43,26 @@ const ALTO: usize = 600;
 /// esta línea de tiempo salga idéntica en cada corrida.
 ///
 /// Se rederiva con `cargo run --release --example interactive_frame_time`.
-/// Es la cifra de la **toma hero**, que es el encuadre con el que la
-/// ventana se calibra al arrancar. Otras cámaras alcanzables cuestan mucho
-/// más —el zoom más cercano llega a `0.26 s`— y eso no cabe en una
-/// constante: vive en el presupuesto de la matriz.
+/// Es lo que la ventana mide al arrancar: el estado **y el encuadre** más
+/// caros que la demo puede presentar —`RevealState::worst_case()` en
+/// `Blockout::worst_case_camera()`— con el perfil interactivo que se envía.
 ///
-/// Procedencia: `400 x 300`, preset refractivo, `RevealState::worst_case()`
-/// en la toma hero, mediana de quince rondas intercaladas y rotadas;
-/// **árbol de trabajo sin commitear** sobre `2c7960a`, 4 de septiembre de
-/// 2026, Ryzen 7 6800H, rustc 1.97.0. Se rederiva con
+/// Procedencia: `320 x 240`, preset refractivo, mediana de quince rondas
+/// intercaladas y rotadas; árbol de la Tarea 7.1 sobre `20e0f37`, 4 de
+/// septiembre de 2026, Ryzen 7 6800H, rustc 1.97.0. Se rederiva con
 /// `cargo run --release --example interactive_frame_time`.
 ///
-/// # Las dos versiones anteriores
+/// # Las tres versiones anteriores
 ///
-/// `0.0524` salía del peor de `reveal 0.0` y `reveal 1.0`, y los dos
-/// extremos son justo los que evitan el doble muestreo de texturas.
-/// `0.0820` ya medía el estado correcto, pero con una mediana mal calculada
-/// —el mayor de los dos centrales de un conteo par— y sin rotar el orden de
-/// la ronda, que favorece a los primeros puntos. Ver la Tarea 7.1.
-const FRAME_TIME: f32 = 0.0736;
+/// | Valor | Qué medía | Qué le faltaba |
+/// |---|---|---|
+/// | `0.0524` | el peor de `reveal 0.0` y `reveal 1.0`, toma hero | los dos extremos son los que evitan el doble muestreo |
+/// | `0.0820` | el estado correcto, toma hero | mediana mal calculada y orden de ronda sin rotar |
+/// | `0.0736` | el estado correcto con el instrumento arreglado | seguía siendo un solo encuadre, y el encuadre manda |
+///
+/// La cuarta cambia de perfil además de encuadre, así que no es comparable
+/// con las tres anteriores como serie. Ver la Tarea 7.1.
+const FRAME_TIME: f32 = 0.1259;
 
 /// Carga el nivel con los assets, o aborta.
 ///

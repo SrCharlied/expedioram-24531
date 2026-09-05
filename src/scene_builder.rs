@@ -24,6 +24,38 @@ pub const HERO_YAW_DEGREES: f32 = 90.0;
 /// Mitad del campo de visión vertical, en grados.
 pub const HALF_VERTICAL_FOV_DEGREES: f32 = 30.0;
 
+/// Radio mínimo del zoom, en múltiplos de `scene_radius`.
+///
+/// Empezó en `1.2`, que es lo que hace falta para no meter la cámara dentro
+/// de la esfera envolvente. La Tarea 7.1 midió lo que cuesta: a `1.2 S` el
+/// peor cuadro alcanzable **no cumple el gate de fluidez** —quince cuadros
+/// exigían `6.5 s` contra un techo de `4.0 s`—, porque acercarse llena la
+/// pantalla de bahía refractiva y los rayos secundarios se multiplican por
+/// cinco.
+///
+/// `1.8` es la mitigación medida, no una elección de gusto. El barrido de
+/// la Tarea 7.1 sobre la dirección más cara, con el perfil `BAJA`:
+///
+/// | Radio mínimo | Peor cuadro | 15 cuadros | Margen |
+/// |---|---:|---:|---:|
+/// | `1.2 S` | `0.2659 s` | `3.99 s` | `1.00x` |
+/// | `1.7 S` | `0.1264 s` | `1.90 s` | `2.11x` |
+/// | **`1.8 S`** | **`0.1137 s`** | **`1.71 s`** | **`2.34x`** |
+/// | `1.9 S` | `0.1051 s` | `1.58 s` | `2.54x` |
+///
+/// `1.2 S` pasa el gate por `0.01 s`, que con la dispersión de la máquina no
+/// es pasarlo. `1.8 S` deja `2.34x` y conserva un zoom visualmente útil; el
+/// paso a `1.9` compra un `9 %` más de margen y quita más acercamiento del
+/// que compensa.
+///
+/// Es un límite de presentación además de uno de rendimiento: recortarlo
+/// quita zoom al usuario.
+pub const MIN_RADIUS_FACTOR: f32 = 1.8;
+
+/// Radio máximo del zoom, en múltiplos de `scene_radius`. Más lejos, el
+/// Continente queda reducido a un punto.
+pub const MAX_RADIUS_FACTOR: f32 = 4.0;
+
 /// Holgura angular que se le exige al encuadre por encima de lo
 /// estrictamente necesario. Sin margen, la esfera envolvente toca
 /// exactamente el borde del frame y cualquier ajuste posterior la recorta.
@@ -213,7 +245,10 @@ impl Blockout {
             Vec3::new(0.0, 1.0, 0.0),
             (2.0 * HALF_VERTICAL_FOV_DEGREES).to_radians(),
         )
-        .with_radius_limits(self.scale.scene_radius * 1.2, self.scale.scene_radius * 4.0)
+        .with_radius_limits(
+            self.scale.scene_radius * MIN_RADIUS_FACTOR,
+            self.scale.scene_radius * MAX_RADIUS_FACTOR,
+        )
     }
 
     /// Toma hero: la que encara el borde roto.
@@ -235,56 +270,138 @@ impl Blockout {
         self.hero_camera().preset()
     }
 
-    /// Las cámaras con las que se mide el rendimiento, con su etiqueta.
+    /// Rejilla representativa del espacio de cámaras que el usuario puede
+    /// alcanzar: yaw x elevación x radio.
     ///
-    /// # Por qué no basta la toma hero
+    /// # Por qué una rejilla y no la toma hero
     ///
     /// La primera matriz de la Tarea 7.1 midió los cuatro presets solo en la
-    /// toma hero, y eso deja fuera cámaras que el usuario alcanza con dos
-    /// teclas. El coste de un cuadro depende de qué ocupa la pantalla: la
-    /// bahía refractiva y el arco costero no cubren la misma fracción del
-    /// cuadro desde todos los ángulos, y acercarse llena la pantalla con lo
-    /// que estaba al fondo. Un presupuesto medido en un solo encuadre
-    /// promete un margen que el primer giro puede gastarse.
+    /// toma hero, y eso deja fuera encuadres que se alcanzan con dos teclas.
+    /// El coste de un cuadro depende de qué ocupa la pantalla, y acercarse
+    /// llena la pantalla de bahía refractiva: el zoom más cercano costó
+    /// `3.6` veces la hero, y ahí el gate de fluidez ya no se cumple.
     ///
-    /// # El conjunto
+    /// # Por qué la elevación también
     ///
-    /// - La toma hero, primera porque es la que se presenta.
-    /// - La órbita completa en pasos de `45°`, que son los siete ángulos
-    ///   restantes. Con la escena entera dentro del encuadre, el barrido de
-    ///   yaw es el que cambia qué región queda delante.
-    /// - Los dos extremos del zoom en el yaw hero. Se piden con un `delta`
-    ///   deliberadamente enorme porque `Camera::zoom` recorta a
-    ///   `min_radius..=max_radius`: así los extremos salen de los límites
+    /// La segunda versión barría yaw y zoom, y decía en este mismo comentario
+    /// que «la elevación no se barre porque la ventana no la expone». **Es
+    /// falso**: `main.rs` mapea `Key::Up` y `Key::Down` a
+    /// `Camera::orbit(0, ∓ROTATION_SPEED)`, con el pitch recortado a
+    /// `±(π/2 − 0.1)`. La elevación es tan alcanzable como el yaw, y mirar
+    /// el diorama desde arriba es justo lo que pone la bahía entera en
+    /// pantalla.
+    ///
+    /// # Los tres ejes
+    ///
+    /// - **Yaw**: cuatro cuadrantes desde el hero. Con la escena entera
+    ///   dentro del encuadre, el yaw cambia qué región queda delante.
+    /// - **Elevación**: los dos extremos alcanzables, el plano del horizonte
+    ///   y la del hero. `±84°` y no `±90°` porque `orbit` recorta antes del
+    ///   polo, donde la base de la cámara se vuelve degenerada.
+    /// - **Radio**: los dos extremos del zoom y el orbital. Los extremos se
+    ///   piden con un `delta` deliberadamente enorme porque `Camera::zoom`
+    ///   recorta a `min_radius..=max_radius`: así salen de los límites
     ///   medidos de la escena y no de una distancia elegida a mano.
     ///
-    /// La elevación no se barre: la ventana no la expone. `orbit` sí cambia
-    /// el pitch, pero las teclas de la demo solo giran el yaw y hacen zoom,
-    /// y el conjunto tiene que ser de cámaras **alcanzables**.
+    /// # Lo que la rejilla no es
+    ///
+    /// No es «todas las cámaras alcanzables»: el espacio es continuo y la
+    /// rejilla tiene cuarenta y ocho puntos. Es una **muestra
+    /// representativa** que cruza los tres ejes, y su valor es que el peor
+    /// punto que encuentre es una cota inferior del peor cuadro real, no una
+    /// caracterización completa del rango interactivo.
     pub fn measurement_cameras(&self) -> Vec<(String, Camera)> {
-        let mut camaras = vec![("hero".to_string(), self.hero_camera())];
+        // El recorte de `orbit`, en grados, un pelo por dentro para que la
+        // elevación pedida sea la que se obtiene.
+        const ELEVACION_EXTREMA: f32 = 84.0;
 
-        for paso in 1..8 {
-            let yaw = HERO_YAW_DEGREES + 45.0 * paso as f32;
-            camaras.push((
-                format!("yaw {:+.0}", 45.0 * paso as f32),
-                self.camera_at_yaw(yaw),
-            ));
-        }
-
-        // Un delta que el recorte convierte en «el extremo», sin clavar
-        // ninguna distancia en este archivo.
+        // Un delta que el recorte del zoom convierte en «el extremo».
         const HASTA_EL_TOPE: f32 = 1.0e6;
 
-        let mut cerca = self.hero_camera();
-        cerca.zoom(-HASTA_EL_TOPE);
-        camaras.push(("zoom cerca".to_string(), cerca));
+        let mut camaras = Vec::with_capacity(48);
 
-        let mut lejos = self.hero_camera();
-        lejos.zoom(HASTA_EL_TOPE);
-        camaras.push(("zoom lejos".to_string(), lejos));
+        for cuadrante in 0..4 {
+            let giro = 90.0 * cuadrante as f32;
+            let yaw = HERO_YAW_DEGREES + giro;
+
+            for elevacion in [
+                -ELEVACION_EXTREMA,
+                0.0,
+                EYE_ELEVATION_DEGREES,
+                ELEVACION_EXTREMA,
+            ] {
+                let base = self.camera_at(yaw, elevacion);
+
+                for (sufijo, delta) in [
+                    ("cerca", -HASTA_EL_TOPE),
+                    ("orbital", 0.0),
+                    ("lejos", HASTA_EL_TOPE),
+                ] {
+                    let mut camara = base;
+                    camara.zoom(delta);
+
+                    let etiqueta =
+                        if giro == 0.0 && elevacion == EYE_ELEVATION_DEGREES && sufijo == "orbital"
+                        {
+                            "hero".to_string()
+                        } else {
+                            format!("y{giro:+.0} e{elevacion:+.0} {sufijo}")
+                        };
+
+                    camaras.push((etiqueta, camara));
+                }
+            }
+        }
 
         camaras
+    }
+
+    /// El encuadre más caro de la rejilla: cenital y pegado al radio
+    /// mínimo.
+    ///
+    /// # Para qué existe
+    ///
+    /// La ventana **calibra con esta** y no con la toma hero. La duración de
+    /// la revelación se fija una sola vez al arrancar, y a partir de ahí el
+    /// usuario puede orbitar y acercarse mientras la transición corre: si la
+    /// cifra saliera del encuadre que se presenta, bastaría con acercarse
+    /// para que los quince cuadros dejaran de cumplirse sin que nada avisara.
+    ///
+    /// Calibrar con el peor encuadre alarga un poco la animación en la toma
+    /// hero —donde sobran cuadros— a cambio de que el criterio se cumpla en
+    /// **cualquier** encuadre alcanzable. Es el mismo intercambio que ya hace
+    /// `RevealState::worst_case` con el estado.
+    ///
+    /// # Por qué esta celda
+    ///
+    /// Es medida, no supuesta. En la rejilla de la Tarea 7.1 el coste lo
+    /// manda el radio, y a radio mínimo lo manda la elevación: mirar el
+    /// diorama desde arriba pone la bahía refractiva entera en pantalla. Dos
+    /// corridas dieron el máximo en `y+0 e+84 cerca` y en `y+90 e+84 cerca`,
+    /// separadas por un `0.1 %`: el yaw ya no distingue desde el cenit, así
+    /// que se fija el de la toma hero.
+    ///
+    /// Si una remedición encontrara una celda más cara, el aviso del
+    /// ejemplo lo dice y esto hay que moverlo.
+    pub fn worst_case_camera(&self) -> Camera {
+        const ELEVACION_EXTREMA: f32 = 84.0;
+        const HASTA_EL_TOPE: f32 = 1.0e6;
+
+        let mut camara = self.camera_at(HERO_YAW_DEGREES, ELEVACION_EXTREMA);
+        camara.zoom(-HASTA_EL_TOPE);
+
+        camara
+    }
+
+    /// Índice de la toma hero dentro de `measurement_cameras`.
+    ///
+    /// Existe para que quien compare contra la hero no tenga que buscarla
+    /// por su etiqueta ni asumir que es la primera: en la rejilla no lo es.
+    pub fn hero_index(&self) -> usize {
+        self.measurement_cameras()
+            .iter()
+            .position(|(etiqueta, _)| etiqueta == "hero")
+            .expect("la rejilla tiene que contener la toma hero")
     }
 
     /// Cámara con elevación explícita, para la vista de corte.
@@ -303,7 +420,10 @@ impl Blockout {
             Vec3::new(0.0, 1.0, 0.0),
             (2.0 * HALF_VERTICAL_FOV_DEGREES).to_radians(),
         )
-        .with_radius_limits(self.scale.scene_radius * 1.2, self.scale.scene_radius * 4.0)
+        .with_radius_limits(
+            self.scale.scene_radius * MIN_RADIUS_FACTOR,
+            self.scale.scene_radius * MAX_RADIUS_FACTOR,
+        )
     }
 }
 
@@ -311,38 +431,152 @@ impl Blockout {
 mod tests {
     use super::*;
 
+    /// Elevación del ojo sobre el plano del eje de órbita, en grados.
+    fn elevacion(camara: &Camera, centro: Vec3) -> f32 {
+        let radio = camara.eye - centro;
+
+        (radio.y / radio.magnitude()).asin().to_degrees()
+    }
+
     #[test]
-    fn las_camaras_de_medicion_cubren_la_orbita_y_los_dos_extremos_del_zoom() {
+    fn la_rejilla_cruza_los_tres_ejes() {
         let nivel = crate::scenes::safe_level(crate::scenes::WaterPreset::RefractiveWater);
         let camaras = nivel.measurement_cameras();
 
-        assert_eq!(camaras.len(), 10, "hero, siete yaws y dos extremos de zoom");
-        assert_eq!(camaras[0].0, "hero");
+        assert_eq!(
+            camaras.len(),
+            48,
+            "cuatro yaws x cuatro elevaciones x tres radios"
+        );
 
-        // Los ocho angulos de la orbita estan a radio orbital, y los dos
-        // extremos del zoom en los limites medidos de la escena.
-        let hero = nivel.hero_camera();
+        let etiquetas: std::collections::HashSet<&String> =
+            camaras.iter().map(|(e, _)| e).collect();
+        assert_eq!(etiquetas.len(), 48, "hay etiquetas repetidas");
 
-        for (etiqueta, camara) in camaras.iter().take(8) {
-            assert!(
-                (camara.radius() - hero.radius()).abs() < 1e-3,
-                "{etiqueta} cambio el radio: orbitar no hace zoom"
-            );
+        // Los tres radios salen de los limites medidos, no de distancias a
+        // mano. `orbit_radius` es el del encuadre derivado.
+        let centro = nivel.anchors.orbit_center;
+        let minimo = nivel.scale.scene_radius * MIN_RADIUS_FACTOR;
+        let maximo = nivel.scale.scene_radius * MAX_RADIUS_FACTOR;
+
+        let mut cerca = 0;
+        let mut lejos = 0;
+        let mut orbital = 0;
+
+        for (etiqueta, camara) in &camaras {
+            let radio = (camara.eye - centro).magnitude();
+
+            if etiqueta.ends_with("cerca") {
+                assert!(
+                    (radio - minimo).abs() < 1e-3,
+                    "{etiqueta} no esta en el minimo"
+                );
+                cerca += 1;
+            } else if etiqueta.ends_with("lejos") {
+                assert!(
+                    (radio - maximo).abs() < 1e-3,
+                    "{etiqueta} no esta en el maximo"
+                );
+                lejos += 1;
+            } else {
+                assert!(
+                    (radio - nivel.scale.orbit_radius).abs() < 1e-3,
+                    "{etiqueta} no esta en el radio orbital"
+                );
+                orbital += 1;
+            }
         }
 
-        let cerca = &camaras[8];
-        let lejos = &camaras[9];
+        assert_eq!((cerca, orbital, lejos), (16, 16, 16));
+    }
+
+    #[test]
+    fn la_camara_de_calibracion_es_una_celda_de_la_rejilla() {
+        // Si dejaran de coincidir, la ventana estaria calibrando con un
+        // encuadre que el banco no mide, y el aviso del ejemplo no podria
+        // avisar de nada.
+        let nivel = crate::scenes::safe_level(crate::scenes::WaterPreset::RefractiveWater);
+        let calibracion = nivel.worst_case_camera();
+
+        let coincide = nivel
+            .measurement_cameras()
+            .into_iter()
+            .find(|(_, c)| (c.eye - calibracion.eye).magnitude() < 1e-4);
+
+        let (etiqueta, _) = coincide.expect("la camara de calibracion no esta en la rejilla");
+        assert_eq!(etiqueta, "y+0 e+84 cerca");
+    }
+
+    #[test]
+    fn la_camara_de_calibracion_esta_mas_cerca_y_mas_alta_que_la_hero() {
+        // Las dos propiedades que la hacen cara, comprobadas por separado
+        // para que un cambio de una de ellas no se cuele en la otra.
+        let nivel = crate::scenes::safe_level(crate::scenes::WaterPreset::RefractiveWater);
+        let centro = nivel.anchors.orbit_center;
+        let hero = nivel.hero_camera();
+        let calibracion = nivel.worst_case_camera();
 
         assert!(
-            (cerca.1.radius() - hero.min_radius).abs() < 1e-3,
-            "el extremo cercano tiene que quedar pegado a min_radius"
+            (calibracion.eye - centro).magnitude() < (hero.eye - centro).magnitude(),
+            "la de calibracion tiene que estar mas cerca"
         );
         assert!(
-            (lejos.1.radius() - hero.max_radius).abs() < 1e-3,
-            "el extremo lejano tiene que quedar pegado a max_radius"
+            elevacion(&calibracion, centro) > elevacion(&hero, centro),
+            "y mas alta"
         );
-        assert!(cerca.1.radius() < hero.radius());
-        assert!(lejos.1.radius() > hero.radius());
+    }
+
+    #[test]
+    fn la_rejilla_contiene_la_toma_hero_y_sabe_donde() {
+        let nivel = crate::scenes::safe_level(crate::scenes::WaterPreset::RefractiveWater);
+        let camaras = nivel.measurement_cameras();
+        let hero = nivel.hero_camera();
+
+        // No es la primera de la lista, y por eso hace falta `hero_index`.
+        let i = nivel.hero_index();
+
+        assert_eq!(camaras[i].0, "hero");
+        assert!(
+            (camaras[i].1.eye - hero.eye).magnitude() < 1e-4,
+            "la hero de la rejilla no coincide con hero_camera"
+        );
+    }
+
+    #[test]
+    fn las_elevaciones_extremas_de_la_rejilla_son_alcanzables() {
+        // El test que corrige el claim falso. Una version anterior decia que
+        // la elevacion no se barria «porque la ventana no la expone»; las
+        // teclas arriba y abajo llaman a `orbit(0, ∓ROTATION_SPEED)`, asi que
+        // la elevacion es tan alcanzable como el yaw.
+        //
+        // Se comprueba pidiendole a `orbit` un giro enorme, que su recorte
+        // convierte en el extremo del rango, y se exige que la rejilla no
+        // pida mas que eso.
+        let nivel = crate::scenes::safe_level(crate::scenes::WaterPreset::RefractiveWater);
+        let centro = nivel.anchors.orbit_center;
+
+        let mut arriba = nivel.hero_camera();
+        arriba.orbit(0.0, -10.0);
+        let mut abajo = nivel.hero_camera();
+        abajo.orbit(0.0, 10.0);
+
+        let techo = elevacion(&arriba, centro);
+        let suelo = elevacion(&abajo, centro);
+
+        assert!(
+            techo > 80.0,
+            "el recorte del pitch dejo el techo en {techo}"
+        );
+        assert!(suelo < -80.0, "y el suelo en {suelo}");
+
+        for (etiqueta, camara) in nivel.measurement_cameras() {
+            let e = elevacion(&camara, centro);
+
+            assert!(
+                e <= techo + 1e-2 && e >= suelo - 1e-2,
+                "{etiqueta} pide una elevacion de {e}, fuera del rango alcanzable"
+            );
+        }
     }
 
     #[test]
