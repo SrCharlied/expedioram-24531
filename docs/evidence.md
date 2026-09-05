@@ -2432,6 +2432,155 @@ humo del render, `6` de sombras submarinas y `6` de la demo completa.
 
 ---
 
+### Tarea 7.2 — Primer lote incremental en Aguas Voladoras
+
+El lote autorizado, quince primitivas y todas dentro de la bahía:
+
+| Entrada | Seguro | Lote | Objetivo |
+|---|---:|---:|---:|
+| `A-02` lecho | 5 | `+3` | 8 |
+| `A-07` kelp | 12 | `+8` | 20 |
+| `A-08` rocas | 6 | `+4` | 10 |
+| **Aguas Voladoras** | **58** | **+15** | **73** |
+| **Escena** | **160** | **+15** | **175** |
+
+#### El nivel seguro no se movió
+
+`Density { Safe, Target }` es un parámetro del constructor, no un segundo
+generador. Es lo que hace que la diferencia entre las dos filas de la matriz
+sea el lote y nada más: con dos generadores, cualquier ajuste que se le
+hiciera a uno y no al otro entraría en la medición disfrazado de densidad.
+
+Las dos entradas generadas continúan la secuencia de **la misma semilla**, así
+que las doce primeras frondas de kelp y las seis primeras rocas son bit a bit
+las del nivel seguro y el lote se añade detrás. Las tres masas de lecho van
+colocadas a mano y al final de su lista.
+
+Cinco tests lo amarran, y uno encontró un fallo real: dos de las tres masas
+del lecho asomaban por fuera de la caja del agua en su primera colocación.
+
+| Test | Qué comprueba |
+|---|---|
+| `el_lote_de_la_72_son_quince_primitivas_y_todas_en_aguas` | el conteo región por región, no solo el total |
+| `el_nivel_seguro_no_se_movio_con_el_lote` | `safe` sigue en `160` |
+| `el_objetivo_es_el_seguro_mas_el_lote` | superconjunto por cajas: cada primitiva del seguro aparece igual en el objetivo, y lo que sobra son exactamente quince |
+| `el_lote_cae_entero_dentro_de_la_bahia` | el que falló: el lote tiene que estar donde la 7.1 midió que se gasta el presupuesto |
+| `el_lote_es_reversible_sin_tocar_el_generador` | retirarlo es cambiar un parámetro |
+
+#### Lo que costó
+
+Release, quince rondas intercaladas y rotadas, perfil `320 × 240`:
+
+| Preset | Prim. | `800 × 600` | `320 × 240` | 2os rayos |
+|---|---:|---:|---:|---:|
+| `safe-water` | 160 | `0.3154` | `0.0546` | `14 124` |
+| `safe-revealing` | 160 | `0.3528` | `0.0593` | `14 355` |
+| `target-water` | 175 | `0.3629` | `0.0638` | `14 123` |
+| `target-revealing` | 175 | `0.3866` | `0.0636` | `14 354` |
+
+```text
++15 primitivas cuestan     +7.3 %   (target-revealing vs safe-revealing, pareado)
+rayos secundarios          -1
+```
+
+**El lote no compra un solo rayo secundario.** Las quince primitivas son
+lecho, kelp y roca: materiales sin techos ópticos. El `+7.3 %` es coste puro
+de recorrido y de intersección, no de óptica, y eso es coherente con lo que la
+Tarea 7.1 midió al revés —los escalones caros de la matriz compraban rayos a
+miles—.
+
+Con el candidato, la rejilla de cuarenta y ocho cámaras y el peor encuadre por
+mediana:
+
+```text
+peor cuadro interactivo    0.1039 s   (y+0 e+35 cerca)
+critico del gate           0.2667 s
+reserva                    2.57x en tiempo
+umbral operativo           1.30x   ->  el lote cabe
+```
+
+Y el gate de lo que se envía, que no cambió, sigue pasando: `2.6x` de margen,
+la configuración aplicada `BAJA · 1.8 S` con `2.97x`, código de salida `0` en
+los dos ejemplos.
+
+#### Lo que compró
+
+Aquí está el problema. `examples/density_preview.rs` rinde los dos niveles en
+los tres encuadres y mide **cuánto cambia el cuadro**:
+
+| Encuadre | Píxeles distintos | Píxeles perceptibles |
+|---|---:|---:|
+| hero | `0.09 %` | **`0.05 %`** |
+| `e+35 cerca` | `0.16 %` | `0.09 %` |
+| `e+84 cerca` | `0.60 %` | `0.24 %` |
+
+«Perceptible» es un salto de al menos `8` de `255` en algún canal, que es
+donde dos grises dejan de ser el mismo gris en una pantalla.
+
+En la toma hero —la que se presenta— el lote cambia **cinco centésimas del
+uno por ciento** del cuadro. Los renders de `evidence/hito7/densidad/`
+confirman la cifra: puestos uno al lado del otro, los pares `hero-safe` y
+`hero-target` son la misma imagen.
+
+#### El diagnóstico, que es lo que vale para el siguiente lote
+
+Tres razones, en orden de peso:
+
+1. **Ocho de las quince son kelp, y una fronda mide `0.14` de ancho.** A la
+   distancia de la toma hero eso es un píxel o dos. Ocho frondas más en la
+   misma región de dispersión no pueden cambiar la lectura: densidad en
+   *piezas* no es densidad en *píxeles*.
+2. **Las tres masas de lecho quedan debajo del casco y en sombra.** Son
+   escalones bajos contra las paredes de la bahía, y el casco y el propio
+   lecho las tapan desde cualquier ángulo que no sea el cenital.
+3. **Todo lo que está dentro de la bahía está detrás de una superficie
+   refractiva con techos altos.** El reflejo del agua domina esos píxeles, así
+   que el detalle interior llega atenuado antes de que lo vea nadie.
+
+La tercera es la importante, porque invierte la intuición con la que se eligió
+el lote. La Tarea 7.1 midió que **el coste está dentro de la bahía**; de ahí
+se siguió que era ahí donde había que gastar la reserva. Pero el coste está
+ahí por la misma razón por la que la lectura no: el agua refracta y refleja.
+Es el peor sitio de la escena en relación entre lo que cuesta un píxel y lo
+que ese píxel enseña.
+
+#### Veredicto
+
+El lote **cabe** —`2.57x` de reserva, muy por encima del `1.30x` operativo— y
+**no aporta lectura**: un `0.05 %` del cuadro que se presenta. Por el criterio
+de la propia autorización, la recomendación es retirarlo.
+
+Retirarlo es cambiar `Density::Safe` por defecto donde haga falta, que es lo
+que ya hace todo el código que se envía: el candidato existe solo para
+medirlo. La decisión de composición es del humano, y esta sección es el
+material para tomarla.
+
+Si en su lugar se quiere un lote que sí se lea, el diagnóstico apunta fuera
+del agua y dentro de la misma región: `A-11`, el borde roto, está en primer
+plano y **no** detrás de la superficie refractiva. Ahí quince primitivas
+ocuparían píxeles de verdad. No se propone como hecho: se propone como el
+siguiente experimento, con el mismo procedimiento de medir, mirar y decidir.
+
+#### Gates registrados
+
+```text
+cargo fmt -- --check                        OK
+cargo clippy --all-targets -- -D warnings   0 avisos
+cargo test                                  402 tests, 0 fallos
+cargo build --release                       OK
+cargo run --release --example interactive_frame_time   codigo 0, margen 2.6x
+cargo run --release --example performance_matrix       codigo 0, reserva 2.57x
+cargo run --release --example density_preview          6 PNG y el delta de pixeles
+```
+
+Reparto de los 402: `366` de librería, `16` del generador de assets, `8` de
+humo del render, `6` de sombras submarinas y `6` de la demo completa.
+
+Procedencia: árbol de la Tarea 7.2 sobre `518c1e5`, 5 de septiembre de 2026,
+Ryzen 7 6800H, rustc 1.97.0, release.
+
+---
+
 ## Pendientes de medición
 
 Ninguna de estas filas puede completarse por estimación. Cada hito llena la suya.
@@ -2452,6 +2601,9 @@ Ninguna de estas filas puede completarse por estimación. Cada hito llena la suy
 | 7 | Límite de zoom | **Cerrado** — `min_radius = 1.8 S`, elegido con `2.34x` de margen sobre el crítico |
 | 7 | Encuadre de calibración de la ventana | **Registrado** — `calibration_cameras()`, las dos caras y no la toma hero: la duración se fija una vez y el usuario puede acercarse después |
 | 7 | Caracterización completa del rango interactivo | **Abierto** — la rejilla son 48 puntos de un espacio continuo |
+| 7 | Coste del primer lote de densidad | **Registrado** — `+15` primitivas, `+7.3 %` de tiempo, **cero** rayos secundarios; reserva `2.57x` |
+| 7 | Lectura del primer lote de densidad | **Registrado** — `0.05 %` del cuadro hero cambia de forma perceptible: no aporta |
+| 7 | Segundo lote de densidad | **Abierto** — el diagnóstico apunta a `A-11`, en primer plano y no detrás del agua |
 | 8 | Hardware de medición y tiempos finales en release | Pendiente |
 
 **Regla.** Todos los benchmarks se ejecutan en release. El perfil `dev` de este proyecto lleva `opt-level = 3` heredado de la base académica, así que un tiempo medido en debug **parece** comparable a release y no lo es.

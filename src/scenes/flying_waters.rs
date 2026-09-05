@@ -20,7 +20,7 @@
 //! rocas— son las que el preset de agua opaca oculta. Por eso ese preset
 //! no puede usarse para aprobar rendimiento.
 
-use super::{masa, Palette, WaterPreset, Xorshift32};
+use super::{masa, Density, Palette, WaterPreset, Xorshift32};
 use crate::color::Color;
 use crate::material::{Material, ShadowMode};
 use crate::scene::{MaterialId, RevealGroup, Scene, SpatialGroupId};
@@ -46,16 +46,17 @@ pub fn aguas_voladoras(
     ancla: Vec3,
     borde: Vec3,
     water: WaterPreset,
+    densidad: Density,
 ) -> f32 {
     let superficie = ancla.y + ALTURA_SUPERFICIE;
 
-    lecho(scene, paleta, ancla);
+    lecho(scene, paleta, ancla, densidad);
     casco(scene, paleta, ancla);
     mastil(scene, paleta, ancla);
     cadena(scene, paleta, ancla);
     ancla_del_barco(scene, paleta, ancla);
-    kelp(scene, paleta, ancla);
-    rocas(scene, paleta, ancla);
+    kelp(scene, paleta, ancla, densidad);
+    rocas(scene, paleta, ancla, densidad);
     borde_roto(scene, paleta, borde);
 
     // `A-01` va al final para que su presencia o ausencia no desplace los
@@ -126,15 +127,35 @@ fn volumen_de_agua(scene: &mut Scene, canvas: MaterialId, material: MaterialId, 
     masa(scene, centro, tamano, canvas, material, GRUPO, REVELA);
 }
 
-/// `A-02` · cinco masas de lecho.
-fn lecho(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
-    let masas = [
+/// `A-02` · masas del lecho: cinco en nivel seguro, ocho en objetivo.
+///
+/// Las tres del lote de la Tarea 7.2 no son relleno: son escalones bajos
+/// contra las paredes de la bahía, donde el lecho plano dejaba un ángulo
+/// recto que se leía como caja. Van colocadas a mano y no generadas porque
+/// el lecho es la silueta que enmarca todo lo demás.
+fn lecho(scene: &mut Scene, paleta: &Palette, ancla: Vec3, densidad: Density) {
+    let base = [
         (Vec3::new(0.0, 0.25, 0.0), Vec3::new(9.0, 0.8, 5.4)),
         (Vec3::new(-2.6, 0.60, -1.1), Vec3::new(3.2, 0.7, 2.2)),
         (Vec3::new(2.4, 0.55, 1.0), Vec3::new(2.8, 0.6, 2.0)),
         (Vec3::new(0.6, 0.70, -1.7), Vec3::new(2.2, 0.5, 1.4)),
         (Vec3::new(-3.2, 0.45, 1.5), Vec3::new(2.0, 0.5, 1.6)),
     ];
+
+    // Las tres caben dentro de la caja del volumen con holgura, y hay un
+    // test que lo exige: la primera version las puso rozando la pared y dos
+    // de ellas asomaban por fuera del agua, que es justo lo que el lote no
+    // puede hacer.
+    let lote = [
+        (Vec3::new(3.3, 0.40, -1.5), Vec3::new(1.5, 0.45, 1.4)),
+        (Vec3::new(-1.4, 0.50, 1.8), Vec3::new(2.4, 0.55, 1.1)),
+        (Vec3::new(1.7, 0.62, 1.9), Vec3::new(1.7, 0.5, 1.0)),
+    ];
+
+    let masas: Vec<(Vec3, Vec3)> = match densidad {
+        Density::Safe => base.to_vec(),
+        Density::Target => base.iter().chain(lote.iter()).copied().collect(),
+    };
 
     for (offset, tamano) in masas {
         masa(
@@ -510,15 +531,27 @@ fn verde_submarino(scene: &mut Scene, paleta: &Palette) -> MaterialId {
     scene.add_material(kelp)
 }
 
-/// `A-07` · doce grupos de kelp sobre el lecho.
+/// `A-07` · grupos de kelp sobre el lecho: doce en seguro, veinte en
+/// objetivo.
 ///
 /// Reutiliza `meadow` con el tinte submarino de `verde_submarino`; no se
 /// crea un sexto material final solo para el kelp.
-fn kelp(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
+///
+/// El lote de la Tarea 7.2 son ocho frondas más del **mismo generador con
+/// la misma semilla**, así que las doce primeras salen idénticas a las del
+/// nivel seguro y las ocho nuevas continúan la secuencia. Eso hace que la
+/// diferencia entre los dos niveles sea exactamente el lote, y no una
+/// redistribución de todo el kelp.
+fn kelp(scene: &mut Scene, paleta: &Palette, ancla: Vec3, densidad: Density) {
     let verde = verde_submarino(scene, paleta);
     let mut azar = Xorshift32::new(0x4B45_4C50);
 
-    for _ in 0..12 {
+    let cuantos = match densidad {
+        Density::Safe => 12,
+        Density::Target => 20,
+    };
+
+    for _ in 0..cuantos {
         let alto = 0.7 + 0.9 * azar.siguiente();
         let offset = Vec3::new(3.6 * azar.simetrico(), 0.0, 2.0 * azar.simetrico());
 
@@ -534,11 +567,19 @@ fn kelp(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
     }
 }
 
-/// `A-08` · seis rocas submarinas.
-fn rocas(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
+/// `A-08` · rocas submarinas: seis en nivel seguro, diez en objetivo.
+///
+/// Como el kelp, el lote continúa la secuencia del mismo generador: las
+/// seis primeras son las del nivel seguro, bit a bit.
+fn rocas(scene: &mut Scene, paleta: &Palette, ancla: Vec3, densidad: Density) {
     let mut azar = Xorshift32::new(0x524F_4341);
 
-    for _ in 0..6 {
+    let cuantas = match densidad {
+        Density::Safe => 6,
+        Density::Target => 10,
+    };
+
+    for _ in 0..cuantas {
         let lado = 0.34 + 0.42 * azar.siguiente();
         let offset = Vec3::new(3.4 * azar.simetrico(), 0.0, 1.9 * azar.simetrico());
 
@@ -636,6 +677,7 @@ mod tests {
             Vec3::new(0.0, 0.0, 4.2),
             Vec3::new(0.0, 1.2, 6.6),
             water,
+            Density::Safe,
         );
 
         (scene, paleta)
@@ -871,6 +913,18 @@ mod tests {
         let mut scene = Scene::new();
         let paleta = Palette::registrar(&mut scene);
         entrada(&mut scene, &paleta, ANCLA);
+
+        (scene, paleta)
+    }
+
+    /// Igual, para las entradas que la Tarea 7.2 volvio parametricas.
+    fn con_densidad(
+        entrada: fn(&mut Scene, &Palette, Vec3, Density),
+        densidad: Density,
+    ) -> (Scene, Palette) {
+        let mut scene = Scene::new();
+        let paleta = Palette::registrar(&mut scene);
+        entrada(&mut scene, &paleta, ANCLA, densidad);
 
         (scene, paleta)
     }
@@ -1142,7 +1196,7 @@ mod tests {
 
     #[test]
     fn el_kelp_usa_verde_submarino_y_no_cesped_de_pradera() {
-        let (scene, paleta) = solo(kelp);
+        let (scene, paleta) = con_densidad(kelp, Density::Safe);
         let pradera = scene.material(paleta.meadow);
 
         assert_eq!(scene.objects.len(), 12, "A-07 son doce frondas");

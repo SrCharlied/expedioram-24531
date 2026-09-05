@@ -292,6 +292,31 @@ pub fn cargar_skybox(scene: &mut Scene, raiz: &Path) -> Result<Skybox, TextureEr
     })
 }
 
+/// Cuánta densidad lleva el nivel.
+///
+/// # Por qué es un parámetro y no dos constructores separados
+///
+/// Porque el nivel objetivo tiene que ser el seguro **más el lote**, y no
+/// otra escena. Si fueran dos generadores, la diferencia entre las dos filas
+/// de la matriz dejaría de ser atribuible al lote: cualquier ajuste que se
+/// le hiciera a uno y no al otro entraría en la medición disfrazado de
+/// densidad.
+///
+/// Con un parámetro, el nivel seguro sigue siendo **bit a bit** el que
+/// aprobó el Hito 6: las entradas generadas continúan la secuencia de la
+/// misma semilla en vez de redistribuirse, y las colocadas a mano se
+/// añaden al final de su lista.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Density {
+    /// Las `160` primitivas del nivel seguro. Es lo que se presenta y lo
+    /// que sostiene todos los gates hasta la Tarea 7.1.
+    Safe,
+    /// El nivel seguro más el primer lote incremental de la Tarea 7.2:
+    /// `175`. Es un **candidato**, no lo que se envía; vive para poder
+    /// medirlo y mirarlo antes de decidir si se conserva.
+    Target,
+}
+
 /// Presupuesto de primitivas por región, según el inventario.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Presupuesto {
@@ -316,6 +341,28 @@ pub const SAFE: Presupuesto = Presupuesto {
     flying_waters: 58,
 };
 
+/// Conteos del nivel objetivo tras el **primer lote** de la Tarea 7.2.
+///
+/// No es la densidad objetivo del plan: es el nivel seguro más quince
+/// primitivas, todas en Aguas Voladoras, autorizadas de forma incremental.
+///
+/// | Entrada | Seguro | Lote | Objetivo |
+/// |---|---:|---:|---:|
+/// | `A-02` lecho | 5 | `+3` | 8 |
+/// | `A-07` kelp | 12 | `+8` | 20 |
+/// | `A-08` rocas | 6 | `+4` | 10 |
+///
+/// Las otras tres regiones no se tocan. El lote entero cae dentro de la
+/// bahía refractiva a propósito: es donde la Tarea 7.1 midió que el
+/// presupuesto se gasta, así que es donde hay que comprobar si la densidad
+/// se paga sola.
+pub const TARGET: Presupuesto = Presupuesto {
+    global: 27,
+    meadows: 37,
+    breakwater: 38,
+    flying_waters: 73,
+};
+
 /// Construye el nivel seguro completo.
 ///
 /// Comprueba el conteo de cada región contra el presupuesto en vez de
@@ -326,6 +373,19 @@ pub fn safe_level(water: WaterPreset) -> Blockout {
     safe_level_con(water, None).expect("sin assets no hay error posible")
 }
 
+/// El nivel objetivo con el primer lote de la Tarea 7.2. Ver `Density`.
+pub fn target_level(water: WaterPreset) -> Blockout {
+    nivel_con(water, Density::Target, None).expect("sin assets no hay error posible")
+}
+
+/// Igual que `target_level`, pero cargando las texturas desde `raiz`.
+pub fn target_level_con(
+    water: WaterPreset,
+    raiz_assets: Option<&Path>,
+) -> Result<Blockout, TextureError> {
+    nivel_con(water, Density::Target, raiz_assets)
+}
+
 /// Igual que `safe_level`, pero cargando las texturas desde `raiz`.
 ///
 /// Con `None` la escena queda con colores planos, que es lo que usan los
@@ -334,6 +394,18 @@ pub fn safe_level(water: WaterPreset) -> Blockout {
 /// texturizada, o un error con la ruta del asset que falte.
 pub fn safe_level_con(
     water: WaterPreset,
+    raiz_assets: Option<&Path>,
+) -> Result<Blockout, TextureError> {
+    nivel_con(water, Density::Safe, raiz_assets)
+}
+
+/// El constructor de verdad, con la densidad como parámetro.
+///
+/// Los dos niveles salen de aquí para que no puedan divergir en nada que no
+/// sea el lote. Ver `Density`.
+fn nivel_con(
+    water: WaterPreset,
+    densidad: Density,
     raiz_assets: Option<&Path>,
 ) -> Result<Blockout, TextureError> {
     let mut scene = Scene::new();
@@ -378,11 +450,17 @@ pub fn safe_level_con(
         anchors_base.flying_waters_anchor,
         anchors_base.broken_edge_anchor,
         water,
+        densidad,
     );
+
+    let presupuesto = match densidad {
+        Density::Safe => SAFE,
+        Density::Target => TARGET,
+    };
     let esperado = match water {
-        WaterPreset::RefractiveWater | WaterPreset::OpaqueWater => SAFE.flying_waters,
+        WaterPreset::RefractiveWater | WaterPreset::OpaqueWater => presupuesto.flying_waters,
         // Sin el volumen de agua queda una primitiva menos.
-        WaterPreset::InteriorVisible => SAFE.flying_waters - 1,
+        WaterPreset::InteriorVisible => presupuesto.flying_waters - 1,
     };
     verificar("Aguas Voladoras", scene.objects.len() - antes, esperado);
 
@@ -453,6 +531,118 @@ pub fn anclas_del_diorama() -> SceneAnchors {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Bordes de una escena, para comparar geometría sin comparar índices.
+    fn cajas(nivel: &Blockout) -> Vec<crate::bounds::Aabb> {
+        nivel
+            .scene
+            .objects
+            .iter()
+            .map(|o| o.primitive.bounds())
+            .collect()
+    }
+
+    #[test]
+    fn el_lote_de_la_72_son_quince_primitivas_y_todas_en_aguas() {
+        // El conteo declarado, region por region y no solo en el total: un
+        // lote que se pasara en una region y se quedara corto en otra
+        // cuadraria en la suma y estaria mal.
+        assert_eq!(TARGET.global, SAFE.global);
+        assert_eq!(TARGET.meadows, SAFE.meadows);
+        assert_eq!(TARGET.breakwater, SAFE.breakwater);
+        assert_eq!(TARGET.flying_waters, SAFE.flying_waters + 15);
+
+        assert_eq!(SAFE.total(), 160);
+        assert_eq!(TARGET.total(), 175);
+    }
+
+    #[test]
+    fn el_nivel_seguro_no_se_movio_con_el_lote() {
+        // La comprobacion que hace honesta la matriz: la fila `safe` tiene
+        // que seguir midiendo **la misma escena** que aprobo el Hito 6. Si
+        // el lote hubiera redistribuido el kelp o movido el lecho, la
+        // diferencia entre las dos filas dejaria de ser el lote.
+        let seguro = safe_level(WaterPreset::RefractiveWater);
+
+        assert_eq!(seguro.scene.objects.len(), 160);
+    }
+
+    #[test]
+    fn el_objetivo_es_el_seguro_mas_el_lote() {
+        // Superconjunto y no escena nueva: cada primitiva del nivel seguro
+        // tiene que aparecer **igual** en el objetivo. Se compara por cajas
+        // y no por indices porque el lote del lecho se inserta antes que el
+        // casco, asi que el orden no se conserva aunque la geometria si.
+        let seguro = safe_level(WaterPreset::RefractiveWater);
+        let objetivo = target_level(WaterPreset::RefractiveWater);
+
+        assert_eq!(objetivo.scene.objects.len(), 175);
+
+        let mut disponibles = cajas(&objetivo);
+
+        for caja in cajas(&seguro) {
+            let encontrada = disponibles.iter().position(|c| {
+                (c.min - caja.min).magnitude() < 1e-5 && (c.max - caja.max).magnitude() < 1e-5
+            });
+
+            let i = encontrada.expect("una primitiva del nivel seguro no esta en el objetivo");
+            disponibles.swap_remove(i);
+        }
+
+        assert_eq!(
+            disponibles.len(),
+            15,
+            "lo que sobra tiene que ser exactamente el lote"
+        );
+    }
+
+    #[test]
+    fn el_lote_cae_entero_dentro_de_la_bahia() {
+        // Es lo que hace que este lote responda la pregunta que se le pide:
+        // la Tarea 7.1 midio que el presupuesto se gasta detras del agua, y
+        // detalle puesto fuera no diria nada sobre eso.
+        let seguro = safe_level(WaterPreset::RefractiveWater);
+        let objetivo = target_level(WaterPreset::RefractiveWater);
+
+        let mut disponibles = cajas(&objetivo);
+        for caja in cajas(&seguro) {
+            if let Some(i) = disponibles.iter().position(|c| {
+                (c.min - caja.min).magnitude() < 1e-5 && (c.max - caja.max).magnitude() < 1e-5
+            }) {
+                disponibles.swap_remove(i);
+            }
+        }
+
+        let (centro, tamano) =
+            flying_waters::caja_del_volumen(anclas_del_diorama().flying_waters_anchor);
+
+        for caja in &disponibles {
+            assert!(
+                caja.min.x > centro.x - tamano.x * 0.5 && caja.max.x < centro.x + tamano.x * 0.5,
+                "una pieza del lote se sale de la bahia en X: {caja:?}"
+            );
+            assert!(
+                caja.min.z > centro.z - tamano.z * 0.5 && caja.max.z < centro.z + tamano.z * 0.5,
+                "una pieza del lote se sale de la bahia en Z: {caja:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn el_lote_es_reversible_sin_tocar_el_generador() {
+        // El criterio de la autorizacion: retirar el lote tiene que ser
+        // cambiar un parametro, no deshacer un cambio. Si `Density::Safe`
+        // dejara de reproducir las 160, el lote no seria reversible.
+        for water in [WaterPreset::RefractiveWater, WaterPreset::InteriorVisible] {
+            let seguro = safe_level(water);
+            let objetivo = target_level(water);
+
+            assert_eq!(
+                objetivo.scene.objects.len() - seguro.scene.objects.len(),
+                15
+            );
+        }
+    }
 
     /// En el estado sin pintar, lo unico que no es lienzo son las seis
     /// piezas de `G-04`.

@@ -18,7 +18,11 @@
 //! | `safe-painted` | sin volumen, `159` primitivas | pintado, `1.0` |
 //! | `safe-water` | refractivo, `160` primitivas | pintado, `1.0` |
 //! | `safe-revealing` | refractivo, `160` primitivas | `worst_case()` |
-//! | `target-water` | nivel objetivo | pintado, `1.0` |
+//! | `target-water` | refractivo, `175` primitivas | pintado, `1.0` |
+//!
+//! Y una sexta que el plan no nombra y la Tarea 7.2 necesita:
+//! `target-revealing`, el candidato en el peor estado. Es la fila que decide,
+//! porque es la que se compara contra el gate.
 //!
 //! Las filas están ordenadas de forma que cada una añade **un** cambio sobre
 //! la anterior: primero los materiales pintados, luego el volumen
@@ -29,25 +33,32 @@
 //! Un escalón mal nombrado, corregido por la columna de rayos: el primero
 //! **no es «las texturas»**. Al pasar de lienzo a pintado se encienden a la
 //! vez las texturas y los techos ópticos de los materiales finales, y los
-//! conteos dicen cuál pesa: los rayos secundarios por cuadro pasan de `986`
-//! a `13 809`. Es la óptica, no el muestreo. El único escalón que sí es
-//! muestreo es el último, que añade `262` rayos y un `6 %` de tiempo.
+//! conteos dicen cuál pesa: los rayos secundarios por cuadro pasan de `597`
+//! a `8 819`. Es la óptica, no el muestreo.
 //!
-//! `target-water` **no se mide**: el nivel objetivo no existe todavía —es la
-//! Tarea 7.2, y decidir si se construye es justo para lo que sirve esta
-//! matriz—. La fila se imprime como pendiente en vez de omitirse, para que
-//! quien lea la tabla vea que falta y no que no hacía falta.
+//! Los dos escalones que **no** compran rayos son los que lo confirman por el
+//! otro lado: el doble muestreo de la transición añade `231` rayos y un
+//! `2 %` a `6 %` de tiempo, y las quince primitivas del lote de la Tarea 7.2
+//! añaden **cero** —son lecho, kelp y roca, materiales sin techos— y un
+//! `7 %`. El conteo de primitivas y el conteo de rayos son dos presupuestos
+//! distintos, y el caro es el segundo.
+//!
+//! `target-water` ya se mide: existe desde el primer lote incremental de la
+//! Tarea 7.2 —`+15` primitivas, todas dentro de la bahía—. **No es lo que se
+//! envía**: el nivel seguro sigue intacto en `160` y es el que abre la
+//! ventana. El candidato vive para poder medirlo y mirarlo antes de decidir
+//! si se conserva, y para poder retirarlo cambiando un parámetro.
 //!
 //! # Método
 //!
 //! Release, o la comparación no significa nada.
 //!
-//! **Tres bloques.** El cuadro final a `800 x 600` y el perfil interactivo a
-//! `400 x 300`, que son los dos regímenes reales del programa, los dos en la
-//! toma hero para que las filas sean comparables entre sí. Y un tercero con
-//! el peor estado en las **diez cámaras alcanzables**, porque un presupuesto
-//! medido en un solo encuadre promete un margen que el primer giro puede
-//! gastarse.
+//! **Tres bloques.** El cuadro final a `800 x 600` y el perfil interactivo con
+//! la resolución que el programa envía, que son los dos regímenes reales,
+//! los dos en la toma hero para que las filas sean comparables entre sí. Y
+//! un tercero con la **rejilla de cuarenta y ocho cámaras** sobre la fila que
+//! decide, porque un presupuesto medido en un solo encuadre promete un margen
+//! que el primer giro puede gastarse.
 //!
 //! **Rondas intercaladas y rotadas.** Un cuadro de cada celda por ronda, y
 //! el orden de la ronda rota. Intercalar reparte la deriva térmica; rotar
@@ -81,7 +92,9 @@ use expedition33_continente_inacabado::reveal::{
     WORST_CASE_PROGRESS,
 };
 use expedition33_continente_inacabado::scene_builder::Blockout;
-use expedition33_continente_inacabado::scenes::{safe_level_con, WaterPreset};
+use expedition33_continente_inacabado::scenes::{
+    safe_level_con, target_level_con, Density, WaterPreset,
+};
 use expedition33_continente_inacabado::stats::{median_ratio, summarize};
 
 const ANCHO: usize = 800;
@@ -89,6 +102,15 @@ const ALTO: usize = 600;
 
 /// Rondas por celda. **Impar**: la mediana es un valor observado.
 const RONDAS: usize = 15;
+
+/// Margen mínimo que se le exige al candidato sobre el crítico del gate.
+///
+/// Es el umbral operativo de la Tarea 7.1, y se mantiene para la 7.2 por una
+/// razón que va más allá de este lote: **quedan lotes posteriores**, y el
+/// renderer mide `render()`, no todo el coste de presentar un cuadro. Gastar
+/// la reserva hasta el borde en el primer lote dejaría el segundo sin sitio y
+/// el gate sin colchón para lo que la medición no ve.
+const MARGEN_MINIMO: f64 = 1.30;
 
 /// Una celda de la matriz: un nivel, un estado, una cámara y su muestra.
 struct Celda {
@@ -121,10 +143,15 @@ impl Celda {
     }
 }
 
-fn nivel(preset: WaterPreset) -> Blockout {
+fn nivel(preset: WaterPreset, densidad: Density) -> Blockout {
     let raiz = PathBuf::from(".");
 
-    match safe_level_con(preset, Some(&raiz)) {
+    let construido = match densidad {
+        Density::Safe => safe_level_con(preset, Some(&raiz)),
+        Density::Target => target_level_con(preset, Some(&raiz)),
+    };
+
+    match construido {
         Ok(nivel) => nivel,
         Err(e) => {
             eprintln!("error: {e}");
@@ -217,8 +244,9 @@ fn escalones(celdas: &[Celda], etiqueta: &str) {
 
 fn main() {
     let niveles = [
-        nivel(WaterPreset::InteriorVisible),
-        nivel(WaterPreset::RefractiveWater),
+        nivel(WaterPreset::InteriorVisible, Density::Safe),
+        nivel(WaterPreset::RefractiveWater, Density::Safe),
+        nivel(WaterPreset::RefractiveWater, Density::Target),
     ];
     let luces: Vec<Vec<PointLight>> = niveles
         .iter()
@@ -237,6 +265,13 @@ fn main() {
             Celda::nueva(
                 "safe-revealing".to_string(),
                 1,
+                RevealState::worst_case(),
+                hero,
+            ),
+            Celda::nueva("target-water".to_string(), 2, RevealState::painted(), hero),
+            Celda::nueva(
+                "target-revealing".to_string(),
+                2,
                 RevealState::worst_case(),
                 hero,
             ),
@@ -278,14 +313,14 @@ fn main() {
     );
     escalones(&interactivas, "en el perfil interactivo");
 
-    println!("\n  target-water: pendiente. El nivel objetivo es la Tarea 7.2 y no existe");
-    println!("  todavia, asi que la fila no se puede medir ni estimar.");
-
     // ---------------------------------------------- bloque 3: las cámaras
-    let mut camaras: Vec<Celda> = niveles[1]
+    //
+    // Sobre el **candidato**, que es la fila que decide: si el lote no cabe
+    // en el peor encuadre, no cabe.
+    let mut camaras: Vec<Celda> = niveles[2]
         .measurement_cameras()
         .into_iter()
-        .map(|(etiqueta, camara)| Celda::nueva(etiqueta, 1, RevealState::worst_case(), camara))
+        .map(|(etiqueta, camara)| Celda::nueva(etiqueta, 2, RevealState::worst_case(), camara))
         .collect();
 
     medir(&mut camaras, &niveles, &luces, perfil.width, perfil.height);
@@ -294,7 +329,7 @@ fn main() {
         &niveles,
         perfil.width,
         perfil.height,
-        "safe-revealing en las camaras alcanzables",
+        "target-revealing en la rejilla de 48 camaras",
     );
 
     let peor_camara = camaras
@@ -323,19 +358,41 @@ fn main() {
     // Se toma el peor de los dos bloques interactivos, que es lo que hace
     // que el presupuesto no dependa de haber medido el encuadre afortunado.
     let critico = REVEAL_DURATION_CEILING / MINIMUM_REVEAL_FRAMES;
-    let peor = summarize(&interactivas[3].tiempos)
+    let peor = summarize(&interactivas[5].tiempos)
         .median
         .max(summarize(&peor_camara.tiempos).median);
 
-    println!("\n  presupuesto");
+    // Lo que el lote costó, pareado y en la toma hero, que es donde las dos
+    // filas son comparables.
+    let coste_del_lote = median_ratio(&interactivas[5].tiempos, &interactivas[3].tiempos);
+
+    println!("\n  el lote de la Tarea 7.2");
+    println!(
+        "  +15 primitivas cuestan     {:+.1} %   (target-revealing vs safe-revealing, pareado)",
+        100.0 * (coste_del_lote - 1.0)
+    );
+    println!(
+        "  rayos secundarios          {:+}",
+        interactivas[5].secundarios() as i64 - interactivas[3].secundarios() as i64
+    );
+
+    println!("\n  presupuesto del candidato");
     println!("  peor cuadro interactivo    {peor:.4} s");
     println!(
         "  critico del gate           {critico:.4} s   (15 cuadros en {REVEAL_DURATION_CEILING:.1} s)"
     );
-    println!(
-        "  reserva                    {:.1}x en tiempo",
-        critico as f64 / peor
-    );
+    let reserva = critico as f64 / peor;
+
+    println!("  reserva                    {reserva:.2}x en tiempo");
+
+    if reserva < MARGEN_MINIMO {
+        println!(
+            "\n  AVISO: el candidato deja {reserva:.2}x y el umbral operativo es {MARGEN_MINIMO:.2}x."
+        );
+        println!("  El lote hay que retirarlo o recortarlo.");
+    } else {
+        println!("  umbral operativo           {MARGEN_MINIMO:.2}x   ->  el lote cabe");
+    }
 
     match reveal_duration(peor as f32) {
         Ok(duracion) => println!(
