@@ -18,7 +18,7 @@
 //! | `safe-painted` | sin volumen, `159` primitivas | pintado, `1.0` |
 //! | `safe-water` | refractivo, `160` primitivas | pintado, `1.0` |
 //! | `safe-revealing` | refractivo, `160` primitivas | `worst_case()` |
-//! | `target-water` | refractivo, `175` primitivas | pintado, `1.0` |
+//! | `target-water` | refractivo, el candidato de `TARGET` | pintado, `1.0` |
 //!
 //! Y una sexta que el plan no nombra y la Tarea 7.2 necesita:
 //! `target-revealing`, el candidato en el peor estado. Es la fila que decide,
@@ -36,15 +36,16 @@
 //! conteos dicen cuál pesa: los rayos secundarios por cuadro pasan de `597`
 //! a `8 819`. Es la óptica, no el muestreo.
 //!
-//! Los dos escalones que **no** compran rayos son los que lo confirman por el
-//! otro lado: el doble muestreo de la transición añade `231` rayos y un
-//! `2 %` a `6 %` de tiempo, y las quince primitivas del lote de la Tarea 7.2
-//! añaden **cero** —son lecho, kelp y roca, materiales sin techos— y un
-//! `7 %`. El conteo de primitivas y el conteo de rayos son dos presupuestos
-//! distintos, y el caro es el segundo.
+//! El doble muestreo de la transición lo confirma por el otro lado: añade
+//! `231` rayos y un `2 %` a `6 %` de tiempo. El conteo de primitivas y el
+//! conteo de rayos son dos presupuestos distintos, y el caro es el segundo.
 //!
-//! `target-water` ya se mide: existe desde el primer lote incremental de la
-//! Tarea 7.2 —`+15` primitivas, todas dentro de la bahía—. **No es lo que se
+//! El lote de la Tarea 7.2 lo lleva al extremo: sus primitivas **restan**
+//! rayos, porque ocluyen parte de la cara frontal del agua. Densidad que se
+//! paga sola.
+//!
+//! `target-water` ya se mide: es el candidato incremental de la Tarea 7.2
+//! que esté en evaluación, y el conteo sale de `TARGET`. **No es lo que se
 //! envía**: el nivel seguro sigue intacto en `160` y es el que abre la
 //! ventana. El candidato vive para poder medirlo y mirarlo antes de decidir
 //! si se conserva, y para poder retirarlo cambiando un parámetro.

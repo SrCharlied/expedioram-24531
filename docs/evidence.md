@@ -2718,6 +2718,11 @@ Ryzen 7 6800H, rustc 1.97.0, release.
 
 ### Tarea 7.2 — Lote 2, revisión b: solo el borde
 
+> **Superada por la revisión c.** El descarte de `A-03` se mantiene; lo que
+> cambió es *dónde* van los dos bloques del borde. Esta sección se conserva
+> porque es la que midió el reparto entre las dos entradas. Los PNG quedan en
+> `evidence/hito7/densidad/lote-2b-borde/`.
+
 La descomposición que en la revisión a quedó como hipótesis sin medir se
 midió, y confirmó lo que el lote 1 ya había dicho:
 
@@ -2786,6 +2791,8 @@ Si el juicio es que amuralla, el arreglo no es retirar los dos bloques sino
 y romper su alineación, que profundiza el desgarro en vez de ensancharlo. Es
 una revisión `c` con el mismo coste y el mismo conteo, no un lote nuevo.
 
+Fue el juicio, y es la revisión que sigue.
+
 #### Comentarios del instrumento, al día
 
 | Dónde | Decía | Ahora |
@@ -2808,6 +2815,101 @@ cargo run --release --example density_preview          6 PNG y el delta de pixel
 ```
 
 Reparto de los 404: `368` de librería, `16` del generador de assets, `8` de
+humo del render, `6` de sombras submarinas y `6` de la demo completa.
+
+Procedencia: árbol de la Tarea 7.2 sobre `b14e2da`, 5 de septiembre de 2026,
+Ryzen 7 6800H, rustc 1.97.0, release.
+
+---
+
+### Tarea 7.2 — Lote 2, revisión c: profundidad en vez de anchura
+
+Mismo conteo, misma entrada, otra colocación. Los dos bloques dejan de
+continuar la fila por los extremos y pasan a ponerse **delante** de ella:
+
+| | Revisión b | Revisión c |
+|---|---|---|
+| Posición en `x` | `t = -1` y `t = 8`, fuera de la fila | `-2.8` y `+3.3`, dentro del ancho que ya tenía |
+| Adelanto en `z` | la sacudida de la fila, `±0.28` | `+0.62` y `+0.44`, fuera de esa banda |
+| Profundidad | `1.1`, la de la fila | `1.5` |
+| Ancho de la silueta | crece | **no crece** |
+
+La profundidad de `1.5` es el único tamaño que cambia, y no es capricho: con
+la profundidad de la fila, un bloque adelantado `0.62` se despegaría de la
+cara frontal del agua y dejaría de ocluirla —que es de donde salen los rayos
+secundarios que este lote ahorra—. Hay un test que lo exige.
+
+#### Los tres tests que la revisión pidió
+
+| Test | Qué exige |
+|---|---|
+| `el_lote_cruza_la_cara_frontal_del_agua` | que cada bloque **contenga** el plano de la cara frontal, no que quede delante de ella |
+| `el_lote_rompe_la_alineacion_de_la_fila` | que el adelanto supere la sacudida en `z` de los ocho del nivel seguro, medida **de la escena** y no escrita en el test |
+| `el_lote_no_ensancha_la_fila` | que los dos bloques quepan dentro del rango en `x` que la fila ya ocupaba |
+
+El segundo encontró un fallo del propio test al escribirlo: identificar la
+fila del borde solo por cercanía en `z` recogía diez cajas y no ocho, porque
+dos masas de otra entrada pasan cerca. Se identifica por **propiedades** —la
+profundidad fija de `1.1` con la que se genera la fila—, que es lo que ya hace
+el selector de rocas desde la Tarea 5.5.
+
+#### Lo que cuesta
+
+```text
++2 primitivas cuestan      +0.1 %   (pareado)
+rayos secundarios          -138
+reserva                    3.22x    (umbral 1.30x)
+```
+
+Sigue restando rayos, como en la revisión b, y algo menos: `−138` contra
+`−204`. Los bloques adelantados cubren una huella distinta de la cara frontal.
+El coste en tiempo es indistinguible de cero.
+
+#### Lo que compró
+
+| Encuadre | Rev. b | Rev. c |
+|---|---:|---:|
+| hero | `0.92 %` | `0.53 %` |
+| `e+35 cerca` | `2.01 %` | `1.26 %` |
+| `e+84 cerca` | `1.01 %` | `0.69 %` |
+
+**La revisión c cambia menos píxeles, y eso no la hace peor.** La b cambiaba
+más porque ensanchaba la silueta sobre fondo vacío; la c pone los bloques
+delante de otros bloques del mismo basalto, así que buena parte de su área cae
+sobre píxeles que ya eran oscuros. La métrica mide **cuánto cambia**, no si
+mejora; en esta comparación concreta las dos cosas se separan, y hay que
+decirlo en vez de leer la tabla como un marcador.
+
+Sigue siendo diez veces el lote 1 y trece veces las piezas del casco.
+
+#### Lo que se ve
+
+- **Hero.** El frente deja de ser una banda plana: dos bloques se adelantan y
+  el borde gana un perfil escalonado. El ancho de la silueta es el mismo que
+  en el nivel seguro, así que lo que se añade es relieve y no tamaño.
+- **`e+35 cerca`.** Aquí estaba el problema de la revisión b y aquí se ve el
+  arreglo. La fila ya no se lee como un muro corrido: los dos bloques
+  adelantados la quiebran en tres tramos a distinta distancia, y el desgarro
+  recupera espesor.
+- **`e+84 cerca`.** Desde el cenit el cambio es el menor de los tres, que es
+  lo esperable: el relieve en `z` se ve de canto.
+
+La decisión de cerrar `A-11` en `10/10` sigue siendo de composición y es
+humana. Lo que la medición puede decir ya está dicho: cabe, resta rayos, no
+ensancha la silueta y rompe la alineación.
+
+#### Gates registrados
+
+```text
+cargo fmt -- --check                        OK
+cargo clippy --all-targets -- -D warnings   0 avisos
+cargo test                                  407 tests, 0 fallos
+cargo build --release                       OK
+cargo run --release --example performance_matrix       codigo 0, reserva 3.22x
+cargo run --release --example density_preview          6 PNG y el delta de pixeles
+```
+
+Reparto de los 407: `371` de librería, `16` del generador de assets, `8` de
 humo del render, `6` de sombras submarinas y `6` de la demo completa.
 
 Procedencia: árbol de la Tarea 7.2 sobre `b14e2da`, 5 de septiembre de 2026,
@@ -2838,7 +2940,8 @@ Ninguna de estas filas puede completarse por estimación. Cada hito llena la suy
 | 7 | Lote 1 de densidad, submarino | **Descartado** — `+15` primitivas, `+7.3 %` de tiempo y `0.05 %` del cuadro hero: cabía y no se leía |
 | 7 | Lote 2a de densidad, cuatro piezas hero | **Superado** — `+4` primitivas, `0.95 %` del cuadro hero; la descomposición retiró las dos del casco |
 | 7 | Reparto de la lectura entre `A-03` y `A-11` | **Registrado** — el borde compra el `97 %`: `0.92 %` de `0.95 %` |
-| 7 | Lote 2b de densidad, solo el borde | **En evaluación** — `+2` primitivas, `+0.7 %`, `0.92 %` del cuadro hero; reserva `2.43x`. Falta el juicio de composición |
+| 7 | Lote 2b de densidad, solo el borde | **Superado** — se leía como pared continua desde `e+35`; los dos bloques se recolocaron |
+| 7 | Lote 2c de densidad, borde con profundidad | **En evaluación** — `+2` primitivas, `+0.1 %`, `−138` rayos, `0.53 %` del cuadro hero; reserva `3.22x`. Falta el juicio de composición |
 | 7 | `A-11` como entrada | **Agotada si se conserva** — llega a su máximo de 10 |
 | 7 | Lote 3 de densidad | **Abierto** — no autorizado hasta aceptar o retirar el 2b |
 | 8 | Hardware de medición y tiempos finales en release | Pendiente |

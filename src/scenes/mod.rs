@@ -311,9 +311,14 @@ pub enum Density {
     /// Las `160` primitivas del nivel seguro. Es lo que se presenta y lo
     /// que sostiene todos los gates hasta la Tarea 7.1.
     Safe,
-    /// El nivel seguro más el primer lote incremental de la Tarea 7.2:
-    /// `175`. Es un **candidato**, no lo que se envía; vive para poder
-    /// medirlo y mirarlo antes de decidir si se conserva.
+    /// El nivel seguro más el lote incremental de la Tarea 7.2 que esté en
+    /// evaluación. Es un **candidato**, no lo que se envía; vive para poder
+    /// medirlo y mirarlo antes de decidir si se conserva, y para poder
+    /// retirarlo cambiando este valor.
+    ///
+    /// Va por `TARGET`, no por una cifra escrita aquí: han sido `175`, `164`
+    /// y `162` en tres revisiones, y una constante repetida en dos sitios se
+    /// desincroniza en la primera.
     Target,
 }
 
@@ -554,6 +559,23 @@ mod tests {
             .collect()
     }
 
+    /// Los ocho bloques de `A-11` en un nivel, por sus propiedades.
+    ///
+    /// Por profundidad y no solo por cercania en Z: el borde se genera con
+    /// una profundidad fija de `1.1`, y filtrar solo por Z recogia dos masas
+    /// de otra entrada que pasan cerca.
+    fn fila_del_borde(nivel: &Blockout, borde: Vec3) -> Vec<crate::bounds::Aabb> {
+        const PROFUNDIDAD_DE_LA_FILA: f32 = 1.1;
+
+        cajas(nivel)
+            .into_iter()
+            .filter(|c| {
+                (0.5 * (c.min.z + c.max.z) - borde.z).abs() < 0.5
+                    && (c.max.z - c.min.z - PROFUNDIDAD_DE_LA_FILA).abs() < 1e-3
+            })
+            .collect()
+    }
+
     /// Lo que el objetivo tiene y el seguro no: el lote, sin depender del
     /// orden en que se generen las entradas.
     fn sobrante(seguro: &Blockout, objetivo: &Blockout) -> Vec<crate::bounds::Aabb> {
@@ -625,6 +647,101 @@ mod tests {
 
         assert_eq!(objetivo.scene.objects.len(), 162);
         assert_eq!(sobrante(&seguro, &objetivo).len(), 2);
+    }
+
+    #[test]
+    fn el_lote_cruza_la_cara_frontal_del_agua() {
+        // Es lo que hace que el desgarro **ocluya** el agua en vez de
+        // flotar delante de ella. Y no es solo composicion: los doscientos
+        // rayos secundarios que este lote ahorra salen justo de esa
+        // oclusion, asi que un bloque despegado de la cara frontal costaria
+        // en vez de ahorrar.
+        //
+        // La revision 2c los adelanto en Z, que es exactamente el cambio que
+        // podia despegarlos. Por eso este test existe desde esa revision.
+        let seguro = safe_level(WaterPreset::RefractiveWater);
+        let objetivo = target_level(WaterPreset::RefractiveWater);
+
+        let (centro, tamano) =
+            flying_waters::caja_del_volumen(anclas_del_diorama().flying_waters_anchor);
+        let cara_frontal = centro.z + tamano.z * 0.5;
+
+        for caja in sobrante(&seguro, &objetivo) {
+            assert!(
+                caja.min.z < cara_frontal && caja.max.z > cara_frontal,
+                "una pieza del lote no cruza la cara frontal en z = {cara_frontal}: {caja:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn el_lote_rompe_la_alineacion_de_la_fila() {
+        // El diagnostico de la revision 2b: alargar la fila la convertia en
+        // una pared. La 2c adelanta los dos bloques, y esto exige que el
+        // adelanto se note **contra la propia fila** en vez de contra una
+        // constante escrita aqui.
+        //
+        // La referencia sale de la escena: la sacudida en Z que ya tenian
+        // los ocho bloques del nivel seguro. Si un bloque nuevo cae dentro
+        // de esa banda, no rompe nada.
+        let seguro = safe_level(WaterPreset::RefractiveWater);
+        let objetivo = target_level(WaterPreset::RefractiveWater);
+        let borde = anclas_del_diorama().broken_edge_anchor;
+
+        // Los ocho del borde, identificados por **propiedades** y no por
+        // indice: centro cerca del ancla del borde y la profundidad fija de
+        // `1.1` con la que se generan. Solo por cercania en Z se colaban dos
+        // masas de otra entrada.
+        let fila: Vec<f32> = fila_del_borde(&seguro, borde)
+            .iter()
+            .map(|c| 0.5 * (c.min.z + c.max.z))
+            .collect();
+
+        assert_eq!(
+            fila.len(),
+            8,
+            "no se reconocieron los ocho bloques del borde"
+        );
+
+        let sacudida = fila
+            .iter()
+            .map(|z| (z - borde.z).abs())
+            .fold(0.0_f32, f32::max);
+
+        for caja in sobrante(&seguro, &objetivo) {
+            let adelanto = 0.5 * (caja.min.z + caja.max.z) - borde.z;
+
+            assert!(
+                adelanto > sacudida,
+                "un bloque del lote se queda dentro de la sacudida de la fila: \
+                 adelanto {adelanto}, sacudida {sacudida}"
+            );
+        }
+    }
+
+    #[test]
+    fn el_lote_no_ensancha_la_fila() {
+        // La otra mitad del diagnostico. La revision 2b crecia por los
+        // extremos y la silueta se hacia mas ancha; la 2c tiene que caber
+        // **dentro** del ancho que la fila ya ocupaba.
+        let seguro = safe_level(WaterPreset::RefractiveWater);
+        let objetivo = target_level(WaterPreset::RefractiveWater);
+        let borde = anclas_del_diorama().broken_edge_anchor;
+
+        let fila = fila_del_borde(&seguro, borde);
+
+        let izquierda = fila.iter().map(|c| c.min.x).fold(f32::INFINITY, f32::min);
+        let derecha = fila
+            .iter()
+            .map(|c| c.max.x)
+            .fold(f32::NEG_INFINITY, f32::max);
+
+        for caja in sobrante(&seguro, &objetivo) {
+            assert!(
+                caja.min.x >= izquierda && caja.max.x <= derecha,
+                "un bloque del lote ensancha la fila: {caja:?} fuera de [{izquierda}, {derecha}]"
+            );
+        }
     }
 
     #[test]

@@ -15,7 +15,8 @@
 //! |---|---:|---|---:|---|
 //! | 1 | 15 | lecho, kelp y rocas, dentro del agua | `0.05 %` | retirado |
 //! | 2 · `A-03` | 2 | casco, dentro del agua | `0.04 %` | retirado |
-//! | 2 · `A-11` | 2 | borde roto, en primer plano | `~0.9 %` | en evaluación |
+//! | 2b · `A-11` | 2 | borde roto, alargando la fila | `0.92 %` | se leía como pared |
+//! | 2c · `A-11` | 2 | borde roto, adelantado en `Z` | — | en evaluación |
 //!
 //! Las tres filas dicen lo mismo por si sola no bastaba una: lo que está
 //! detrás de la superficie refractiva no se lee, porque el reflejo del agua
@@ -55,7 +56,7 @@ const ALTO: usize = 600;
 /// siguiente escribiera encima, la conclusión se quedaría sin respaldo. El
 /// lote 2 tuvo dos revisiones —cuatro piezas y luego solo las dos del
 /// borde—, y las dos hacen falta para leer por qué se retiró el casco.
-const LOTE: &str = "lote-2b-borde";
+const LOTE: &str = "lote-2c-borde-profundidad";
 
 const SALIDA: &str = "evidence/hito7/densidad";
 

@@ -668,31 +668,47 @@ fn borde_roto(scene: &mut Scene, paleta: &Palette, borde: Vec3, densidad: Densit
     }
 
     // El lote 2 de la Tarea 7.2, y lo único que quedó de él: dos bloques
-    // más que **continúan el desgarro** por los dos extremos, en `t = -1` y
-    // `t = 8`.
+    // que **profundizan el desgarro** en vez de alargarlo.
     //
     // Con estos dos, `A-11` llega a diez y **agota su máximo del
     // inventario**. No hay un tercer bloque que pedir aquí.
     //
-    // Van aquí y no dentro del bucle para que los ocho del nivel seguro
-    // salgan bit a bit iguales: el reordenado de la muesca ordena un array
-    // de ocho, y ampliarlo a diez cambiaría qué bloque recibe qué altura.
-    // Los dos nuevos consumen la secuencia **después**, así que no tocan
-    // nada de lo anterior.
+    // Van fuera del bucle para que los ocho del nivel seguro salgan bit a
+    // bit iguales: el reordenado de la muesca ordena un array de ocho, y
+    // ampliarlo a diez cambiaría qué bloque recibe qué altura. Los dos
+    // nuevos consumen la secuencia **después**, así que no tocan nada de lo
+    // anterior —tampoco la muesca—.
     //
-    // Están en primer plano y **no** detrás de la superficie refractiva, que
-    // es la lección del lote 1: dentro del agua el reflejo se come el
-    // detalle. Y caen en los extremos, lejos del centro por donde bajan la
-    // cadena y el ancla.
-    for t in [-1.0_f32, 8.0] {
+    // # Por qué adelantados y no en los extremos
+    //
+    // La revisión anterior los puso en `t = -1` y `t = 8`, continuando la
+    // fila. Se leía bien en la toma hero y mal de cerca: la fila pasaba de
+    // ocho piezas a diez **sin huecos nuevos**, y desde `e+35` parecía una
+    // pared continua en vez de un desgarro. Buen porcentaje de píxeles,
+    // mala lectura.
+    //
+    // Estos dos van dentro del ancho que la fila ya tenía —delante de dos
+    // juntas, no en las puntas— y **adelantados en `Z`** bastante más que la
+    // sacudida de la fila, que es de `±0.28`. Así el borde gana profundidad
+    // sin ganar anchura: la silueta no crece, se rompe.
+    //
+    // Y son más hondos, `1.5` contra `1.1`. No es capricho: con la
+    // profundidad de la fila, un bloque adelantado se despegaría de la cara
+    // frontal del agua y dejaría de ocluirla, que es de donde salen los
+    // doscientos rayos secundarios que este lote ahorra.
+    //
+    // Las dos `x` esquivan el corredor por el que bajan la cadena y el
+    // ancla, y ninguna toca la muesca central.
+    const PROFUNDIDAD_DEL_LOTE: f32 = 1.5;
+
+    for (x, adelanto) in [(-2.8_f32, 0.62_f32), (3.3, 0.44)] {
         let ancho = 0.85 + 0.5 * azar.siguiente();
         let altura = 2.2 + 1.0 * azar.siguiente();
-        let delta = 0.35 * azar.simetrico();
 
         masa(
             scene,
-            borde + Vec3::new(-3.5 + t, -1.2 + altura * 0.5, delta),
-            Vec3::new(ancho, altura, 1.1),
+            borde + Vec3::new(x, -1.2 + altura * 0.5, adelanto),
+            Vec3::new(ancho, altura, PROFUNDIDAD_DEL_LOTE),
             paleta.canvas,
             paleta.wet_basalt,
             GRUPO,
