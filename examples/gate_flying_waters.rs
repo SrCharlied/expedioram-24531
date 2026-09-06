@@ -32,7 +32,9 @@ use expedition33_continente_inacabado::reveal::RevealState;
 use expedition33_continente_inacabado::scene::{MaterialId, SpatialGroupId};
 use expedition33_continente_inacabado::scene_builder::Blockout;
 use expedition33_continente_inacabado::scenes::flying_waters::caja_del_volumen;
-use expedition33_continente_inacabado::scenes::{anclas_del_diorama, safe_level_con, WaterPreset};
+use expedition33_continente_inacabado::scenes::{
+    anclas_del_diorama, safe_level_con, target_level_con, WaterPreset,
+};
 use expedition33_continente_inacabado::skybox::Skybox;
 
 const ANCHO: usize = 800;
@@ -229,9 +231,27 @@ fn trazar(diorama: &Blockout, luces: &[PointLight], rayo: &Ray) -> Color {
 }
 
 fn main() {
+    // `--target` corre el gate contra el candidato de la Tarea 7.2 en vez
+    // del nivel seguro.
+    //
+    // Existe porque el criterio 4 de este gate es «barco, cadena y ancla
+    // legibles», y un lote de densidad en primer plano es exactamente lo que
+    // puede dejar de cumplirlo. El lote 2c pone un bloque cuyo borde queda a
+    // `0.015` del brazo del ancla en `x`, y esa holgura es de mundo, no de
+    // pantalla: el bloque está mucho más cerca de la cámara, así que su
+    // huella en pantalla es más ancha en proporción. La única forma de saber
+    // si tapa el ancla es contar los píxeles del ancla con el lote puesto.
+    let candidato = std::env::args().any(|a| a == "--target");
+
+    let construido = if candidato {
+        target_level_con(WaterPreset::RefractiveWater, Some(&raiz()))
+    } else {
+        safe_level_con(WaterPreset::RefractiveWater, Some(&raiz()))
+    };
+
     // Aborta si faltan los assets, y no cae a colores planos: las cifras
     // de este gate son luminancias.
-    let mut diorama = match safe_level_con(WaterPreset::RefractiveWater, Some(&raiz())) {
+    let mut diorama = match construido {
         Ok(nivel) => nivel,
         Err(e) => {
             eprintln!("error: {e}");
@@ -245,7 +265,10 @@ fn main() {
     let camara = diorama.hero_camera();
     let partes = clasificar(&diorama);
 
-    println!("Gate de Aguas Voladoras · Tarea 5.8");
+    println!(
+        "Gate de Aguas Voladoras · Tarea 5.8{}",
+        if candidato { "  ·  candidato 7.2" } else { "" }
+    );
     println!(
         "  escena     {} primitivas, profundidad {MAX_DEPTH}, {} x {}",
         diorama.scene.objects.len(),
@@ -280,7 +303,21 @@ fn main() {
 
     tiempos.sort_by(|a, b| a.partial_cmp(b).expect("no hay NaN"));
 
-    let destino = std::path::PathBuf::from("evidence/hito5/gate-hero.png");
+    // Cada nivel escribe en su sitio. Con un solo destino, correr el gate
+    // con `--target` sobreescribiria la evidencia aprobada del Hito 5 con
+    // otra escena: el PNG diria `gate-hero` y mostraria el candidato.
+    let destino = std::path::PathBuf::from(if candidato {
+        "evidence/hito7/gate-hero-target.png"
+    } else {
+        "evidence/hito5/gate-hero.png"
+    });
+
+    if let Some(carpeta) = destino.parent() {
+        if let Err(e) = std::fs::create_dir_all(carpeta) {
+            eprintln!("error: no se pudo crear {}: {e}", carpeta.display());
+            std::process::exit(1);
+        }
+    }
     guardar(&framebuffer, &destino);
 
     println!(

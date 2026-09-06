@@ -99,6 +99,30 @@ pub fn entradas_del_objetivo() -> EntradasDelObjetivo {
     }
 }
 
+/// Extensión en `x` que ocupan la cadena y el ancla, dada el ancla de la
+/// bahía.
+///
+/// Se **mide** construyendo las dos entradas aisladas, en vez de dejar que
+/// cada llamador se invente un corredor con relleno a ojo. La primera
+/// versión del test que lo usa puso `+0.5 .. +2.6` a mano y falló contra un
+/// bloque que empezaba en `+2.575`: el relleno era mayor que la pieza real,
+/// así que el test no medía la cadena, medía su propio margen.
+pub fn corredor_de_la_cadena(ancla: Vec3) -> (f32, f32) {
+    let mut scene = Scene::new();
+    let paleta = Palette::registrar(&mut scene);
+
+    cadena(&mut scene, &paleta, ancla);
+    ancla_del_barco(&mut scene, &paleta, ancla);
+
+    scene
+        .objects
+        .iter()
+        .map(|o| o.primitive.bounds())
+        .fold((f32::INFINITY, f32::NEG_INFINITY), |(min, max), caja| {
+            (min.min(caja.min.x), max.max(caja.max.x))
+        })
+}
+
 /// Caja del volumen de agua: centro y tamaño, dada el ancla de la bahía.
 ///
 /// Vive aparte porque no la usa solo el constructor: la comprobación de que
@@ -701,9 +725,22 @@ fn borde_roto(scene: &mut Scene, paleta: &Palette, borde: Vec3, densidad: Densit
     // ancla, y ninguna toca la muesca central.
     const PROFUNDIDAD_DEL_LOTE: f32 = 1.5;
 
-    for (x, adelanto) in [(-2.8_f32, 0.62_f32), (3.3, 0.44)] {
+    for (x, adelanto) in [(-2.8_f32, 0.62_f32), (3.25, 0.44)] {
         let ancho = 0.85 + 0.5 * azar.siguiente();
         let altura = 2.2 + 1.0 * azar.siguiente();
+
+        // La tercera extracción se consume aunque la `z` ya no salga de
+        // ella, y no es contabilidad ociosa.
+        //
+        // La revisión anterior sacaba tres valores por bloque —ancho, altura
+        // y sacudida—. Al fijar la `z` a mano se quitó la tercera, y con eso
+        // el segundo bloque empezó a leer el ancho y la altura que le
+        // tocaban al primero: cambió de tamaño sin que nadie lo pidiera, en
+        // un parche que decía mover y no redimensionar.
+        //
+        // Consumirla mantiene la secuencia alineada, así que los dos bloques
+        // conservan las dimensiones que se aprobaron mirándolos.
+        let _sacudida_sustituida_por_el_adelanto = azar.simetrico();
 
         masa(
             scene,

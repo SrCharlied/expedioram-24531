@@ -2829,7 +2829,7 @@ continuar la fila por los extremos y pasan a ponerse **delante** de ella:
 
 | | Revisión b | Revisión c |
 |---|---|---|
-| Posición en `x` | `t = -1` y `t = 8`, fuera de la fila | `-2.8` y `+3.3`, dentro del ancho que ya tenía |
+| Posición en `x` | `t = -1` y `t = 8`, fuera de la fila | `-2.8` y `+3.25`, dentro del ancho que ya tenía |
 | Adelanto en `z` | la sacudida de la fila, `±0.28` | `+0.62` y `+0.44`, fuera de esa banda |
 | Profundidad | `1.1`, la de la fila | `1.5` |
 | Ancho de la silueta | crece | **no crece** |
@@ -2853,25 +2853,51 @@ dos masas de otra entrada pasan cerca. Se identifica por **propiedades** —la
 profundidad fija de `1.1` con la que se genera la fila—, que es lo que ya hace
 el selector de rocas desde la Tarea 5.5.
 
+#### Un cambio de dimensiones que nadie pidió
+
+El primer parche de la revisión c fijó la `z` a mano y, con eso, **quitó la
+tercera extracción del generador**. Los tres valores por bloque eran ancho,
+altura y sacudida; al eliminar la sacudida, el segundo bloque empezó a leer el
+ancho y la altura que le tocaban al primero.
+
+O sea: un parche que decía *mover* también redimensionó, y el `2.4 %` de
+píxeles de `e+35` bajó a `2.09 %` por un motivo que no tenía nada que ver con
+la colocación. Se descubrió mirando, no midiendo: la fila había perdido masa
+por la derecha.
+
+El arreglo es consumir la extracción y descartarla, que mantiene la secuencia
+alineada. Con ella restaurada, los dos bloques recuperan las dimensiones con
+las que se aprobó la composición, y el bloque derecho pasa a `x = 3.25`.
+
 #### Lo que cuesta
 
 ```text
-+2 primitivas cuestan      +0.1 %   (pareado)
-rayos secundarios          -138
-reserva                    3.22x    (umbral 1.30x)
++2 primitivas cuestan      +1.9 %   (pareado)
+rayos secundarios          -259
+reserva                    2.47x    (umbral 1.30x)
 ```
 
-Sigue restando rayos, como en la revisión b, y algo menos: `−138` contra
-`−204`. Los bloques adelantados cubren una huella distinta de la cara frontal.
-El coste en tiempo es indistinguible de cero.
+Sigue restando rayos, y **más** que la revisión b: `−259` contra `−204`. Los
+bloques adelantados y más hondos cubren más de la cara frontal del agua, así
+que ahorran más óptica de la que cuestan en recorrido.
+
+Vale la pena verlo junto a la corrida con la secuencia rota, que daba `−138` y
+`+0.1 %`: la diferencia entre `−138` y `−259` es todo lo que el bloque
+derecho había perdido de ancho y de alto sin que nadie lo pidiera.
 
 #### Lo que compró
 
-| Encuadre | Rev. b | Rev. c |
-|---|---:|---:|
-| hero | `0.92 %` | `0.53 %` |
-| `e+35 cerca` | `2.01 %` | `1.26 %` |
-| `e+84 cerca` | `1.01 %` | `0.69 %` |
+| Encuadre | Rev. b | Rev. c, secuencia rota | Rev. c |
+|---|---:|---:|---:|
+| hero | `0.92 %` | `0.53 %` | `0.64 %` |
+| `e+35 cerca` | `2.01 %` | `1.26 %` | `1.51 %` |
+| `e+84 cerca` | `1.01 %` | `0.69 %` | `0.80 %` |
+
+Y los rayos, en la misma comparación: `−204`, `−138`, `−259`.
+
+La columna del medio es la del parche con la secuencia rota, y se conserva
+porque es la que delata el problema: un cambio de colocación no debería mover
+las tres cifras un `20 %` a la baja.
 
 **La revisión c cambia menos píxeles, y eso no la hace peor.** La b cambiaba
 más porque ensanchaba la silueta sobre fondo vacío; la c pone los bloques
@@ -2894,9 +2920,38 @@ Sigue siendo diez veces el lote 1 y trece veces las piezas del casco.
 - **`e+84 cerca`.** Desde el cenit el cambio es el menor de los tres, que es
   lo esperable: el relieve en `z` se ve de canto.
 
-La decisión de cerrar `A-11` en `10/10` sigue siendo de composición y es
-humana. Lo que la medición puede decir ya está dicho: cabe, resta rayos, no
-ensancha la silueta y rompe la alineación.
+#### La cadena y el ancla, contadas
+
+El bloque derecho empieza en `x = 2.575` y el brazo del ancla acaba en
+`2.56`: quince milésimas de holgura. Y esa holgura es de **mundo**, no de
+pantalla —el bloque está mucho más cerca de la cámara, así que su huella en
+pantalla es más ancha en proporción—, de modo que el test de corredor no
+podía cerrar la pregunta.
+
+La cierra el gate de la Tarea 5.8, que desde este lote se puede correr contra
+el candidato con `--target`. Su criterio 4 es «barco, cadena y ancla
+legibles», y un lote de densidad en primer plano es justo lo que puede
+incumplirlo.
+
+Añadir la bandera destapó un peligro propio: el gate escribía siempre en
+`evidence/hito5/gate-hero.png`, así que correrlo con `--target` **sobreescribía
+la evidencia aprobada del Hito 5 con otra escena** —un PNG que decía
+`gate-hero` y mostraba el candidato—. Ahora cada nivel escribe en su sitio, y
+el del candidato es `evidence/hito7/gate-hero-target.png`.
+
+| | Nivel seguro | Candidato 7.2 |
+|---|---:|---:|
+| Partes del borde roto | 8 | **10** |
+| Casco visible | `1 474 px` | `1 474 px` |
+| Cadena y ancla | `167 px` | `167 px` |
+
+**Idénticos.** El lote no le quita un píxel ni al casco ni a la cadena ni al
+ancla, y la holgura de `0.015` se sostiene también en pantalla.
+
+#### `A-11` cerrada
+
+Diez de diez, su máximo del inventario. No hay un bloque más que pedir en esa
+entrada.
 
 #### Gates registrados
 
@@ -2905,15 +2960,17 @@ cargo fmt -- --check                        OK
 cargo clippy --all-targets -- -D warnings   0 avisos
 cargo test                                  407 tests, 0 fallos
 cargo build --release                       OK
-cargo run --release --example performance_matrix       codigo 0, reserva 3.22x
+cargo run --release --example performance_matrix       codigo 0, reserva 2.47x
 cargo run --release --example density_preview          6 PNG y el delta de pixeles
+cargo run --release --example gate_flying_waters --target   167 px, sin perdida
 ```
 
 Reparto de los 407: `371` de librería, `16` del generador de assets, `8` de
 humo del render, `6` de sombras submarinas y `6` de la demo completa.
 
-Procedencia: árbol de la Tarea 7.2 sobre `b14e2da`, 5 de septiembre de 2026,
-Ryzen 7 6800H, rustc 1.97.0, release.
+Procedencia: árbol de la Tarea 7.2 sobre `b14e2da`, 6 de septiembre de 2026,
+Ryzen 7 6800H, rustc 1.97.0, release. Los PNG y las tres cifras de píxeles
+son de la corrida con la secuencia ya restaurada.
 
 ---
 
@@ -2941,8 +2998,9 @@ Ninguna de estas filas puede completarse por estimación. Cada hito llena la suy
 | 7 | Lote 2a de densidad, cuatro piezas hero | **Superado** — `+4` primitivas, `0.95 %` del cuadro hero; la descomposición retiró las dos del casco |
 | 7 | Reparto de la lectura entre `A-03` y `A-11` | **Registrado** — el borde compra el `97 %`: `0.92 %` de `0.95 %` |
 | 7 | Lote 2b de densidad, solo el borde | **Superado** — se leía como pared continua desde `e+35`; los dos bloques se recolocaron |
-| 7 | Lote 2c de densidad, borde con profundidad | **En evaluación** — `+2` primitivas, `+0.1 %`, `−138` rayos, `0.53 %` del cuadro hero; reserva `3.22x`. Falta el juicio de composición |
-| 7 | `A-11` como entrada | **Agotada si se conserva** — llega a su máximo de 10 |
+| 7 | Lote 2c de densidad, borde con profundidad | **Registrado** — `+2` primitivas, `+1.9 %`, `−259` rayos, `0.64 %` del cuadro hero; reserva `2.47x` |
+| 7 | `A-11` como entrada | **Cerrada** — `10/10`, su máximo del inventario |
+| 7 | Legibilidad de cadena y ancla con el lote | **Registrado** — `167 px` en los dos niveles: el lote no ocluye nada |
 | 7 | Lote 3 de densidad | **Abierto** — no autorizado hasta aceptar o retirar el 2b |
 | 8 | Hardware de medición y tiempos finales en release | Pendiente |
 

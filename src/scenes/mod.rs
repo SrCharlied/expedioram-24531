@@ -350,7 +350,7 @@ pub const SAFE: Presupuesto = Presupuesto {
 ///
 /// | Entrada | Seguro | Lote | Objetivo | Máximo del inventario |
 /// |---|---:|---:|---:|---:|
-/// | `A-11` borde roto | 8 | `+2` | 10 | **10, agotado** |
+/// | `A-11` borde roto | 8 | `+2` | 10 | **10, cerrada** |
 ///
 /// # Dos lotes descartados debajo de este
 ///
@@ -780,23 +780,26 @@ mod tests {
 
     #[test]
     fn el_lote_no_tapa_la_cadena_ni_el_ancla() {
-        // El criterio explicito de la autorizacion. Los dos bloques nuevos
-        // van a los extremos del borde, y la cadena baja por el centro de la
-        // bahia hacia `+X`: se exige separacion en X en vez de confiarla al
-        // comentario.
+        // El criterio explicito de la autorizacion. La cadena baja por el
+        // centro de la bahia hacia `+X`, y los bloques del lote van a los
+        // lados: se exige separacion en X en vez de confiarla al comentario.
+        //
+        // El corredor se **mide**, no se rellena a ojo. La primera version
+        // puso `+0.5 .. +2.6` a mano y fallo contra un bloque que empieza en
+        // `+2.575`, cuando el brazo del ancla acaba en `+2.56`: el test
+        // estaba midiendo su propio margen y no la cadena.
         let seguro = safe_level(WaterPreset::RefractiveWater);
         let objetivo = target_level(WaterPreset::RefractiveWater);
         let bahia = anclas_del_diorama().flying_waters_anchor;
 
-        // El corredor de la cadena, del casco al ancla, con holgura.
-        let (corredor_min, corredor_max) = (bahia.x + 0.5, bahia.x + 2.6);
+        let (corredor_min, corredor_max) = flying_waters::corredor_de_la_cadena(bahia);
 
         for caja in sobrante(&seguro, &objetivo) {
             let solapa = caja.max.x > corredor_min && caja.min.x < corredor_max;
 
             assert!(
                 !solapa,
-                "una pieza del lote se cruza con la cadena en X: {caja:?}"
+                "una pieza del lote se cruza con la cadena en X: {caja:?}                  contra el corredor [{corredor_min}, {corredor_max}]"
             );
         }
     }
