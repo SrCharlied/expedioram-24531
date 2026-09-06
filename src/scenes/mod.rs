@@ -341,39 +341,38 @@ pub const SAFE: Presupuesto = Presupuesto {
     flying_waters: 58,
 };
 
-/// Conteos del nivel objetivo con el **lote 2** de la Tarea 7.2.
-///
-/// No es la densidad objetivo del plan: es el nivel seguro más cuatro
-/// primitivas, todas en Aguas Voladoras, autorizadas de forma incremental.
+/// Conteos del nivel objetivo con lo que quedó del **lote 2**.
 ///
 /// | Entrada | Seguro | Lote | Objetivo | Máximo del inventario |
 /// |---|---:|---:|---:|---:|
-/// | `A-03` casco | 12 | `+2` | 14 | 20 |
-/// | `A-11` borde roto | 8 | `+2` | 10 | 10 |
+/// | `A-11` borde roto | 8 | `+2` | 10 | **10, agotado** |
 ///
-/// # Reemplaza al lote 1, no se acumula sobre él
+/// # Dos lotes descartados debajo de este
 ///
-/// El primer lote fueron quince primitivas submarinas —lecho, kelp y
-/// rocas—, y se **retiró**: cabía de sobra y cambiaba un `0.05 %` del cuadro
-/// que se presenta. Las quince no siguen debajo de este candidato; el lote 2
-/// parte otra vez de las `160` del nivel seguro.
+/// El **lote 1** fueron quince primitivas submarinas —lecho, kelp y rocas—:
+/// cabía de sobra y cambiaba un `0.05 %` del cuadro que se presenta.
 ///
-/// # Por qué estas cuatro
+/// El **lote 2** añadió dos piezas al casco y dos al borde roto. Las del
+/// borde se leen; las del casco cambiaban un `0.04 %` y se retiraron con el
+/// mismo argumento que el lote 1, porque tienen la misma causa: están dentro
+/// del volumen de agua, y ahí el reflejo se come el detalle.
 ///
-/// Por lo que el lote 1 enseñó al fallar: dentro de la bahía el reflejo del
-/// agua se come el detalle, así que las primitivas caras de trazar son
-/// además las que menos se leen. Las cuatro de este lote son piezas **hero**
-/// y ninguna está detrás de la superficie refractiva desde la toma hero: dos
-/// rompen la silueta del casco y dos continúan el desgarro del borde, que
-/// está en primer plano.
+/// Ninguno sigue debajo de este candidato. Cada lote parte otra vez de las
+/// `160` del nivel seguro; no se acumulan.
 ///
-/// Cuatro y no siete porque la reserva no premia llenarla. Si estas cuatro
-/// se leen, hay margen para pedir más; si no, se han gastado cuatro.
+/// # Por qué solo estas dos
+///
+/// Porque son las únicas que la medición defiende. Están en **primer plano**
+/// y no detrás de la superficie refractiva, que es la diferencia que separa
+/// lo que se lee de lo que no en los tres experimentos.
+///
+/// Y con ellas `A-11` llega a su máximo del inventario. Si se conservan, esa
+/// entrada queda cerrada.
 pub const TARGET: Presupuesto = Presupuesto {
     global: 27,
     meadows: 37,
     breakwater: 38,
-    flying_waters: 62,
+    flying_waters: 60,
 };
 
 /// Construye el nivel seguro completo.
@@ -575,33 +574,35 @@ mod tests {
     }
 
     #[test]
-    fn el_lote_2_son_cuatro_primitivas_y_respeta_los_maximos() {
-        // El conteo region por region y no solo en el total: un lote que se
-        // pasara en una entrada y se quedara corto en otra cuadraria en la
-        // suma y estaria mal.
+    fn el_lote_son_dos_primitivas_y_agota_el_maximo_de_a11() {
+        // El conteo region por region y no solo en el total.
         assert_eq!(TARGET.global, SAFE.global);
         assert_eq!(TARGET.meadows, SAFE.meadows);
         assert_eq!(TARGET.breakwater, SAFE.breakwater);
-        assert_eq!(TARGET.flying_waters, SAFE.flying_waters + 4);
+        assert_eq!(TARGET.flying_waters, SAFE.flying_waters + 2);
 
         assert_eq!(SAFE.total(), 160);
-        assert_eq!(TARGET.total(), 164);
+        assert_eq!(TARGET.total(), 162);
     }
 
     #[test]
-    fn el_lote_2_no_pasa_de_los_maximos_del_inventario() {
-        // Los maximos por entrada del inventario: `A-03` 12 -> 20 y `A-11`
-        // 8 -> 10. El lote pone `+2` en cada una, asi que el borde roto
-        // queda **en** su maximo y el casco a la mitad del suyo.
+    fn el_lote_no_toca_el_casco_y_deja_a11_en_su_maximo() {
+        // Se cuenta la escena, no se relee el presupuesto: si el generador y
+        // la constante discreparan, releer la constante no lo notaria.
         //
-        // Se comprueba contando las primitivas de cada entrada, no
-        // releyendo la constante: el conteo es lo que se envia.
+        // `A-03` tiene que seguir en doce. El lote 2 le probo dos piezas y se
+        // retiraron por no leerse; que vuelvan sin querer es justo el tipo de
+        // regresion que este test existe para ver.
         let objetivo = flying_waters::entradas_del_objetivo();
 
-        assert_eq!(objetivo.casco, 14, "A-03 se paso de 20 o no llego a 14");
-        assert!(objetivo.casco <= 20);
-        assert_eq!(objetivo.borde_roto, 10, "A-11 tiene un maximo de 10");
-        assert!(objetivo.borde_roto <= 10);
+        assert_eq!(
+            objetivo.casco, 12,
+            "A-03 no debe crecer: sus dos piezas se retiraron"
+        );
+        assert_eq!(
+            objetivo.borde_roto, 10,
+            "A-11 tiene un maximo de 10 y el lote lo agota"
+        );
     }
 
     #[test]
@@ -616,82 +617,69 @@ mod tests {
     #[test]
     fn el_objetivo_es_el_seguro_mas_el_lote() {
         // Superconjunto y no escena nueva: cada primitiva del nivel seguro
-        // tiene que aparecer **igual** en el objetivo. Se compara por cajas
-        // y no por indices porque el lote del casco se inserta antes que el
-        // resto del casco, asi que el orden no se conserva aunque la
-        // geometria si.
+        // tiene que aparecer **igual** en el objetivo. Se compara por cajas y
+        // no por indices porque el orden de generacion no tiene por que
+        // conservarse aunque la geometria si.
         let seguro = safe_level(WaterPreset::RefractiveWater);
         let objetivo = target_level(WaterPreset::RefractiveWater);
 
-        assert_eq!(objetivo.scene.objects.len(), 164);
-        assert_eq!(sobrante(&seguro, &objetivo).len(), 4);
+        assert_eq!(objetivo.scene.objects.len(), 162);
+        assert_eq!(sobrante(&seguro, &objetivo).len(), 2);
     }
 
     #[test]
-    fn el_lote_2_esta_donde_se_ve_y_no_donde_se_paga() {
-        // La leccion del lote 1, convertida en test. Las dos piezas del
-        // casco van **dentro** del volumen —son parte del pecio— y las dos
-        // del borde roto van **fuera y delante**, que es donde el reflejo
-        // del agua no se las come.
+    fn el_lote_esta_delante_del_agua_y_no_dentro() {
+        // La leccion de los dos lotes descartados, convertida en test. Lo que
+        // esta dentro del volumen no se lee, asi que el lote que sobrevivio
+        // tiene que estar **fuera y delante**: entre el agua y la camara
+        // hero, que mira desde `+Z`.
         //
-        // Los tres ejes, y no dos: la primera version de este test
-        // comprobaba X y Z, y una pieza que asomara por encima de la
-        // superficie habria pasado.
+        // Los tres ejes, y no dos: la primera version comprobaba X y Z, y una
+        // pieza que asomara por encima de la superficie habria pasado.
         let seguro = safe_level(WaterPreset::RefractiveWater);
         let objetivo = target_level(WaterPreset::RefractiveWater);
 
         let (centro, tamano) =
             flying_waters::caja_del_volumen(anclas_del_diorama().flying_waters_anchor);
-        let dentro = |caja: &crate::bounds::Aabb| {
-            caja.min.x > centro.x - tamano.x * 0.5
+
+        for caja in sobrante(&seguro, &objetivo) {
+            let dentro = caja.min.x > centro.x - tamano.x * 0.5
                 && caja.max.x < centro.x + tamano.x * 0.5
                 && caja.min.y > centro.y - tamano.y * 0.5
                 && caja.max.y < centro.y + tamano.y * 0.5
                 && caja.min.z > centro.z - tamano.z * 0.5
-                && caja.max.z < centro.z + tamano.z * 0.5
-        };
+                && caja.max.z < centro.z + tamano.z * 0.5;
 
-        let piezas = sobrante(&seguro, &objetivo);
-        let del_casco = piezas.iter().filter(|c| dentro(c)).count();
-        let del_borde = piezas.len() - del_casco;
-
-        assert_eq!(
-            del_casco, 2,
-            "las dos del casco tienen que caber en el agua"
-        );
-        assert_eq!(del_borde, 2, "las dos del borde tienen que quedar fuera");
-
-        // Y las de fuera, delante: entre el agua y la camara hero, que mira
-        // desde `+Z`. Si quedaran detras, no ocluirian nada.
-        for caja in piezas.iter().filter(|c| !dentro(c)) {
+            assert!(
+                !dentro,
+                "una pieza del lote quedo dentro del agua: {caja:?}"
+            );
             assert!(
                 caja.min.z > centro.z,
-                "una pieza del borde quedo detras del agua: {caja:?}"
+                "una pieza del lote quedo detras del agua: {caja:?}"
             );
         }
     }
 
     #[test]
     fn el_lote_no_tapa_la_cadena_ni_el_ancla() {
-        // El criterio explicito de la autorizacion. La cadena baja del
-        // casco hacia `+X` y `+Z`; las dos piezas nuevas del casco van al
-        // lado contrario, y esto lo exige en vez de confiarlo al comentario.
+        // El criterio explicito de la autorizacion. Los dos bloques nuevos
+        // van a los extremos del borde, y la cadena baja por el centro de la
+        // bahia hacia `+X`: se exige separacion en X en vez de confiarla al
+        // comentario.
         let seguro = safe_level(WaterPreset::RefractiveWater);
         let objetivo = target_level(WaterPreset::RefractiveWater);
-        let casco = flying_waters::ancla_del_casco(anclas_del_diorama().flying_waters_anchor);
+        let bahia = anclas_del_diorama().flying_waters_anchor;
 
-        let (centro, tamano) =
-            flying_waters::caja_del_volumen(anclas_del_diorama().flying_waters_anchor);
-        let dentro = |caja: &crate::bounds::Aabb| {
-            caja.min.x > centro.x - tamano.x * 0.5 && caja.max.x < centro.x + tamano.x * 0.5
-        };
+        // El corredor de la cadena, del casco al ancla, con holgura.
+        let (corredor_min, corredor_max) = (bahia.x + 0.5, bahia.x + 2.6);
 
-        for caja in sobrante(&seguro, &objetivo).iter().filter(|c| dentro(c)) {
-            let hacia_la_cadena = caja.max.x > casco.x + 0.6 && caja.max.z > casco.z + 0.3;
+        for caja in sobrante(&seguro, &objetivo) {
+            let solapa = caja.max.x > corredor_min && caja.min.x < corredor_max;
 
             assert!(
-                !hacia_la_cadena,
-                "una pieza del casco invade el corredor de la cadena: {caja:?}"
+                !solapa,
+                "una pieza del lote se cruza con la cadena en X: {caja:?}"
             );
         }
     }
@@ -704,7 +692,7 @@ mod tests {
             let seguro = safe_level(water);
             let objetivo = target_level(water);
 
-            assert_eq!(objetivo.scene.objects.len() - seguro.scene.objects.len(), 4);
+            assert_eq!(objetivo.scene.objects.len() - seguro.scene.objects.len(), 2);
         }
     }
 

@@ -2582,7 +2582,12 @@ Ryzen 7 6800H, rustc 1.97.0, release.
 
 ---
 
-### Tarea 7.2 — Lote 2, piezas hero: cuatro primitivas
+### Tarea 7.2 — Lote 2, revisión a: cuatro piezas hero
+
+> **Superada por la revisión b.** La descomposición mostró que las dos piezas
+> del casco no se leían, y se retiraron. Esta sección se conserva porque es la
+> medición que lo demostró; el candidato vigente son las dos del borde. Los
+> PNG quedan en `evidence/hito7/densidad/lote-2-hero/`.
 
 El lote **reemplaza** al anterior, no se acumula sobre él. Parte otra vez de
 las `160`:
@@ -2667,9 +2672,8 @@ no se ha hecho.
 
 #### Veredicto
 
-El lote **cabe** con `3.29x` y **se lee**. La decisión de conservarlo es de
-composición y es del humano; los pares de `evidence/hito7/densidad/lote-2-hero/`
-son el material.
+El lote cabía con `3.29x` y se leía, pero no por partes iguales. La
+descomposición decidió la revisión siguiente: **de las cuatro, dos.**
 
 #### Correcciones de la matriz
 
@@ -2712,6 +2716,105 @@ Ryzen 7 6800H, rustc 1.97.0, release.
 
 ---
 
+### Tarea 7.2 — Lote 2, revisión b: solo el borde
+
+La descomposición que en la revisión a quedó como hipótesis sin medir se
+midió, y confirmó lo que el lote 1 ya había dicho:
+
+| Candidato | Piezas | Dónde | Cambio en la hero |
+|---|---:|---|---:|
+| Lote 1 | 15 | lecho, kelp, rocas — dentro del agua | `0.05 %` |
+| Lote 2a, `A-03` | 2 | casco — dentro del agua | `0.04 %` |
+| Lote 2b, `A-11` | 2 | borde roto — en primer plano | **`0.92 %`** |
+
+**Las dos piezas del borde compran el `97 %` de la lectura que compraban las
+cuatro** —`0.92 %` contra `0.95 %`—. Las dos del casco aportaban tres
+centésimas, y por el mismo motivo que las quince submarinas: están detrás de
+la superficie refractiva, donde el reflejo domina los píxeles.
+
+Tres experimentos, tres veces la misma frontera. Ya no es una hipótesis sobre
+esta escena: **el agua es el límite entre el detalle que se lee y el que no.**
+
+#### El candidato vigente
+
+| Entrada | Seguro | Lote | Objetivo | Máximo del inventario |
+|---|---:|---:|---:|---:|
+| `A-11` borde roto | 8 | `+2` | 10 | **10, agotado** |
+| **Escena** | **160** | **+2** | **162** | |
+
+Si se conserva, `A-11` queda **cerrada**: llega a su máximo y no hay un tercer
+bloque que pedir ahí.
+
+#### Lo que cuesta
+
+| Preset | Prim. | `320 × 240` | 2os rayos |
+|---|---:|---:|---:|
+| `safe-revealing` | 160 | `0.0642` | `14 355` |
+| `target-revealing` | 162 | `0.0666` | `14 151` |
+
+```text
++2 primitivas cuestan      +0.7 %   (pareado)
+rayos secundarios          -204
+reserva                    2.43x    (umbral 1.30x)
+```
+
+Los `−204` rayos son **los mismos** que traía la revisión a: los dos bloques
+del borde ocluyen parte de la cara frontal del agua desde la cámara, y las dos
+piezas del casco no aportaban ni uno. La reducción de óptica venía entera del
+borde, igual que la lectura.
+
+#### La decisión que queda, y es humana
+
+El borde **se lee**. La pregunta abierta es si se lee como lo que debe ser.
+
+Mirando los pares de `evidence/hito7/densidad/lote-2b-borde/`:
+
+- En la **toma hero** el desgarro llega ahora de lado a lado de la bahía y se
+  lee como lo que el concepto pide: el Continente roto por su frente, no una
+  bahía con un bordillo. A esa distancia la fila conserva su irregularidad.
+- En **`e+35 cerca`** la lectura cambia de signo. Los dos bloques nuevos caen
+  en los extremos y con ellos la fila pasa de ocho piezas a diez sin huecos
+  nuevos: de cerca se parece más a una **pared continua** que a un desgarro.
+  La muesca que la Tarea 5.8 abrió para la cadena sigue siendo el único hueco
+  de toda la fila, y ahora es el único hueco de una fila más larga.
+
+Es exactamente el riesgo que la revisión nombró: *enmarca o amuralla*. La
+cifra no lo decide, y esta sección no lo decide.
+
+Si el juicio es que amuralla, el arreglo no es retirar los dos bloques sino
+**moverlos**: en vez de alargar la fila por los extremos, adelantarlos en `Z`
+y romper su alineación, que profundiza el desgarro en vez de ensancharlo. Es
+una revisión `c` con el mismo coste y el mismo conteo, no un lote nuevo.
+
+#### Comentarios del instrumento, al día
+
+| Dónde | Decía | Ahora |
+|---|---|---|
+| `density_preview`, doc | «quince primitivas», kelp y rocas, «el lote entero cae dentro del agua» | la tabla de los tres experimentos y qué mide cada encuadre |
+| `density_preview`, ruta | una carpeta por lote | una por **revisión**: un candidato descartado deja evidencia que lo justifica |
+| `density_preview`, tres `println!` | cadenas con saltos de línea literales, de un parche mal aplicado | `\n` |
+| `profile_preview`, doc | «los dos encuadres», el peor en singular | los tres, y por qué las dos cámaras de calibración y no una |
+| `flying_waters::casco` | las dos piezas del lote | por qué se retiraron |
+
+#### Gates registrados
+
+```text
+cargo fmt -- --check                        OK
+cargo clippy --all-targets -- -D warnings   0 avisos
+cargo test                                  404 tests, 0 fallos
+cargo build --release                       OK
+cargo run --release --example performance_matrix       codigo 0, reserva 2.43x
+cargo run --release --example density_preview          6 PNG y el delta de pixeles
+```
+
+Reparto de los 404: `368` de librería, `16` del generador de assets, `8` de
+humo del render, `6` de sombras submarinas y `6` de la demo completa.
+
+Procedencia: árbol de la Tarea 7.2 sobre `b14e2da`, 5 de septiembre de 2026,
+Ryzen 7 6800H, rustc 1.97.0, release.
+
+---
+
 ## Pendientes de medición
 
 Ninguna de estas filas puede completarse por estimación. Cada hito llena la suya.
@@ -2733,9 +2836,11 @@ Ninguna de estas filas puede completarse por estimación. Cada hito llena la suy
 | 7 | Encuadre de calibración de la ventana | **Registrado** — `calibration_cameras()`, las dos caras y no la toma hero: la duración se fija una vez y el usuario puede acercarse después |
 | 7 | Caracterización completa del rango interactivo | **Abierto** — la rejilla son 48 puntos de un espacio continuo |
 | 7 | Lote 1 de densidad, submarino | **Descartado** — `+15` primitivas, `+7.3 %` de tiempo y `0.05 %` del cuadro hero: cabía y no se leía |
-| 7 | Lote 2 de densidad, piezas hero | **Registrado** — `+4` primitivas, `+2.1 %`, **−204** rayos secundarios, `0.95 %` del cuadro hero; reserva `3.29x` |
-| 7 | Reparto de la lectura entre `A-03` y `A-11` | **Abierto** — exigiría un tercer nivel con solo el borde |
-| 7 | Lote 3 de densidad | **Abierto** — no autorizado; el criterio es detenerse cuando la imagen deja de mejorar |
+| 7 | Lote 2a de densidad, cuatro piezas hero | **Superado** — `+4` primitivas, `0.95 %` del cuadro hero; la descomposición retiró las dos del casco |
+| 7 | Reparto de la lectura entre `A-03` y `A-11` | **Registrado** — el borde compra el `97 %`: `0.92 %` de `0.95 %` |
+| 7 | Lote 2b de densidad, solo el borde | **En evaluación** — `+2` primitivas, `+0.7 %`, `0.92 %` del cuadro hero; reserva `2.43x`. Falta el juicio de composición |
+| 7 | `A-11` como entrada | **Agotada si se conserva** — llega a su máximo de 10 |
+| 7 | Lote 3 de densidad | **Abierto** — no autorizado hasta aceptar o retirar el 2b |
 | 8 | Hardware de medición y tiempos finales en release | Pendiente |
 
 **Regla.** Todos los benchmarks se ejecutan en release. El perfil `dev` de este proyecto lleva `opt-level = 3` heredado de la base académica, así que un tiempo medido en debug **parece** comparable a release y no lo es.

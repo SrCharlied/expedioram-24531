@@ -7,19 +7,27 @@
 //!
 //! # La pregunta que responden estos renders
 //!
-//! No es «¿se nota?». Quince primitivas siempre se notan si uno las busca.
-//! Es **si el diorama se lee mejor**: si el lecho deja de parecer una caja,
-//! si el kelp da escala al barco, si las rocas rompen el plano del fondo.
-//! Un lote que solo añade puntos verdes en el mismo sitio no aporta lectura,
-//! y la autorización dice explícitamente que en ese caso se retira.
+//! No es «¿se nota?». Cualquier primitiva se nota si uno la busca. Es **si
+//! el diorama se lee mejor** desde donde se mira, y esa pregunta ya se ha
+//! cobrado dos lotes:
+//!
+//! | Lote | Piezas | Dónde | Cambio en la hero | Veredicto |
+//! |---|---:|---|---:|---|
+//! | 1 | 15 | lecho, kelp y rocas, dentro del agua | `0.05 %` | retirado |
+//! | 2 · `A-03` | 2 | casco, dentro del agua | `0.04 %` | retirado |
+//! | 2 · `A-11` | 2 | borde roto, en primer plano | `~0.9 %` | en evaluación |
+//!
+//! Las tres filas dicen lo mismo por si sola no bastaba una: lo que está
+//! detrás de la superficie refractiva no se lee, porque el reflejo del agua
+//! domina esos píxeles. Y lo que está delante, sí.
 //!
 //! # Los tres encuadres
 //!
 //! La toma hero, que es lo que se presenta, y las dos cámaras de calibración
 //! —radio mínimo, elevaciones alta y cenital—, que son las que llenan la
-//! pantalla de bahía. El lote entero cae dentro del agua, así que es en esas
-//! dos donde se ve de verdad; la hero dice si el detalle llega a leerse a la
-//! distancia de presentación, que es la pregunta más difícil de las dos.
+//! pantalla de bahía. El reparto entre los tres es diagnóstico y no adorno:
+//! un lote cuyo máximo esté en el cenital está dentro del agua, y uno cuyo
+//! máximo esté en `e+35` está delante.
 //!
 //! Todo a `800 × 600` y en el estado **pintado**: aquí se juzga la
 //! composición, no el coste, y el estado intermedio del `Finale` dejaría
@@ -40,13 +48,14 @@ use expedition33_continente_inacabado::scenes::{
 const ANCHO: usize = 800;
 const ALTO: usize = 600;
 
-/// Nombre del lote que se esta midiendo.
+/// Nombre de la revisión que se está midiendo.
 ///
-/// Va en la ruta a proposito. El lote 1 —quince primitivas submarinas— se
-/// rechazo, y sus PNG son la evidencia que justifica el rechazo: si el
-/// siguiente lote escribiera encima, la conclusion se quedaria sin respaldo.
-/// Cada lote tiene su carpeta y ninguno pisa al anterior.
-const LOTE: &str = "lote-2-hero";
+/// Va en la ruta a propósito, y con revisión y no solo con número de lote.
+/// Cada candidato descartado deja PNG que **justifican** su rechazo: si el
+/// siguiente escribiera encima, la conclusión se quedaría sin respaldo. El
+/// lote 2 tuvo dos revisiones —cuatro piezas y luego solo las dos del
+/// borde—, y las dos hacen falta para leer por qué se retiró el casco.
+const LOTE: &str = "lote-2b-borde";
 
 const SALIDA: &str = "evidence/hito7/densidad";
 
@@ -133,10 +142,7 @@ fn main() {
         std::process::exit(1);
     }
 
-    println!(
-        "density_preview {LOTE} · el lote de la Tarea 7.2
-"
-    );
+    println!("density_preview · {LOTE} · Tarea 7.2\n");
 
     for (nombre, diorama) in &niveles {
         println!("  {nombre}: {} primitivas", diorama.scene.objects.len());
@@ -182,10 +188,7 @@ fn main() {
         resumen.push((encuadre.to_string(), distintos, perceptibles));
     }
 
-    println!(
-        "
-  cuanto cambia el cuadro con el lote"
-    );
+    println!("\n  cuanto cambia el cuadro con el lote");
     println!(
         "  {:<14} {:>12} {:>14}",
         "encuadre", "px distintos", "px perceptibles"
@@ -195,10 +198,7 @@ fn main() {
         println!("  {encuadre:<14} {distintos:>11.2} % {perceptibles:>13.2} %");
     }
 
-    println!(
-        "
-  «Perceptible» es un salto de al menos 8/255 en algun canal."
-    );
+    println!("\n  «Perceptible» es un salto de al menos 8/255 en algun canal.");
     println!("  La cifra no decide: dice cuanto hay que mirar. Comparar por pares");
     println!("  el mismo encuadre, -safe contra -target, y decidir si el lote");
     println!("  compra lectura. Si no la compra, se retira; lo dice la autorizacion.");

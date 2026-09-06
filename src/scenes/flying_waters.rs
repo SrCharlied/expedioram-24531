@@ -51,7 +51,7 @@ pub fn aguas_voladoras(
     let superficie = ancla.y + ALTURA_SUPERFICIE;
 
     lecho(scene, paleta, ancla);
-    casco(scene, paleta, ancla, densidad);
+    casco(scene, paleta, ancla);
     mastil(scene, paleta, ancla);
     cadena(scene, paleta, ancla);
     ancla_del_barco(scene, paleta, ancla);
@@ -79,12 +79,15 @@ pub struct EntradasDelObjetivo {
 }
 
 /// Cuenta `A-03` y `A-11` en el nivel objetivo, construyéndolas aisladas.
+///
+/// Las dos y no solo la que cambia: el test de los máximos tiene que poder
+/// comprobar también que `A-03` **no** creció.
 pub fn entradas_del_objetivo() -> EntradasDelObjetivo {
     let ancla = Vec3::zeros();
 
     let mut escena_casco = Scene::new();
     let paleta = Palette::registrar(&mut escena_casco);
-    casco(&mut escena_casco, &paleta, ancla, Density::Target);
+    casco(&mut escena_casco, &paleta, ancla);
 
     let mut escena_borde = Scene::new();
     let paleta = Palette::registrar(&mut escena_borde);
@@ -211,36 +214,15 @@ pub fn centro_visible_del_barco(ancla: Vec3) -> Vec3 {
 /// `A-03` · casco del barco, doce primitivas.
 ///
 /// Se prioriza la silueta rota y suspendida, no la precisión naval.
-fn casco(scene: &mut Scene, paleta: &Palette, ancla: Vec3, densidad: Density) {
+fn casco(scene: &mut Scene, paleta: &Palette, ancla: Vec3) {
     let madera = madera_del_pecio(scene, paleta);
     let centro = ancla_del_casco(ancla);
 
-    // El lote 2 de la Tarea 7.2: dos piezas que **rompen la silueta**, que
-    // es la prioridad visual que declara el inventario para `A-03`. No es
-    // precisión naval: es un tablón de cubierta levantado sobre la brecha y
-    // una tabla del costado desprendida.
-    //
-    // Las dos van al lado de babor y hacia popa, en `-Z` y `-X` locales, a
-    // propósito: la cadena baja del casco hacia `+X` y `+Z`, y el criterio
-    // de la autorización prohíbe taparla.
-    if densidad == Density::Target {
-        for (offset, tamano) in [
-            // El tablón levantado, suspendido sobre la rotura.
-            (Vec3::new(-0.62, 0.42, -0.18), Vec3::new(0.72, 0.13, 0.58)),
-            // La tabla del costado, colgando de la brecha.
-            (Vec3::new(-0.45, -0.05, -0.70), Vec3::new(1.10, 0.42, 0.12)),
-        ] {
-            masa(
-                scene,
-                centro + offset,
-                tamano,
-                paleta.canvas,
-                madera,
-                GRUPO,
-                REVELA,
-            );
-        }
-    }
+    // El lote 2 le probó dos piezas más —un tablón de cubierta levantado y
+    // una tabla del costado desprendida— y se **retiraron**: cambiaban un
+    // `0.04 %` del cuadro hero. Estaban dentro del volumen de agua, que es
+    // donde el lote 1 ya había medido que el reflejo se come el detalle.
+    // Dos experimentos distintos, la misma conclusión.
 
     // Cuerpo: cinco secciones que se estrechan hacia proa.
     for i in 0..5 {
@@ -685,8 +667,12 @@ fn borde_roto(scene: &mut Scene, paleta: &Palette, borde: Vec3, densidad: Densit
         return;
     }
 
-    // El lote 2 de la Tarea 7.2: dos bloques más que **continúan el
-    // desgarro** por los dos extremos, en `t = -1` y `t = 8`.
+    // El lote 2 de la Tarea 7.2, y lo único que quedó de él: dos bloques
+    // más que **continúan el desgarro** por los dos extremos, en `t = -1` y
+    // `t = 8`.
+    //
+    // Con estos dos, `A-11` llega a diez y **agota su máximo del
+    // inventario**. No hay un tercer bloque que pedir aquí.
     //
     // Van aquí y no dentro del bucle para que los ocho del nivel seguro
     // salgan bit a bit iguales: el reordenado de la muesca ordena un array
@@ -970,25 +956,14 @@ mod tests {
         (scene, paleta)
     }
 
-    /// Igual, para las entradas que la Tarea 7.2 volvio parametricas.
-    fn con_densidad(
-        entrada: fn(&mut Scene, &Palette, Vec3, Density),
-        densidad: Density,
-    ) -> (Scene, Palette) {
-        let mut scene = Scene::new();
-        let paleta = Palette::registrar(&mut scene);
-        entrada(&mut scene, &paleta, ANCLA, densidad);
-
-        (scene, paleta)
-    }
-
     #[test]
     fn cada_entrada_del_barco_respeta_su_presupuesto() {
         // Los cuatro números del plan para la Tarea 5.5, entrada por
         // entrada y no solo en el total: un casco que se pase de largo y un
         // mástil que se quede corto se cancelarían en la suma.
         for (nombre, entrada, esperado) in [
-            ("A-04 mastil", mastil as fn(&mut Scene, &Palette, Vec3), 3),
+            ("A-03 casco", casco as fn(&mut Scene, &Palette, Vec3), 12),
+            ("A-04 mastil", mastil, 3),
             ("A-05 cadena", cadena, 8),
             ("A-06 ancla", ancla_del_barco, 3),
         ] {
@@ -1004,7 +979,7 @@ mod tests {
         // se lea como un casco roto: se estrecha hacia proa, la cubierta va
         // partida en tres con hueco en medio, y la popa es la pieza más
         // alta.
-        let (scene, _) = con_densidad(casco, Density::Safe);
+        let (scene, _) = solo(casco);
         let cajas: Vec<_> = scene.objects.iter().map(|o| o.primitive.bounds()).collect();
 
         // Se estrecha: el ancho en Z de las cinco secciones del cuerpo
@@ -1061,7 +1036,7 @@ mod tests {
             "el mastil apenas asoma: {cima} contra {superficie}"
         );
 
-        let (scene_casco, _) = con_densidad(casco, Density::Safe);
+        let (scene_casco, _) = solo(casco);
 
         // Del casco solo la popa rompe la superficie, y eso es parte de la
         // silueta: un pecio escorado con la popa levantada se lee mucho
@@ -1224,8 +1199,7 @@ mod tests {
         // El casco en las dos densidades: el lote 2 le añade dos piezas y
         // tienen que caber igual que las doce originales.
         let escenas = [
-            con_densidad(casco, Density::Safe).0,
-            con_densidad(casco, Density::Target).0,
+            solo(casco).0,
             solo(mastil).0,
             solo(cadena).0,
             solo(ancla_del_barco).0,
@@ -1467,7 +1441,7 @@ mod tests {
     fn el_casco_y_el_mastil_usan_la_madera_del_pecio() {
         let mut scene = Scene::new();
         let paleta = Palette::registrar(&mut scene);
-        casco(&mut scene, &paleta, ANCLA, Density::Safe);
+        casco(&mut scene, &paleta, ANCLA);
         mastil(&mut scene, &paleta, ANCLA);
 
         for objeto in &scene.objects {

@@ -17,12 +17,16 @@
 //! `Framebuffer::blit_upscaled`, el mismo camino que dibuja la ventana, y
 //! junto al cuadro final a resolución completa que sirve de referencia.
 //!
-//! # Los dos encuadres
+//! # Los tres encuadres
 //!
-//! La toma hero, que es lo que se presenta, y el peor encuadre alcanzable
-//! —el zoom más cercano mirando a la bahía—, que es donde la mitigación
-//! decide. El segundo importa más de lo que parece: el perfil bajo se nota
-//! sobre todo en los detalles finos, y ahí es donde están el barco, la
+//! La toma hero, que es lo que se presenta, y **las dos** cámaras de
+//! calibración —radio mínimo, elevación hero y cenital—, que son donde la
+//! mitigación decide. Las dos y no una: entre ellas no hay campeón, se
+//! turnan el máximo entre corridas, y la inspección visual tiene que cubrir
+//! las mismas que la medición. Ver `Blockout::calibration_cameras`.
+//!
+//! Los encuadres cercanos importan más de lo que parece: el perfil bajo se
+//! nota sobre todo en los detalles finos, y ahí es donde están el barco, la
 //! cadena y el ancla.
 
 use std::path::{Path, PathBuf};
