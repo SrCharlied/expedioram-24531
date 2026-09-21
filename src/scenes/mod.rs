@@ -745,6 +745,63 @@ mod tests {
     }
 
     #[test]
+    fn el_lote_conserva_las_dimensiones_que_se_aprobaron() {
+        // La regresion del consumo de RNG, y el unico test que la ve.
+        //
+        // `borde_roto` saca tres valores del generador por bloque: ancho,
+        // altura y una sacudida en `z`. La revision 2c fijo la `z` a mano y
+        // el primer parche **quito** la tercera extraccion. La semilla no
+        // cambio, pero los draws se desplazaron: el segundo bloque paso a
+        // leer el ancho y el alto que le tocaban al primero. Un parche que
+        // decia mover tambien redimensiono.
+        //
+        // Ninguno de los invariantes geometricos lo vio, y no por descuido:
+        // el bloque redimensionado seguia cruzando la cara frontal, seguia
+        // rompiendo la alineacion de la fila y seguia cabiendo dentro de su
+        // ancho. Todos comprueban **relaciones**, y la relacion se mantenia.
+        // Por eso este fija **numeros**: son las dimensiones de la forma que
+        // se aprobo mirandola.
+        //
+        // La tolerancia es holgada para lo que separa a un `f32` de otro y
+        // estrecha para lo que hizo el bug: el bloque derecho se desviaba
+        // `0.49` en ancho y `0.12` en alto, dos y tres ordenes por encima.
+        const TOLERANCIA: f32 = 1e-3;
+
+        let seguro = safe_level(WaterPreset::RefractiveWater);
+        let objetivo = target_level(WaterPreset::RefractiveWater);
+
+        let mut lote = sobrante(&seguro, &objetivo);
+
+        assert_eq!(lote.len(), 2, "el lote de A-11 son exactamente dos bloques");
+
+        // Izquierda y derecha por el centro en `x`, y no por el orden en que
+        // `sobrante` los devuelva: ese orden sale de un `swap_remove` y no
+        // es parte de ningun contrato.
+        lote.sort_by(|a, b| {
+            (a.min.x + a.max.x)
+                .partial_cmp(&(b.min.x + b.max.x))
+                .expect("una caja no tiene NaN")
+        });
+
+        for (lado, caja, ancho, alto) in [
+            ("izquierdo", &lote[0], 0.9371_f32, 2.3980_f32),
+            ("derecho", &lote[1], 1.3491, 3.0786),
+        ] {
+            let medido_ancho = caja.max.x - caja.min.x;
+            let medido_alto = caja.max.y - caja.min.y;
+
+            assert!(
+                (medido_ancho - ancho).abs() < TOLERANCIA,
+                "el bloque {lado} mide {medido_ancho} de ancho y se aprobo con {ancho}"
+            );
+            assert!(
+                (medido_alto - alto).abs() < TOLERANCIA,
+                "el bloque {lado} mide {medido_alto} de alto y se aprobo con {alto}"
+            );
+        }
+    }
+
+    #[test]
     fn el_lote_esta_delante_del_agua_y_no_dentro() {
         // La leccion de los dos lotes descartados, convertida en test. Lo que
         // esta dentro del volumen no se lee, asi que el lote que sobrevivio

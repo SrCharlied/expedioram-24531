@@ -40,9 +40,11 @@
 //! `231` rayos y un `2 %` a `6 %` de tiempo. El conteo de primitivas y el
 //! conteo de rayos son dos presupuestos distintos, y el caro es el segundo.
 //!
-//! El lote de la Tarea 7.2 lo lleva al extremo: sus primitivas **restan**
-//! rayos, porque ocluyen parte de la cara frontal del agua. Densidad que se
-//! paga sola.
+//! El lote de la Tarea 7.2 empuja en la dirección contraria: sus primitivas
+//! **restan** rayos secundarios, porque ocluyen parte de la cara frontal del
+//! agua. Eso **compensa parte** de lo que cuestan de recorrido; no prueba
+//! que el coste neto baje. La columna de tiempo es la que decide, y en las
+//! corridas registradas el neto salió positivo.
 //!
 //! `target-water` ya se mide: es el candidato incremental de la Tarea 7.2
 //! que esté en evaluación, y el conteo sale de `TARGET`. **No es lo que se
@@ -226,11 +228,33 @@ fn reportar(celdas: &[Celda], niveles: &[Blockout], ancho: usize, alto: usize, t
 }
 
 /// Imprime los escalones entre filas consecutivas, con cociente pareado.
+/// Imprime el escalón entre filas consecutivas, **solo cuando es un
+/// escalón**.
+///
+/// Un par de filas es atribuible si cambia una cosa: o la geometría del
+/// nivel, o el estado de revelación. El par `safe-revealing → target-water`
+/// cambia **las dos**, así que su cociente no mide la densidad del lote ni
+/// el doble muestreo de la transición: mide la suma de ambos con signos
+/// distintos. Imprimirlo en la misma columna que los demás invitaba a
+/// leerlo como el coste del lote, que es justo lo que no es.
+///
+/// La comparación honesta del lote es **mismo estado**: `target-revealing`
+/// contra `safe-revealing`, que sí cambia solo la geometría. La imprime el
+/// bloque del presupuesto.
 fn escalones(celdas: &[Celda], etiqueta: &str) {
     println!("\n  escalones {etiqueta} (cociente pareado, ronda contra ronda)");
 
     for par in celdas.windows(2) {
         let (antes, despues) = (&par[0], &par[1]);
+
+        if antes.nivel != despues.nivel && antes.reveal != despues.reveal {
+            println!(
+                "  {:<18} -> {:<18}   no es un escalon: cambian geometria y reveal",
+                antes.nombre, despues.nombre
+            );
+            continue;
+        }
+
         let cociente = median_ratio(&despues.tiempos, &antes.tiempos);
         let rayos = despues.secundarios() as i64 - antes.secundarios() as i64;
 

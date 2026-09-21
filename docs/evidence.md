@@ -2387,7 +2387,7 @@ Todas las cifras de esta sección salen de dos corridas del 4 de septiembre de
 ```text
 cargo run --release --example interactive_frame_time    (fases 1, 2 y 3)
 cargo run --release --example performance_matrix        (la matriz)
-cargo run --release --example profile_preview           (los seis PNG)
+cargo run --release --example profile_preview           (los nueve PNG)
 ```
 
 Árbol de la Tarea 7.1 sobre `20e0f37`, commiteado después como `20a974e`;
@@ -2968,9 +2968,82 @@ cargo run --release --example gate_flying_waters --target   167 px, sin perdida
 Reparto de los 407: `371` de librería, `16` del generador de assets, `8` de
 humo del render, `6` de sombras submarinas y `6` de la demo completa.
 
-Procedencia: árbol de la Tarea 7.2 sobre `b14e2da`, 6 de septiembre de 2026,
-Ryzen 7 6800H, rustc 1.97.0, release. Los PNG y las tres cifras de píxeles
-son de la corrida con la secuencia ya restaurada.
+Procedencia: commit `95daaae`, que es el árbol donde aterrizaron el arreglo
+de la secuencia y `x = 3.25`; 6 de septiembre de 2026, Ryzen 7 6800H, rustc
+1.97.0, release. Los PNG y las tres cifras de píxeles son de la corrida con la
+secuencia ya restaurada.
+
+Una versión anterior de esta línea citaba `b14e2da`, que es el lote de cuatro
+piezas y no contiene ni el arreglo ni esta revisión.
+
+---
+
+## Revalidación del 21 de septiembre de 2026
+
+Se reejecutaron **solo los gates no visuales** sobre el árbol de trabajo:
+`HEAD 6fb84cd` más el test de regresión de dimensiones de `A-11`, que en ese
+momento estaba sin commitear.
+
+| Comando | RC |
+|---|---:|
+| `cargo fmt -- --check` | `0` |
+| `cargo clippy --all-targets --all-features -- -D warnings` | `0` |
+| `cargo test` | `0` — **408 tests, 0 fallos** |
+| `cargo build --release --all-features` | `0` |
+
+Reparto de los 408: `372` de librería, `16` del generador de assets, `8` de
+humo del render, `6` de sombras submarinas y `6` de la demo completa. Son los
+`407` del árbol anterior más la regresión de dimensiones.
+
+### Lo que esta revalidación **no** cubre
+
+No se reejecutaron los benchmarks ni los generadores de imágenes:
+`performance_matrix`, `density_preview`, `profile_preview`,
+`interactive_frame_time` ni `gate_flying_waters`. Tampoco se abrió la ventana.
+
+Por lo tanto **ninguna cifra de tiempo, de reserva, de rayos secundarios o de
+píxeles perceptibles de las secciones anteriores quedó revalidada en esta
+fecha**. Siguen siendo lo que eran: resultados de sus corridas, con la
+procedencia que cada sección declara. Un gate verde de compilación no dice
+nada sobre rendimiento.
+
+Toolchain de esta revalidación: `cargo 1.97.0`, `rustc 1.97.0`. Las auditorías
+externas del paquete de handoff usaron `1.97.1`; es un parche distinto, así
+que sus tiempos no son directamente comparables con los de aquí.
+
+---
+
+## Cierre de `A-11` — aprobación visual del 21 de septiembre de 2026
+
+Charlie revisó `hero-safe`, `hero-target` y `e35cerca-target` de
+`evidence/hito7/densidad/lote-2c-borde-profundidad/` y **aprobó la revisión
+2c**. Lo aprobado, en sus términos: el borde gana **relieve y profundidad**
+—no anchura— y la legibilidad de la cadena y el ancla es aceptable.
+
+Con eso, **`A-11` queda cerrada en `10/10`**, su máximo del inventario.
+
+### Es una decisión visual, y va aparte de los gates
+
+Esta sección no es una medición y no deriva de una. Los gates automatizados
+—`fmt`, `clippy`, `cargo test`, `build --release`— dicen que el árbol compila,
+pasa sus invariantes y no regresó; el de la Tarea 5.8 con `--target` dice que
+el lote no le quita píxeles a la cadena ni al ancla. **Ninguno de ellos puede
+decir si el borde se lee como un desgarro o como una pared.** Eso lo decide
+una persona mirando, y es lo que se registra aquí.
+
+La separación importa porque los dos lotes anteriores se rechazaron
+exactamente así: pasaban los gates y no compraban lectura. Un candidato que
+cabe no es un candidato aprobado.
+
+### Lo que este cierre **no** autoriza
+
+- **No autoriza el lote 3.** Cerrar `A-11` cierra una entrada del inventario,
+  no la Tarea 7.2.
+- **No activa la Tarea 7.3**, el prisma hexagonal. Sigue permitido por el
+  profesor y sigue detrás de mitigación, regresiones y densidad incremental.
+- Cualquier lote siguiente necesita **autorización explícita**, con el mismo
+  procedimiento: alcance acotado, medir, mirar, y retirar si no aporta
+  lectura.
 
 ---
 
@@ -2987,7 +3060,7 @@ Ninguna de estas filas puede completarse por estimación. Cada hito llena la suy
 | 3 | `interactive_frame_time` del perfil interactivo | **Registrado** — perfil fijado en `MEDIA` (400 × 300); movido a `BAJA` (320 × 240) en la 7.1 |
 | 5 | Calibración de `L-02`: `distance_boat`, `range`, `intensity` | **Registrado** — `0.192 S`, `0.30 S`, `2.8211` derivada |
 | 6 | `reveal_duration` derivada de `interactive_frame_time` | **Registrado** — corregido dos veces en la 7.1: `0.0736 s` en el peor estado **de la toma hero**, `1.5 s` de duración, 20 cuadros; la ventana se autocalibra |
-| 7 | Matriz de rendimiento por preset | **Registrado** — cuatro presets en dos resoluciones y diez cámaras, con conteos de rayos; `target-water` pendiente de que exista el nivel objetivo |
+| 7 | Matriz de rendimiento por preset | **Registrado** — seis filas en dos resoluciones y la rejilla de 48 encuadres, con conteos de rayos; `target-water` y `target-revealing` ya se miden |
 | 7 | Peor estado de revelación | **Registrado** — `Finale` a medio revelar sobre el Continente pintado, `1.58x` el lienzo |
 | 7 | Peor encuadre alcanzable | **Registrado** — rejilla de 48 cámaras; el peor es la vista cenital al radio mínimo, `3.2x` la toma hero |
 | 7 | Perfil interactivo por defecto | **Cerrado** — `BAJA` `320 × 240`, medido contra `MEDIA` en las dos palancas |
@@ -2999,9 +3072,9 @@ Ninguna de estas filas puede completarse por estimación. Cada hito llena la suy
 | 7 | Reparto de la lectura entre `A-03` y `A-11` | **Registrado** — el borde compra el `97 %`: `0.92 %` de `0.95 %` |
 | 7 | Lote 2b de densidad, solo el borde | **Superado** — se leía como pared continua desde `e+35`; los dos bloques se recolocaron |
 | 7 | Lote 2c de densidad, borde con profundidad | **Registrado** — `+2` primitivas, `+1.9 %`, `−259` rayos, `0.64 %` del cuadro hero; reserva `2.47x` |
-| 7 | `A-11` como entrada | **Cerrada** — `10/10`, su máximo del inventario |
+| 7 | `A-11` como entrada | **Cerrada** — `10/10`, su máximo del inventario; aprobación visual del 21 de septiembre de 2026 |
 | 7 | Legibilidad de cadena y ancla con el lote | **Registrado** — `167 px` en los dos niveles: el lote no ocluye nada |
-| 7 | Lote 3 de densidad | **Abierto** — no autorizado hasta aceptar o retirar el 2b |
+| 7 | Lote 3 de densidad | **No autorizado** — cerrar `A-11` no lo habilita; requiere autorización explícita de Charlie |
 | 8 | Hardware de medición y tiempos finales en release | Pendiente |
 
 **Regla.** Todos los benchmarks se ejecutan en release. El perfil `dev` de este proyecto lleva `opt-level = 3` heredado de la base académica, así que un tiempo medido en debug **parece** comparable a release y no lo es.

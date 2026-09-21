@@ -94,10 +94,15 @@ impl RevealState {
     ///
     /// Este constructor fija el **estado**; el coste de un cuadro depende
     /// además del encuadre, porque no todas las cámaras ponen la misma
-    /// fracción de bahía refractiva en pantalla. La ventana calibra en el
-    /// encuadre hero, que es el que presenta, y el presupuesto de la matriz
-    /// se toma sobre las diez cámaras alcanzables. Ver
-    /// `Blockout::measurement_cameras`.
+    /// fracción de bahía refractiva en pantalla. El presupuesto de la matriz
+    /// se toma sobre la rejilla vigente de **cuarenta y ocho** encuadres
+    /// —cuatro yaws × cuatro elevaciones × tres radios—, y la ventana
+    /// calibra sobre las dos cámaras caras que esa rejilla identificó. Ver
+    /// `Blockout::measurement_cameras` y `Blockout::calibration_cameras`.
+    ///
+    /// La rejilla es una **muestra** del espacio alcanzable, que es continuo:
+    /// su peor celda es una cota inferior del peor cuadro real, no el
+    /// máximo.
     pub fn worst_case() -> Self {
         let mut estado = RevealState::painted();
         estado.set_progress(RevealGroup::Finale, WORST_CASE_PROGRESS);
