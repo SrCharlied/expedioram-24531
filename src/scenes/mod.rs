@@ -628,6 +628,61 @@ mod tests {
     }
 
     #[test]
+    fn la_ruta_a_no_cambia_los_conteos_de_ninguno_de_los_dos_niveles() {
+        // El invariante que hace reversible la Tarea 7.3: la Ruta A cambia
+        // la **forma** de los 28 pilares del Rompeolas, no cuantos objetos
+        // hay. Este test corre en las dos configuraciones y exige lo mismo,
+        // asi que encender la feature y romper un presupuesto no puede pasar
+        // inadvertido.
+        for water in [WaterPreset::RefractiveWater, WaterPreset::InteriorVisible] {
+            let seguro = safe_level(water);
+            let objetivo = target_level(water);
+            let sin_volumen = usize::from(water == WaterPreset::InteriorVisible);
+
+            assert_eq!(seguro.scene.objects.len(), SAFE.total() - sin_volumen);
+            assert_eq!(objetivo.scene.objects.len(), TARGET.total() - sin_volumen);
+        }
+
+        assert_eq!(SAFE.total(), 160);
+        assert_eq!(TARGET.total(), 162);
+    }
+
+    #[test]
+    fn la_ruta_a_solo_cambia_la_forma_de_los_pilares_del_rompeolas() {
+        // Cuantas primitivas de la escena son prismas: con la feature, los
+        // 28 pilares de `R-01` y nada mas. El sendero, los soportes y las
+        // otras tres regiones siguen siendo cuboides.
+        let seguro = safe_level(WaterPreset::RefractiveWater);
+
+        #[allow(unused_mut)]
+        let mut prismas = 0usize;
+
+        for objeto in &seguro.scene.objects {
+            match objeto.primitive {
+                crate::primitive::Primitive::Cuboid(_) => {}
+                #[cfg(feature = "hex-prism")]
+                crate::primitive::Primitive::HexPrism(_) => {
+                    prismas += 1;
+
+                    assert_eq!(
+                        objeto.spatial_group,
+                        SpatialGroupId::Breakwater,
+                        "un prisma fuera del Rompeolas"
+                    );
+                }
+            }
+        }
+
+        let esperados = if cfg!(feature = "hex-prism") {
+            breakwater::DetailLevel::Safe.total()
+        } else {
+            0
+        };
+
+        assert_eq!(prismas, esperados);
+    }
+
+    #[test]
     fn el_nivel_seguro_no_se_movio_con_el_lote() {
         // La comprobacion que hace honesta la matriz: la fila `safe` tiene
         // que seguir midiendo **la misma escena** que aprobo el Hito 6.

@@ -1452,7 +1452,7 @@ Después de cada incremento, repetir benchmark hero y órbita.
 
 Detenerse si empeora interacción o pone en riesgo entrega.
 
-### Tarea 7.3 — Ruta A de prisma hexagonal, solo con autorización
+### Tarea 7.3 — Ruta A de prisma hexagonal, **autorizada**
 
 **Crear:** `src/hex_prism.rs`  
 **Modificar:** `src/primitive.rs`, `Cargo.toml`
@@ -1479,7 +1479,16 @@ Feature:
 hex-prism = []
 ```
 
-Si el profesor no responde o dice que no: no crear este archivo; Ruta B es final.
+**Autorización recibida y ruta promovida.** Charlie confirmó el permiso del
+profesor, la Ruta A está implementada en `src/hex_prism.rs`, y por decisión
+de entrega la feature `hex-prism` está **encendida por defecto**. La
+condición original de este párrafo —«si el profesor no responde o dice que
+no, Ruta B es final»— ya no aplica.
+
+Lo que se envía son **prismas hexagonales**. La Ruta B **no se descarta**:
+queda como respaldo explícito con `--no-default-features`, y los gates se
+ejecutan en las dos configuraciones. Ver el registro en
+`docs/evidence.md`.
 
 ---
 

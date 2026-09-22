@@ -155,7 +155,7 @@ Coordenadas dentro del panel 1 (vista superior), útiles si hay que editar a man
 
 | # | Pendiente | Bloquea |
 |---|---|---|
-| P-01 | Respuesta del profesor sobre el prisma hexagonal como primitiva propia | Nada. Ruta A (hexágonos reales) y Ruta B (cuboides verticales con textura) producen la misma silueta |
+| ~~P-01~~ | ~~Respuesta del profesor sobre el prisma hexagonal como primitiva propia~~ **Resuelto en la Tarea 7.3**: autorizado, implementado y promovido a la entrega; la Ruta B sigue disponible como respaldo | Nada. Ruta A (hexágonos reales) y Ruta B (cuboides verticales con textura) producen la misma silueta |
 | P-02 | Marcar región por región qué es obligatorio y qué es opcional | Criterio 9 del punto 16, respondido solo parcialmente |
 | P-03 | Validar D-08 (Monolito fuera del plano de corte) | Nada crítico |
 

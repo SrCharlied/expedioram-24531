@@ -2817,8 +2817,12 @@ cargo run --release --example density_preview          6 PNG y el delta de pixel
 Reparto de los 404: `368` de librería, `16` del generador de assets, `8` de
 humo del render, `6` de sombras submarinas y `6` de la demo completa.
 
-Procedencia: árbol de la Tarea 7.2 sobre `b14e2da`, 5 de septiembre de 2026,
-Ryzen 7 6800H, rustc 1.97.0, release.
+Procedencia: commit `41d912e`, que es el árbol de esta revisión —`A-11 +2`
+y `A-03` ya sin lote, target `162`—; 5 de septiembre de 2026, Ryzen 7 6800H,
+rustc 1.97.0, release. Una versión anterior citaba `b14e2da`, que es la
+revisión de cuatro piezas con target `164`. Las mediciones de arriba son las
+de esta revisión y se conservan como históricas; lo corregido es a qué
+árbol pertenecen.
 
 ---
 
@@ -3039,11 +3043,252 @@ cabe no es un candidato aprobado.
 
 - **No autoriza el lote 3.** Cerrar `A-11` cierra una entrada del inventario,
   no la Tarea 7.2.
-- **No activa la Tarea 7.3**, el prisma hexagonal. Sigue permitido por el
-  profesor y sigue detrás de mitigación, regresiones y densidad incremental.
+- **No activó la Tarea 7.3**, el prisma hexagonal. En la fecha de este
+  cierre estaba permitido por el profesor y seguía detrás de mitigación,
+  regresiones y densidad incremental, sin implementar. Se autorizó e
+  implementó después; ver «Tarea 7.3 — Ruta A: prisma hexagonal».
 - Cualquier lote siguiente necesita **autorización explícita**, con el mismo
   procedimiento: alcance acotado, medir, mirar, y retirar si no aporta
   lectura.
+
+---
+
+## Tarea 7.3 — Ruta A: prisma hexagonal
+
+### Autorización y decisión
+
+El profesor autorizó el prisma hexagonal como primitiva propia, y Charlie lo
+confirmó. El **21 de septiembre de 2026** Charlie aprobó además la
+comparación visual entre las dos rutas.
+
+Eso cierra el pendiente `P-01` del blueprint y la fila «Permiso para prisma
+hexagonal» del inventario, que llevaban desde el diseño diciendo «usar
+cuboides verticales hasta recibir respuesta».
+
+**El permiso no era la decisión de entrega, y la decisión llegó después.**
+Charlie resolvió promover la Ruta A: los pilares del Rompeolas que se envían
+son **prismas hexagonales**.
+
+La Ruta B **no se descarta**. Queda como respaldo explícito, comprobable y
+medible, porque las dos rutas tienen que poder compararse y porque revertir
+la decisión tiene que ser una bandera y no un parche.
+
+### Cómo se ejecuta
+
+```bash
+cargo run --release                         # Ruta A, lo que se envía
+cargo run --release --no-default-features   # Ruta B, respaldo
+```
+
+`Cargo.toml` declara `default = ["hex-prism"]`. Con `--no-default-features`,
+`Primitive` vuelve a ser el enum de una sola variante que aprobó la Ruta B:
+sin rama muerta ni comprobación de etiqueta en el camino caliente. Los dos
+caminos siguen cubiertos por los gates, y los tests que dependen de la forma
+del pilar tienen versión para cada uno.
+
+### La implementación
+
+`src/hex_prism.rs`, nuevo. Prisma regular de eje vertical, sin rotación
+libre: los pilares del Rompeolas son verticales por concepto, y una
+orientación arbitraria obligaría a llevar el rayo a espacio local con una
+matriz y su inversa en el camino más caliente del renderer.
+
+| Decisión | Qué se hizo |
+|---|---|
+| Intersección | Ocho semiespacios —seis laterales más dos tapas— resueltos como intervalo `t_enter`/`t_exit`, la misma estructura que `Aabb::hit` con cuatro pares en vez de tres |
+| Rayo paralelo | Denominador casi nulo: no se divide; solo se mira de qué lado cae el origen. Si está dentro de la banda, ese plano no acota y el rayo sigue |
+| Rayo desde dentro | Devuelve la cara de **salida**, como `Cuboid`. Lo necesita el rayo refractado |
+| Normal | Se entrega la exterior a `Hit::new`, que la voltea y fija `front_face`. Sin invertir a mano |
+| UV lateral | Distancia sobre el **perímetro** normalizada: la cara `k` ocupa `[k/6, (k+1)/6]`. Con seis mapeos independientes, cada arista sería una costura |
+| UV de tapas | Proyección en XZ normalizada al diámetro, como la cara `Y` del cuboide |
+| AABB | Ajustado: apotema en `X`, circunradio en `Z`. Con la arista hacia `+X` el alcance en X **es** la apotema, así que contiene la forma y deja pasar menos rayos al test exacto |
+| Pilar | `apotema = ancho / 2`, de modo que la **anchura entre caras planas** coincide con el lado del cuboide al que sustituye. Con el circunradio, el prisma se vería más delgado y la formación cambiaría de peso visual por un detalle de parametrización |
+
+Los invariantes que no se movieron: `SAFE` sigue en **160** y `TARGET` en
+**162**. La Ruta A cambia la **forma** de los 28 pilares de `R-01`, no cuántos
+objetos hay, ni sus materiales, ni sus grupos espacial y de revelación, ni la
+partición en cuatro clusters. Hay tests que exigen cada una de esas cosas, y
+corren en las dos configuraciones.
+
+### La medición, y lo que **no** prueba
+
+Dos corridas de `examples/performance_matrix.rs`, una por ruta:
+
+| | Ruta B | Ruta A |
+|---|---:|---:|
+| Primitivas `safe` / `target` | `160` / `162` | `160` / `162` |
+| `safe-revealing`, perfil interactivo | `0.0594` | `0.0634` |
+| `target-revealing`, perfil interactivo | `0.0608` | `0.0702` |
+| Rayos secundarios, `safe-revealing` | `14 355` | `14 360` |
+| Rayos secundarios, `target-revealing` | `14 096` | `14 107` |
+| Peor cuadro interactivo | `0.1016 s` | `0.1041 s` |
+| Peor cámara | `y+0 e+35 cerca` | `y+90 e+84 cerca` |
+| Crítico del gate | `0.2667 s` | `0.2667 s` |
+| **Reserva** | **`2.62x`** | **`2.56x`** |
+| Umbral operativo | `1.30x` | `1.30x` |
+| Código de salida | `0` | `0` |
+
+Las dos rutas pasan el gate con holgura sobre el umbral operativo.
+
+#### Limitación metodológica, y es grande
+
+**Son dos corridas seriales separadas, con una recompilación entre medias.**
+Cambiar de feature invalida el build, así que no hay forma de intercalarlas
+sin construir otro instrumento. Todo lo que la Tarea 7.1 aprendió —intercalar
+por ronda, rotar el orden, cocientes pareados— **vale dentro de cada corrida,
+no entre las dos**.
+
+Por eso **las diferencias porcentuales por celda no prueban el coste causal
+de la Ruta A**. La señal más clara de que no hay que leerlas así está en la
+propia tabla: la Ruta A midió un `+11.9 %` en `safe-canvas`, una celda donde
+no interviene ni un pilar hexagonal. Esa columna está midiendo estado
+térmico. El proyecto ya registró que el suelo del lienzo se mueve un `16 %`
+entre corridas del mismo día.
+
+Lo que sí se sostiene: **las dos rutas están en el mismo orden de magnitud y
+las dos pasan el gate.** No se afirma que la Ruta A sea gratis, ni que cueste
+un porcentaje concreto.
+
+Dos hechos que sí son firmes, porque vienen de contadores deterministas y no
+de relojes:
+
+- Los **conteos de primitivas** no cambian: `160` y `162` en ambas.
+- Los **rayos secundarios** tampoco, salvo una decena atribuible a qué
+  píxeles alcanzan el agua tras la oclusión. `wet_basalt` no tiene techos
+  ópticos, así que la forma del pilar no crea ni destruye recursión.
+
+Un render directo de la toma hero dio `+0.8 %` de pruebas de primitiva
+—`11 923 156` contra `12 015 388`—, que es una cota de trabajo geométrico y
+tampoco un tiempo.
+
+#### Para atribuir de verdad
+
+Haría falta una corrida que intercale las dos geometrías **por ronda**, es
+decir, seleccionadas por dato y no por feature dentro del mismo binario. Ese
+instrumento no existe y construirlo es una decisión aparte.
+
+### Estado
+
+| Qué | Estado |
+|---|---|
+| Autorización del profesor | **Confirmada** |
+| Aprobación visual | **21 de septiembre de 2026** |
+| Implementación | **Completa**, en la feature `hex-prism` |
+| Feature por defecto | **Encendida** — `default = ["hex-prism"]` |
+| Nivel enviado | **Ruta A**, prismas hexagonales |
+| Ruta B | **Disponible** como respaldo: `--no-default-features`. No descartada |
+| Decisión de entrega | **Tomada** por Charlie |
+
+---
+
+## Hito 8 — Evidencia final, Ruta A
+
+Los ocho PNG que pide la Tarea 8.3, en `evidence/hito8/`. Se generaron con la
+**Ruta A por defecto** —prismas hexagonales—, que es lo que se envía desde la
+decisión de entrega de la Tarea 7.3.
+
+### Lo común a los ocho
+
+```bash
+cargo run --release --bin render_scene -- \
+  --preset safe-refractive-water --width 800 --height 600 \
+  <estado o angulo> --output evidence/hito8/<nombre>.png
+```
+
+Assets normales —no `--no-textures`—, sin `--benchmark`, y **sin**
+`--no-default-features`, así que los 28 pilares del Rompeolas son prismas.
+Cámara hero salvo donde se indica un `--yaw`.
+
+### Los cinco estados de revelación
+
+Acumulativos, como la demo: cada uno añade una región sobre el anterior, y el
+Monolito solo aparece en el último.
+
+| Archivo | Banderas | `meadows` | `breakwater` | `waters` | `finale` |
+|---|---|---:|---:|---:|---:|
+| `hero_canvas.png` | `--reveal 0` | `0.00` | `0.00` | `0.00` | `0.00` |
+| `hero_meadows.png` | `--paint meadows` | `1.00` | `0.00` | `0.00` | `0.00` |
+| `hero_breakwater.png` | `--paint meadows --paint breakwater` | `1.00` | `1.00` | `0.00` | `0.00` |
+| `hero_waters.png` | `+ --paint waters` | `1.00` | `1.00` | `1.00` | `0.00` |
+| `hero_final.png` | `--reveal 1` | `1.00` | `1.00` | `1.00` | `1.00` |
+
+`--paint` es la bandera que la Tarea 8.3 obligó a añadir: `--reveal` aplica el
+mismo progreso a los cuatro grupos, así que por sí solo no puede producir un
+PNG por región. `--paint finale` exige nombrar antes las tres regiones, porque
+el Monolito no se elige.
+
+### Los tres ángulos
+
+Todos con `--reveal 1`.
+
+| Archivo | `--yaw` |
+|---|---:|
+| `angle_90.png` | `0` |
+| `angle_180.png` | `180` |
+| `angle_270.png` | `270` |
+
+El desajuste entre nombre y valor en el primero es deliberado y conviene
+dejarlo escrito: **la toma hero está en `yaw 90`**, así que `--yaw 90` habría
+producido un archivo byte a byte idéntico a `hero_final.png`. De hecho ocurrió
+en el primer lote, y se corrigió: `angle_90` pasó a `--yaw 0`, el cuarto de
+vuelta respecto a la hero. Con eso las cuatro vistas del diorama son
+distintas: `0`, `90` —en `hero_final`—, `180` y `270`.
+
+### SHA-256
+
+```text
+101c74332bd452b74aed33778b2f804f0321c7ceb635c90c45972b1783aee192  hero_canvas.png
+b671e0f4fa63efd7be1300804702415df602ef8cf420e1c25bbf9f898f5a939b  hero_meadows.png
+05d676ac02d32d2592764c0912cdf562f05805a655c27396414f7f5fc2a25b7d  hero_breakwater.png
+1aee348044288068800cc534db7f2dab474b6c4d72ffd4c363c553cdb2161d10  hero_waters.png
+4a3b0e621caac90dc38731d15e70bbf22f20c1fcf0f3d1ddf1f3340e4c3bcdfc  hero_final.png
+d5997dd90c438fad939dc82af886ca5181781f287e5b8a8fada9965509ef0c89  angle_90.png
+fd44e1752ec206dbd0fd6b27a4fcbb6a9974bdecbbc6be04d3f1d55681a29006  angle_180.png
+7cf71e2f1610287f535721c679a83d86ab57185d4d97175b8502b2dc70a25ed3  angle_270.png
+```
+
+### Verificación técnica
+
+- Los ocho archivos **existen y no están vacíos**: de `168 130` a `190 079`
+  bytes.
+- Los ocho llevan la firma PNG canónica `89 50 4e 47 0d 0a 1a 0a`.
+- Los ocho comandos salieron con **`RC 0`**, y cada render declaró en su
+  salida el estado por grupo que la tabla de arriba recoge.
+- Los ocho son **byte-distintos** de la tanda anterior, generada con Ruta B.
+  También `hero_canvas`, y no es un error: en estado lienzo los pilares
+  siguen ahí con material de lienzo, así que cambiar su sección de cuadrada a
+  hexagonal cambia silueta y sombras aunque nadie haya pintado nada.
+- **`hero_final.png` coincide byte a byte** —`4a3b0e62…4c3bcdfc`— con el
+  render temporal de Ruta A que se hizo para la comparación visual de la
+  Tarea 7.3. Mismos parámetros, mismo resultado: confirma que el renderer es
+  determinista y que lo único que cambió entre las dos tandas fue la feature.
+
+### Aprobación visual — 21 de septiembre de 2026
+
+Todo lo anterior es **generación y verificación técnica**: dice que los
+archivos existen, que son PNG, que salieron sin error y que muestran los
+estados declarados. Ninguna de esas comprobaciones puede decir si las
+imágenes sirven como evidencia de la obra. Eso lo decide una persona
+mirándolas, y ocurrió.
+
+**Charlie abrió los ocho y los aprobó.** Lo revisado:
+
+- La **secuencia hero acumulativa** se lee como la demo: cada imagen añade
+  una región sobre la anterior, sin saltos ni regiones que reaparezcan.
+- El **Monolito aparece solo en la última**, `hero_final`. Ninguno de los
+  cuatro estados anteriores lo muestra revelado.
+- Los pilares del Rompeolas son **prismas de la Ruta A** en los ocho.
+- Las cuatro vistas —`0`, `90` en `hero_final`, `180` y `270`— **sin clipping
+  y sin duplicados**: ningún par de imágenes repite encuadre, que era el
+  defecto del primer lote de ángulos.
+
+Con eso los ocho PNG dejan de ser artefactos reproducibles y pasan a ser
+**evidencia aprobada** del Hito 8.
+
+La distinción sigue importando y por eso queda escrita: los hashes, los `RC`
+y las firmas de arriba **no** son lo que aprueba estas imágenes, y la
+aprobación **no** valida ninguna cifra de rendimiento. Son dos registros
+separados y se sostienen por separado.
 
 ---
 
@@ -3075,6 +3320,9 @@ Ninguna de estas filas puede completarse por estimación. Cada hito llena la suy
 | 7 | `A-11` como entrada | **Cerrada** — `10/10`, su máximo del inventario; aprobación visual del 21 de septiembre de 2026 |
 | 7 | Legibilidad de cadena y ancla con el lote | **Registrado** — `167 px` en los dos niveles: el lote no ocluye nada |
 | 7 | Lote 3 de densidad | **No autorizado** — cerrar `A-11` no lo habilita; requiere autorización explícita de Charlie |
+| 7 | Tarea 7.3, Ruta A | **Promovida a la entrega** — `default = ["hex-prism"]`; la Ruta B queda como respaldo con `--no-default-features`. Ambas pasan el gate (`2.62x` / `2.56x`) |
+| 7 | Coste causal de la Ruta A | **Abierto** — exigiría intercalar las dos geometrías por ronda en un mismo binario |
+| 8 | Evidencia final, ocho PNG | **Aprobada** — Ruta A, `RC 0`, hashes registrados; revisión visual de Charlie el 21 de septiembre de 2026 |
 | 8 | Hardware de medición y tiempos finales en release | Pendiente |
 
 **Regla.** Todos los benchmarks se ejecutan en release. El perfil `dev` de este proyecto lleva `opt-level = 3` heredado de la base académica, así que un tiempo medido en debug **parece** comparable a release y no lo es.

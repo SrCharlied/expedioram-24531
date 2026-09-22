@@ -9,6 +9,22 @@ default-run = "expedition33_continente_inacabado"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+# Ruta A de la Tarea 7.3, autorizada por el profesor y **encendida por
+# defecto** desde la decision de entrega: los pilares del Rompeolas son
+# prismas hexagonales en lo que se envia.
+#
+# La Ruta B no se descarta, se conserva como respaldo explicito:
+#
+#   cargo run  --release --no-default-features    # cuboides
+#   cargo test --no-default-features
+#
+# Sigue siendo una feature y no codigo fijo porque las dos rutas tienen que
+# poder compararse, y porque revertir la decision tiene que ser una bandera
+# y no un parche.
+[features]
+default = ["hex-prism"]
+hex-prism = []
+
 [dependencies]
 nalgebra-glm = "0.18.0"
 minifb = "0.26.0"

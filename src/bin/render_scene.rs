@@ -40,9 +40,18 @@ Render sin ventana del Continente Inacabado.
   --shading <modo>    material | albedo | normals (por defecto: material)
   --benchmark <n>     repite el render n veces y reporta min/mediana/max
   --no-textures       color plano, sin cargar los assets de textura
-  --reveal <0..1>     progreso de pintura de las cuatro regiones (por defecto 1)
+  --reveal <0..1>     progreso de pintura de los cuatro grupos a la vez
+  --paint <grupo>     pinta solo los grupos nombrados; repetible.
+                      Grupos: meadows, breakwater, waters, finale.
+                      Lo nombrado queda en 1 y lo demas en lienzo.
+                      No se combina con --reveal.
+                      finale exige nombrar tambien las tres regiones,
+                      porque el Monolito no se elige: se revela al
+                      completarse el Continente.
   --output <ruta>     PNG de salida (por defecto: evidence/renders/hero.png)
   --help              esta ayuda
+
+Sin --reveal ni --paint se pinta todo (equivale a --reveal 1).
 
 Presets disponibles:
   safe-refractive-water   nivel seguro con el volumen de agua real (160
@@ -57,6 +66,71 @@ Presets disponibles:
   blockout                composicion global del Blockout 1, en grises
   cubo                    un cuboide centrado, para geometria y camara";
 
+/// Que estado de revelacion pidio la linea de ordenes.
+///
+/// Son dos modos y no un escalar con excepciones. El global existe desde el
+/// Hito 3 y sirve para mirar la interpolacion; el de regiones lo pide la
+/// Tarea 8.3, que necesita un PNG por region pintada y no cuatro copias del
+/// mismo degradado.
+#[derive(Debug, Clone, PartialEq)]
+enum Revelacion {
+    /// El mismo progreso en los cuatro grupos.
+    Global(f32),
+    /// Los grupos nombrados a `1.0`; el resto se queda en lienzo.
+    PorRegion(Vec<RevealGroup>),
+}
+
+impl Revelacion {
+    /// Nombre de un grupo en la linea de ordenes.
+    ///
+    /// `waters` y no `flying_waters` porque es lo que se teclea; el mapa
+    /// vive aqui para que la ayuda, el parseo y la salida no puedan
+    /// discrepar.
+    fn nombre(grupo: RevealGroup) -> &'static str {
+        match grupo {
+            RevealGroup::Meadows => "meadows",
+            RevealGroup::Breakwater => "breakwater",
+            RevealGroup::FlyingWaters => "waters",
+            RevealGroup::Finale => "finale",
+        }
+    }
+
+    /// El grupo que nombra `valor`, o un error que lista los validos.
+    fn grupo(valor: &str) -> Result<RevealGroup, String> {
+        RevealGroup::ALL
+            .into_iter()
+            .find(|g| Self::nombre(*g) == valor)
+            .ok_or_else(|| {
+                let validos: Vec<&str> = RevealGroup::ALL.into_iter().map(Self::nombre).collect();
+
+                format!(
+                    "--paint no conoce {valor:?}; los grupos son {}",
+                    validos.join(", ")
+                )
+            })
+    }
+
+    /// El estado que hay que trazar.
+    fn estado(&self) -> RevealState {
+        let mut reveal = RevealState::unpainted();
+
+        match self {
+            Revelacion::Global(progreso) => {
+                for grupo in RevealGroup::ALL {
+                    reveal.set_progress(grupo, *progreso);
+                }
+            }
+            Revelacion::PorRegion(grupos) => {
+                for grupo in grupos {
+                    reveal.set_progress(*grupo, 1.0);
+                }
+            }
+        }
+
+        reveal
+    }
+}
+
 struct Opciones {
     preset: String,
     width: usize,
@@ -70,8 +144,8 @@ struct Opciones {
     benchmark: usize,
     /// Con texturas por defecto; se pueden desactivar para comparar.
     texturas: bool,
-    /// Progreso de revelacion aplicado a los cuatro grupos.
-    reveal: f32,
+    /// Que se pinta y cuanto. Ver `Revelacion`.
+    revelacion: Revelacion,
     shading: Shading,
     output: PathBuf,
 }
@@ -86,7 +160,9 @@ impl Default for Opciones {
             elevation: None,
             benchmark: 1,
             texturas: true,
-            reveal: 1.0,
+            // Sin banderas se pinta todo: es el defecto historico y el que
+            // usan los renders de evidencia de los hitos anteriores.
+            revelacion: Revelacion::Global(1.0),
             shading: Shading::Material,
             output: PathBuf::from("evidence/renders/hero.png"),
         }
@@ -97,6 +173,11 @@ impl Default for Opciones {
 /// dependencia de parseo costaria mas de lo que ahorra.
 fn parsear(args: &[String]) -> Result<Option<Opciones>, String> {
     let mut opciones = Opciones::default();
+
+    // `None` mientras nadie haya pedido nada, para poder distinguir «no
+    // paso ninguna bandera» de «paso --reveal 1». Sin esa distincion, el
+    // conflicto entre --reveal y --paint no se puede detectar.
+    let mut revelacion: Option<Revelacion> = None;
     let mut i = 0;
 
     while i < args.len() {
@@ -123,9 +204,38 @@ fn parsear(args: &[String]) -> Result<Option<Opciones>, String> {
             "--height" => opciones.height = numero(bandera, valor)?,
             "--output" => opciones.output = PathBuf::from(valor),
             "--reveal" => {
-                opciones.reveal = valor
+                if matches!(revelacion, Some(Revelacion::PorRegion(_))) {
+                    return Err(
+                        "--reveal y --paint no se combinan: uno pinta los cuatro grupos \
+                         a la vez y el otro elige cuales"
+                            .to_string(),
+                    );
+                }
+
+                let progreso = valor
                     .parse()
                     .map_err(|_| format!("--reveal espera 0..1, no {valor:?}"))?;
+
+                revelacion = Some(Revelacion::Global(progreso));
+            }
+            "--paint" => {
+                let grupo = Revelacion::grupo(valor)?;
+
+                match revelacion {
+                    Some(Revelacion::Global(_)) => {
+                        return Err("--paint y --reveal no se combinan: uno elige que grupos \
+                             se pintan y el otro los pinta todos"
+                            .to_string())
+                    }
+                    Some(Revelacion::PorRegion(ref mut grupos)) => {
+                        if grupos.contains(&grupo) {
+                            return Err(format!("--paint {valor} esta repetido"));
+                        }
+
+                        grupos.push(grupo);
+                    }
+                    None => revelacion = Some(Revelacion::PorRegion(vec![grupo])),
+                }
             }
             "--benchmark" => {
                 opciones.benchmark = numero(bandera, valor)?.max(1);
@@ -156,6 +266,31 @@ fn parsear(args: &[String]) -> Result<Option<Opciones>, String> {
         }
 
         i += 2;
+    }
+
+    if let Some(pedida) = revelacion {
+        // El Monolito no se elige: `RevealState::activate` lo prohibe hasta
+        // que las tres regiones estan pintadas, y un PNG que lo mostrara
+        // solo ensenaria un estado que la obra no alcanza.
+        if let Revelacion::PorRegion(ref grupos) = pedida {
+            if grupos.contains(&RevealGroup::Finale) {
+                let faltan: Vec<&str> = RevealGroup::ALL
+                    .into_iter()
+                    .filter(|g| *g != RevealGroup::Finale && !grupos.contains(g))
+                    .map(Revelacion::nombre)
+                    .collect();
+
+                if !faltan.is_empty() {
+                    return Err(format!(
+                        "--paint finale exige pintar antes {}: el Monolito se revela al \
+                         completarse el Continente, no se elige",
+                        faltan.join(", ")
+                    ));
+                }
+            }
+        }
+
+        opciones.revelacion = pedida;
     }
 
     if opciones.width == 0 || opciones.height == 0 {
@@ -267,17 +402,7 @@ fn ejecutar(opciones: Opciones) -> Result<(), String> {
 
     let mut framebuffer = Framebuffer::new(opciones.width, opciones.height);
 
-    // Un solo progreso para los cuatro grupos: basta para inspeccionar la
-    // interpolacion, y la revelacion por region llega con el picking.
-    let mut reveal = RevealState::unpainted();
-    for grupo in [
-        RevealGroup::Meadows,
-        RevealGroup::Breakwater,
-        RevealGroup::FlyingWaters,
-        RevealGroup::Finale,
-    ] {
-        reveal.set_progress(grupo, opciones.reveal);
-    }
+    let reveal = opciones.revelacion.estado();
 
     // Repetir y quedarse con la distribucion: una sola pasada mide tanto
     // el estado de la cache como el renderer.
@@ -310,7 +435,17 @@ fn ejecutar(opciones: Opciones) -> Result<(), String> {
     println!("objetos   {}", scene.objects.len());
     println!("luces     {}", lights.len());
     println!("texturas  {}", scene.textures.len());
-    println!("reveal    {:.2}", opciones.reveal);
+    // El estado grupo a grupo, y no un unico numero.
+    //
+    // Con `--paint` un «reveal 1.00» seria mentira: tres de los cuatro
+    // grupos estan en lienzo. Se imprimen los cuatro siempre, tambien en
+    // modo global, para que el pie de un PNG diga que se estaba viendo.
+    let estado: Vec<String> = RevealGroup::ALL
+        .into_iter()
+        .map(|g| format!("{} {:.2}", Revelacion::nombre(g), reveal.progress(g)))
+        .collect();
+
+    println!("reveal    {}", estado.join("  "));
     println!(
         "grupos    {} ({} clusters)",
         accel.groups.len(),
@@ -400,5 +535,152 @@ fn main() -> ExitCode {
             eprintln!("error: {e}\n\n{USO}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Los argumentos tal como llegan de `std::env::args`, ya sin el `argv[0]`.
+    fn args(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// El estado resuelto, o el mensaje de error del parseo.
+    fn estado(v: &[&str]) -> Result<RevealState, String> {
+        let opciones = parsear(&args(v))?.expect("no es --help");
+
+        Ok(opciones.revelacion.estado())
+    }
+
+    /// Progreso de los cuatro grupos, en el orden de `RevealGroup::ALL`.
+    fn progresos(reveal: &RevealState) -> [f32; 4] {
+        [
+            reveal.progress(RevealGroup::Meadows),
+            reveal.progress(RevealGroup::Breakwater),
+            reveal.progress(RevealGroup::FlyingWaters),
+            reveal.progress(RevealGroup::Finale),
+        ]
+    }
+
+    #[test]
+    fn sin_banderas_se_pinta_todo() {
+        // El defecto historico, y el que usan los renders de evidencia de
+        // los hitos anteriores. Anadir `--paint` no puede cambiarlo.
+        let reveal = estado(&[]).expect("sin banderas parsea");
+
+        assert_eq!(progresos(&reveal), [1.0, 1.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn paint_de_una_region_deja_el_resto_en_lienzo() {
+        let reveal = estado(&["--paint", "meadows"]).expect("parsea");
+
+        assert_eq!(progresos(&reveal), [1.0, 0.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn paint_acumula_las_tres_regiones() {
+        // Repetible, y el orden no importa: es el estado justo antes de que
+        // el Monolito arranque solo.
+        let reveal = estado(&[
+            "--paint",
+            "waters",
+            "--paint",
+            "meadows",
+            "--paint",
+            "breakwater",
+        ])
+        .expect("parsea");
+
+        assert_eq!(progresos(&reveal), [1.0, 1.0, 1.0, 0.0]);
+    }
+
+    #[test]
+    fn paint_con_las_cuatro_pinta_el_diorama_entero() {
+        let reveal = estado(&[
+            "--paint",
+            "meadows",
+            "--paint",
+            "breakwater",
+            "--paint",
+            "waters",
+            "--paint",
+            "finale",
+        ])
+        .expect("parsea");
+
+        assert_eq!(progresos(&reveal), [1.0, 1.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn paint_y_reveal_no_se_combinan_en_ningun_orden() {
+        // Los dos modos se contradicen: uno elige grupos y el otro los pinta
+        // todos. Sin el error, el ultimo en la linea ganaria en silencio.
+        let primero = estado(&["--reveal", "0.5", "--paint", "meadows"]).unwrap_err();
+        let segundo = estado(&["--paint", "meadows", "--reveal", "0.5"]).unwrap_err();
+
+        assert!(primero.contains("no se combinan"), "{primero}");
+        assert!(segundo.contains("no se combinan"), "{segundo}");
+    }
+
+    #[test]
+    fn el_finale_sin_las_tres_regiones_es_un_error() {
+        // `RevealState::activate` prohibe el Finale prematuro, asi que un
+        // PNG con el Monolito revelado sobre lienzo mostraria un estado que
+        // la obra no alcanza.
+        let solo = estado(&["--paint", "finale"]).unwrap_err();
+
+        assert!(solo.contains("meadows"), "{solo}");
+        assert!(solo.contains("breakwater"), "{solo}");
+        assert!(solo.contains("waters"), "{solo}");
+
+        // Y tambien con dos de las tres: falta una y hay que decir cual.
+        let casi = estado(&[
+            "--paint",
+            "meadows",
+            "--paint",
+            "breakwater",
+            "--paint",
+            "finale",
+        ])
+        .unwrap_err();
+
+        assert!(casi.contains("waters"), "{casi}");
+        assert!(
+            !casi.contains("meadows"),
+            "no deberia pedir lo ya pintado: {casi}"
+        );
+    }
+
+    #[test]
+    fn un_grupo_repetido_es_un_error() {
+        // Repetir no es acumular: o el usuario se equivoco de grupo o
+        // escribio dos veces el mismo, y las dos merecen aviso.
+        let error = estado(&["--paint", "meadows", "--paint", "meadows"]).unwrap_err();
+
+        assert!(error.contains("repetido"), "{error}");
+        assert!(error.contains("meadows"), "{error}");
+    }
+
+    #[test]
+    fn un_grupo_desconocido_lista_los_validos() {
+        // `flying_waters` es el nombre del enum y **no** el de la bandera:
+        // es el error mas probable, asi que el mensaje tiene que dar la
+        // lista en vez de limitarse a rechazar.
+        let error = estado(&["--paint", "flying_waters"]).unwrap_err();
+
+        assert!(error.contains("flying_waters"), "{error}");
+        for nombre in ["meadows", "breakwater", "waters", "finale"] {
+            assert!(error.contains(nombre), "falta {nombre} en: {error}");
+        }
+    }
+
+    #[test]
+    fn reveal_global_sigue_llegando_a_los_cuatro_grupos() {
+        let reveal = estado(&["--reveal", "0.25"]).expect("parsea");
+
+        assert_eq!(progresos(&reveal), [0.25, 0.25, 0.25, 0.25]);
     }
 }

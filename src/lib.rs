@@ -12,6 +12,15 @@ pub mod camera;
 pub mod color;
 pub mod cuboid;
 pub mod framebuffer;
+/// Ruta A de la Tarea 7.3, y la que se envia: `hex-prism` es feature por
+/// defecto desde la decision de entrega.
+///
+/// Sigue detras de una feature y no fija en el codigo para que la Ruta B de
+/// cuboides se conserve como respaldo comprobable con
+/// `--no-default-features`, y para que revertir la decision sea una bandera
+/// y no un parche.
+#[cfg(feature = "hex-prism")]
+pub mod hex_prism;
 pub mod hit;
 pub mod input;
 pub mod light;

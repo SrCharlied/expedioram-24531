@@ -14,6 +14,9 @@
 
 use super::{masa, Palette, Xorshift32};
 use crate::accel::ClusterPlan;
+// Solo lo usa la Ruta B. Con la feature encendida el pilar es un prisma y
+// este import quedaria muerto, que con `-D warnings` es un error.
+#[cfg(not(feature = "hex-prism"))]
 use crate::cuboid::Cuboid;
 use crate::scene::{MaterialId, RevealGroup, Scene, SceneObject, SpatialGroupId};
 use nalgebra_glm::Vec3;
@@ -161,6 +164,40 @@ pub struct Formacion {
     pub por_cluster: [usize; CLUSTERS],
 }
 
+/// La primitiva de **un** pilar.
+///
+/// Es el unico punto donde las dos rutas del inventario se separan, y por
+/// eso vive aparte: el resto del generador —angulo, desfase, altura, jitter,
+/// materiales y clusters— es identico en las dos.
+///
+/// # Ruta B, por defecto
+///
+/// Cuboide de seccion cuadrada `ancho x ancho`.
+///
+/// # Ruta A, con `hex-prism`
+///
+/// Prisma hexagonal con la **misma anchura entre caras planas** que el lado
+/// del cuboide. El circunradio sale de ahi: `apotema = ancho / 2` y
+/// `radio = apotema / cos(30 grados)`.
+///
+/// Se conserva la anchura entre planos y no el circunradio porque es lo que
+/// mantiene comparable la silueta del arco: un prisma de circunradio
+/// `ancho / 2` se veria mas delgado que el cuboide al que sustituye, y la
+/// formacion cambiaria de peso visual por un detalle de parametrizacion.
+#[cfg(not(feature = "hex-prism"))]
+fn pilar(centro: Vec3, ancho: f32, altura: f32) -> crate::primitive::Primitive {
+    Cuboid::centrado(centro, Vec3::new(ancho, altura, ancho)).into()
+}
+
+/// Ver la version de la Ruta B para la explicacion completa.
+#[cfg(feature = "hex-prism")]
+fn pilar(centro: Vec3, ancho: f32, altura: f32) -> crate::primitive::Primitive {
+    let apotema = ancho * 0.5;
+    let radio = apotema / (std::f32::consts::PI / 6.0).cos();
+
+    crate::hex_prism::HexPrism::new(centro, radio, altura).into()
+}
+
 /// Genera la formación y declara su partición en el plan de clusters.
 ///
 /// Los pilares se recorren en orden angular, así que el reparto por bloques
@@ -204,12 +241,10 @@ pub fn generar(
                 radio * angulo.cos(),
             );
 
+        let centro_masa = Vec3::new(centro_pilar.x, arco.ancla.y + altura * 0.5, centro_pilar.z);
+
         scene.add_object(SceneObject {
-            primitive: Cuboid::centrado(
-                Vec3::new(centro_pilar.x, arco.ancla.y + altura * 0.5, centro_pilar.z),
-                Vec3::new(arco.ancho, altura, arco.ancho),
-            )
-            .into(),
+            primitive: pilar(centro_masa, arco.ancho, altura),
             initial_material: canvas,
             final_material: material,
             spatial_group: SpatialGroupId::Breakwater,
@@ -487,5 +522,89 @@ mod tests {
             valores.windows(2).any(|par| par[0] != par[1]),
             "la secuencia es constante"
         );
+    }
+
+    /// Cuantos pilares de la formacion son de cada forma.
+    fn formas(scene: &Scene, formacion: &Formacion) -> (usize, usize) {
+        // Los dos `mut` llevan `allow`: sin la feature no existe la rama
+        // que incrementa `prismas`, y el contador se queda inmovil. Es
+        // correcto y `-D warnings` lo rechazaria.
+        #[allow(unused_mut)]
+        let mut cuboides = 0;
+        #[allow(unused_mut)]
+        let mut prismas = 0;
+
+        for i in 0..formacion.pilares {
+            match scene.objects[formacion.primer_indice + i].primitive {
+                crate::primitive::Primitive::Cuboid(_) => cuboides += 1,
+                #[cfg(feature = "hex-prism")]
+                crate::primitive::Primitive::HexPrism(_) => prismas += 1,
+            }
+        }
+
+        (cuboides, prismas)
+    }
+
+    #[test]
+    #[cfg(not(feature = "hex-prism"))]
+    fn sin_la_feature_los_pilares_son_cuboides() {
+        // La Ruta B es lo que se envia. Encender la Ruta A no puede ser el
+        // defecto ni por descuido.
+        let (scene, _, formacion) = generar_nivel(DetailLevel::Safe);
+
+        assert_eq!(formas(&scene, &formacion), (formacion.pilares, 0));
+    }
+
+    #[test]
+    #[cfg(feature = "hex-prism")]
+    fn con_la_feature_todos_los_pilares_son_prismas() {
+        // Y solo los pilares: `R-02` y `R-03` siguen siendo cuboides, que es
+        // lo que el inventario pide para sendero y soportes.
+        let (scene, _, formacion) = generar_nivel(DetailLevel::Safe);
+
+        assert_eq!(formas(&scene, &formacion), (0, formacion.pilares));
+    }
+
+    #[test]
+    fn la_forma_de_los_pilares_no_cambia_el_conteo_ni_los_clusters() {
+        // El invariante que protege a `SAFE` y `TARGET`: la Ruta A cambia la
+        // forma de 28 primitivas, no cuantas hay ni como se agrupan.
+        let (scene, plan, formacion) = generar_nivel(DetailLevel::Safe);
+
+        assert_eq!(formacion.pilares, DetailLevel::Safe.total());
+        assert_eq!(
+            formacion.por_cluster,
+            DetailLevel::Safe.pilares_por_cluster()
+        );
+        assert_eq!(scene.objects.len(), formacion.pilares);
+
+        // Los cuatro tramos siguen siendo cuatro y contiguos.
+        let clusters: std::collections::BTreeSet<u16> = (0..formacion.pilares)
+            .map(|i| plan.cluster_of(formacion.primer_indice + i))
+            .collect();
+
+        assert_eq!(clusters.len(), CLUSTERS);
+    }
+
+    #[test]
+    fn los_pilares_conservan_material_y_grupos_con_cualquier_forma() {
+        // Material inicial de lienzo, material final de roca humeda, grupo
+        // espacial y grupo de revelacion: la primitiva cambia, el resto del
+        // contrato del objeto no.
+        let (scene, _, formacion) = generar_nivel(DetailLevel::Safe);
+
+        // Los materiales se comparan entre pilares y no entre si: el
+        // harness pasa el mismo id como lienzo y como final, asi que exigir
+        // que difieran probaria el harness y no el generador.
+        let primero = &scene.objects[formacion.primer_indice];
+
+        for i in 0..formacion.pilares {
+            let objeto = &scene.objects[formacion.primer_indice + i];
+
+            assert_eq!(objeto.spatial_group, SpatialGroupId::Breakwater);
+            assert_eq!(objeto.reveal_group, RevealGroup::Breakwater);
+            assert_eq!(objeto.initial_material, primero.initial_material);
+            assert_eq!(objeto.final_material, primero.final_material);
+        }
     }
 }

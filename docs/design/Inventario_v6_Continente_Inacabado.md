@@ -1199,7 +1199,7 @@ Agregar comportamiento óptico del agua y verificar el barco a través del volum
 
 | Pendiente | Ruta provisional |
 |---|---|
-| Permiso para prisma hexagonal | Usar cuboides verticales hasta recibir respuesta |
+| ~~Permiso para prisma hexagonal~~ | **Resuelto**: autorizado, implementado en la Tarea 7.3 y **promovido a la entrega**; la Ruta B queda como respaldo con `--no-default-features` |
 | Coordenadas y escalas finales | Resolver mediante blockout |
 | Valores numéricos restantes de materiales | Resolver en plan técnico y pruebas visuales |
 | Densidad objetivo definitiva | Aumentar únicamente después de medir |
