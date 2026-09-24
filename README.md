@@ -253,7 +253,7 @@ cargo clippy --all-targets -- -D warnings
 cargo clippy --all-targets --no-default-features --features artistic-brush -- -D warnings
 cargo test                      # 533 tests: Ruta A + pincel
 cargo test --no-default-features --features artistic-brush # 513 tests: Ruta B + pincel
-cargo test --no-default-features # 423 tests: Ruta B clásica
+cargo test --no-default-features # 496 tests: Ruta B clásica
 cargo build --release
 ```
 
