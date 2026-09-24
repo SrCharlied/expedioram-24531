@@ -259,7 +259,7 @@ fn el_volumen_refractivo_cambia_la_imagen_frente_al_control_opaco() {
     let (refractivo, stats_refractivo) = render_del_nivel(WaterPreset::RefractiveWater);
     let (opaco, stats_opaco) = render_del_nivel(WaterPreset::OpaqueWater);
 
-    // Los dos presets insertan la misma geometria: 160 primitivas.
+    // Los dos presets insertan la misma geometria: 154 primitivas.
     assert_eq!(stats_refractivo.primary_rays, stats_opaco.primary_rays);
 
     // Los contadores son de la escena, no del agua: el cristal pictorico

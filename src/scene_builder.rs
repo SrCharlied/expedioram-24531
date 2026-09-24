@@ -84,7 +84,6 @@ pub struct SceneAnchors {
     /// la superficie del agua—, así que derivar el barco de él desde el rig
     /// daría una posición desplazada en toda la altura de la bahía.
     pub boat_anchor: Vec3,
-    pub palette_anchor: Vec3,
     pub hero_camera_anchor: Vec3,
     pub broken_edge_anchor: Vec3,
 }

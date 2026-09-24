@@ -1,5 +1,5 @@
 use crate::ray::Ray;
-use nalgebra_glm::{normalize, Vec3};
+use nalgebra_glm::{dot, normalize, Vec3};
 use std::f32::consts::PI;
 
 /// Límite del pitch: un poco antes de los polos. Justo en el polo la
@@ -287,12 +287,200 @@ impl Camera {
 
         Ray::new(self.eye, self.basis_change(&direccion))
     }
+
+    /// Píxel continuo en el que se ve un punto del mundo, o `None` si no se
+    /// ve.
+    ///
+    /// # La inversa de `ray_from_pixel`
+    ///
+    /// Es la vuelta exacta del camino que traza el renderer. Un punto
+    /// cualquiera del rayo de `ray_from_pixel(x, y, w, h)` se proyecta de
+    /// vuelta a `(x + 0.5, y + 0.5)`, que es el centro de ese píxel, y un
+    /// punto del rayo de `ray_from_cursor(c, w, h)` vuelve a `c`. Las
+    /// coordenadas son continuas y en píxeles de ventana, con el origen
+    /// arriba a la izquierda: la misma convención que entrega `minifb` y que
+    /// consume `input::PresentedFrame`.
+    ///
+    /// # Una sola base
+    ///
+    /// Los tres ejes salen de `forward` y `up` igual que en `basis_change`,
+    /// con el mismo producto cruz y el mismo orden, y la profundidad lleva
+    /// el signo que allí lleva el término `-z`. No hay una segunda
+    /// convención que pueda desviarse: si la hubiera, el gizmo se dibujaría
+    /// desplazado respecto de la superficie que señala, y el error crecería
+    /// con el ángulo.
+    ///
+    /// # Cuándo devuelve `None`
+    ///
+    /// - `width` o `height` en cero: no hay viewport donde caer.
+    /// - Punto no finito. Un `NaN` produciría un píxel cualquiera en vez de
+    ///   un fallo visible.
+    /// - Detrás de la cámara o pegado a ella. Sin este corte, dividir por
+    ///   una profundidad negativa devuelve un píxel perfectamente plausible
+    ///   para algo que está a la espalda.
+    /// - Fuera de la pantalla, con el borde derecho e inferior excluidos,
+    ///   igual que `PresentedFrame::source_pixel_at`.
+    pub fn project_to_pixels(
+        &self,
+        punto: &Vec3,
+        width: usize,
+        height: usize,
+    ) -> Option<(f32, f32)> {
+        if width == 0 || height == 0 {
+            return None;
+        }
+
+        let hacia = punto - self.eye;
+
+        if !hacia.x.is_finite() || !hacia.y.is_finite() || !hacia.z.is_finite() {
+            return None;
+        }
+
+        // La misma base que `basis_change`, en el mismo orden.
+        let forward = self.forward();
+        let right = forward.cross(&self.up).normalize();
+        let up = right.cross(&forward).normalize();
+
+        // Profundidad delante de la cámara. En coordenadas de cámara la
+        // vista mira hacia `-Z`, así que esto es `-z`.
+        let profundidad = dot(&hacia, &forward);
+
+        if profundidad <= crate::EPSILON {
+            return None;
+        }
+
+        let aspect_ratio = width as f32 / height as f32;
+        let perspective_scale = (self.vertical_fov / 2.0).tan();
+
+        // Deshacer la construcción de `ray_from_screen`: allí la dirección
+        // en cámara era `(sx · aspect · scale, sy · scale, -1)`.
+        let screen_x = dot(&hacia, &right) / (profundidad * aspect_ratio * perspective_scale);
+        let screen_y = dot(&hacia, &up) / (profundidad * perspective_scale);
+
+        // Y deshacer el mapeo de `ray_from_cursor`.
+        let x = (screen_x + 1.0) * width as f32 / 2.0;
+        let y = (1.0 - screen_y) * height as f32 / 2.0;
+
+        if !x.is_finite() || !y.is_finite() {
+            return None;
+        }
+
+        if x < 0.0 || y < 0.0 || x >= width as f32 || y >= height as f32 {
+            return None;
+        }
+
+        Some((x, y))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use nalgebra_glm::dot;
+
+    // --------------------------------------------------- proyeccion
+
+    #[test]
+    fn el_encuadre_se_proyecta_al_centro_de_la_pantalla() {
+        // `look_at` esta por definicion en el eje de la vista, asi que cae
+        // en el centro continuo del viewport.
+        let camara = camara_del_diorama();
+
+        let (x, y) = camara
+            .project_to_pixels(&camara.look_at, ANCHO, ALTO)
+            .expect("el encuadre se ve");
+
+        assert!((x - ANCHO as f32 / 2.0).abs() < 1e-3, "x = {x}");
+        assert!((y - ALTO as f32 / 2.0).abs() < 1e-3, "y = {y}");
+    }
+
+    #[test]
+    fn un_punto_del_rayo_vuelve_a_su_pixel() {
+        // La relacion inversa con `ray_from_pixel`, dicha en un test: se
+        // toma el rayo de un pixel, se avanza por el, y la proyeccion tiene
+        // que devolver el centro de ese mismo pixel.
+        let camara = camara_del_diorama();
+
+        for (px, py) in [(0, 0), (7, 3), (16, 12), (32, 24), (5, 20)] {
+            let rayo = camara.ray_from_pixel(px, py, ANCHO, ALTO);
+
+            for distancia in [0.5f32, 3.0, 17.5] {
+                let punto = rayo.origin + rayo.direction * distancia;
+                let (x, y) = camara
+                    .project_to_pixels(&punto, ANCHO, ALTO)
+                    .unwrap_or_else(|| panic!("({px}, {py}) a {distancia} deberia verse"));
+
+                assert!(
+                    (x - (px as f32 + 0.5)).abs() < 1e-2,
+                    "({px}, {py}) a {distancia}: x = {x}"
+                );
+                assert!(
+                    (y - (py as f32 + 0.5)).abs() < 1e-2,
+                    "({px}, {py}) a {distancia}: y = {y}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn un_punto_detras_de_la_camara_no_se_proyecta() {
+        // Sin este filtro la division por la profundidad cambia de signo y
+        // devuelve un pixel plausible para algo que esta a la espalda.
+        let camara = camara_del_diorama();
+        let atras = camara.eye - camara.forward() * 5.0;
+
+        assert_eq!(camara.project_to_pixels(&atras, ANCHO, ALTO), None);
+    }
+
+    #[test]
+    fn el_propio_ojo_no_se_proyecta() {
+        let camara = camara_del_diorama();
+
+        assert_eq!(camara.project_to_pixels(&camara.eye, ANCHO, ALTO), None);
+    }
+
+    #[test]
+    fn un_punto_fuera_del_viewport_no_se_proyecta() {
+        // Se construye desviando el rayo de una esquina: lo que cae mas
+        // alla del borde no tiene pixel.
+        let camara = camara_del_diorama();
+        let rayo = camara.ray_from_pixel(0, 0, ANCHO, ALTO);
+        let dentro = rayo.origin + rayo.direction * 10.0;
+
+        assert!(camara.project_to_pixels(&dentro, ANCHO, ALTO).is_some());
+
+        let derecha = camara.forward().cross(&camara.up).normalize();
+        let fuera = dentro - derecha * 20.0;
+
+        assert_eq!(camara.project_to_pixels(&fuera, ANCHO, ALTO), None);
+    }
+
+    #[test]
+    fn un_punto_no_finito_no_se_proyecta() {
+        let camara = camara_del_diorama();
+
+        for malo in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            assert_eq!(
+                camara.project_to_pixels(&Vec3::new(malo, 0.0, 0.0), ANCHO, ALTO),
+                None,
+                "x = {malo}"
+            );
+            assert_eq!(
+                camara.project_to_pixels(&Vec3::new(0.0, malo, 0.0), ANCHO, ALTO),
+                None,
+                "y = {malo}"
+            );
+        }
+    }
+
+    #[test]
+    fn un_viewport_degenerado_no_proyecta() {
+        let camara = camara_del_diorama();
+
+        assert_eq!(camara.project_to_pixels(&camara.look_at, 0, ALTO), None);
+        assert_eq!(camara.project_to_pixels(&camara.look_at, ANCHO, 0), None);
+        assert_eq!(camara.project_to_pixels(&camara.look_at, 0, 0), None);
+    }
 
     /// Cámara con el encuadre por encima del eje de órbita, que es la
     /// configuración del diorama.

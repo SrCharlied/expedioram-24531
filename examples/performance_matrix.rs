@@ -14,10 +14,10 @@
 //!
 //! | Nombre del plan | Volumen | Revelación |
 //! |---|---|---|
-//! | `safe-canvas` | sin volumen, `159` primitivas | lienzo, `0.0` |
-//! | `safe-painted` | sin volumen, `159` primitivas | pintado, `1.0` |
-//! | `safe-water` | refractivo, `160` primitivas | pintado, `1.0` |
-//! | `safe-revealing` | refractivo, `160` primitivas | `worst_case()` |
+//! | `safe-canvas` | sin volumen, `153` primitivas | lienzo, `0.0` |
+//! | `safe-painted` | sin volumen, `153` primitivas | pintado, `1.0` |
+//! | `safe-water` | refractivo, `154` primitivas | pintado, `1.0` |
+//! | `safe-revealing` | refractivo, `154` primitivas | `worst_case()` |
 //! | `target-water` | refractivo, el candidato de `TARGET` | pintado, `1.0` |
 //!
 //! Y una sexta que el plan no nombra y la Tarea 7.2 necesita:
@@ -48,7 +48,8 @@
 //!
 //! `target-water` ya se mide: es el candidato incremental de la Tarea 7.2
 //! que esté en evaluación, y el conteo sale de `TARGET`. **No es lo que se
-//! envía**: el nivel seguro sigue intacto en `160` y es el que abre la
+//! envía**: el nivel seguro está en `154` desde que se retiró `G-04`, y es
+//! el que abre la
 //! ventana. El candidato vive para poder medirlo y mirarlo antes de decidir
 //! si se conserva, y para poder retirarlo cambiando un parámetro.
 //!
@@ -86,10 +87,15 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use expedition33_continente_inacabado::accel::TraversalStats;
+use expedition33_continente_inacabado::brush::{BrushMasks, PigmentMasks, SurfaceKey};
 use expedition33_continente_inacabado::camera::Camera;
+use expedition33_continente_inacabado::color::Color;
 use expedition33_continente_inacabado::framebuffer::Framebuffer;
+use expedition33_continente_inacabado::input::{pick_artistic, PresentedFrame};
 use expedition33_continente_inacabado::light::{diorama as luces_del_diorama, PointLight};
-use expedition33_continente_inacabado::renderer::{render, InteractiveProfile, Shading};
+use expedition33_continente_inacabado::renderer::{
+    render, render_artistic, InteractiveProfile, Shading,
+};
 use expedition33_continente_inacabado::reveal::{
     reveal_duration, RevealState, MINIMUM_REVEAL_FRAMES, REVEAL_DURATION_CEILING,
     WORST_CASE_PROGRESS,
@@ -106,6 +112,27 @@ const ALTO: usize = 600;
 /// Rondas por celda. **Impar**: la mediana es un valor observado.
 const RONDAS: usize = 15;
 
+/// Resolución de las máscaras artísticas, la misma que usa la ventana.
+const BRUSH_RESOLUTION: usize = 128;
+
+/// Radio del pincel como fracción de `scene_radius`, el mismo que arranca en
+/// la ventana. Se escribe aquí y no se importa: `main.rs` lo declara privado
+/// y detrás de una feature, así que copiarlo con su procedencia dicha es más
+/// honesto que fingir que se comparte.
+const BRUSH_RADIUS_FACTOR: f32 = 0.025;
+
+/// Radio mínimo de órbita del modo artístico, como factor de `scene_radius`.
+///
+/// Es el valor que `main.rs` aplica bajo `artistic-brush`. Igual que el radio
+/// del pincel, se declara aquí con su procedencia en vez de leerse: la
+/// constante de `main` es privada y este ejemplo no puede —ni debe— tocarla.
+/// Si allí cambia, esta cifra deja de describir lo que se envía, y por eso se
+/// imprime junto a la tabla.
+const ARTISTIC_MIN_RADIUS_FACTOR: f32 = 1.7;
+
+/// Rejilla de cursores con la que se construye la fixture artística.
+const REJILLA: (usize, usize) = (9, 7);
+
 /// Margen mínimo que se le exige al candidato sobre el crítico del gate.
 ///
 /// Es el umbral operativo de la Tarea 7.1, y se mantiene para la 7.2 por una
@@ -115,6 +142,216 @@ const RONDAS: usize = 15;
 /// el gate sin colchón para lo que la medición no ve.
 const MARGEN_MINIMO: f64 = 1.30;
 
+/// Con qué renderer se mide una celda.
+///
+/// Los tres son APIs de la librería y ninguno depende de la feature
+/// `artistic-brush`: lo que esa feature enciende es el pincel de la ventana,
+/// no el renderer. Medir los tres aquí es lo que permite separar el coste de
+/// **tener** las capas del de **usarlas**.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Modo {
+    /// `render`: lo que se envía hoy.
+    Base,
+    /// `render_artistic` con las dos máscaras vacías. Aísla el coste de
+    /// consultar los dos mapas en cada impacto, sin pintura que componer.
+    ArtisticoVacio,
+    /// `render_artistic` con la fixture pintada sobre superficies reales.
+    ArtisticoPintado,
+}
+
+impl Modo {
+    fn etiqueta(self) -> &'static str {
+        match self {
+            Modo::Base => "base",
+            Modo::ArtisticoVacio => "art-vacio",
+            Modo::ArtisticoPintado => "art-pintado",
+        }
+    }
+}
+
+/// Las dos capas artísticas y las superficies que tocan.
+struct Artistico {
+    masks: BrushMasks,
+    pigment: PigmentMasks,
+    /// Las `SurfaceKey` pintadas, en el orden en que el picking las
+    /// encontró. Se guardan para poder afirmar de dónde salieron.
+    claves: Vec<SurfaceKey>,
+}
+
+impl Artistico {
+    /// Contenedores vacíos, para el escenario que aísla el coste de consulta.
+    fn vacio() -> Self {
+        Artistico {
+            masks: BrushMasks::new(BRUSH_RESOLUTION, BRUSH_RESOLUTION),
+            pigment: PigmentMasks::new(BRUSH_RESOLUTION, BRUSH_RESOLUTION),
+            claves: Vec::new(),
+        }
+    }
+}
+
+/// El encuadre más cercano que permite el modo artístico.
+///
+/// La órbita del modo artístico baja su mínimo a `ARTISTIC_MIN_RADIUS_FACTOR`
+/// veces `scene_radius`, frente al `1.8` del modo base. Para llegar ahí hay
+/// que bajar **primero** el límite de la cámara: `Camera::zoom` recorta contra
+/// `min_radius`, así que sin ese paso la cámara se detendría en el mínimo del
+/// modo base y el bloque mediría un encuadre distinto del que dice medir.
+///
+/// La camara se deriva aquí y no se lee de `main.rs`: aquella constante es
+/// privada y vive detrás de una feature. Lo que este ejemplo garantiza es que
+/// el radio resultante **es** el factor declarado, y eso lo fija un test.
+fn camara_de_zoom_artistico(diorama: &Blockout) -> Camera {
+    let objetivo = diorama.scale.scene_radius * ARTISTIC_MIN_RADIUS_FACTOR;
+    let hero = diorama.hero_camera();
+    let mut cercana = hero.with_radius_limits(objetivo, hero.max_radius);
+
+    cercana.zoom(objetivo - cercana.radius());
+
+    cercana
+}
+
+/// Los cursores de la rejilla, en píxeles de ventana.
+///
+/// Fijos y derivados del tamaño: la fixture tiene que salir igual en cada
+/// corrida, o las tres columnas de la tabla dejarían de ser comparables.
+fn cursores_de_la_fixture(ancho: usize, alto: usize) -> Vec<(f32, f32)> {
+    let (columnas, filas) = REJILLA;
+    let mut cursores = Vec::with_capacity(columnas * filas);
+
+    for fila in 0..filas {
+        for columna in 0..columnas {
+            cursores.push((
+                (columna as f32 + 0.5) * ancho as f32 / columnas as f32,
+                (fila as f32 + 0.5) * alto as f32 / filas as f32,
+            ));
+        }
+    }
+
+    cursores
+}
+
+/// Pinta la fixture artística sobre superficies **reales** del diorama.
+///
+/// Recorre una rejilla de cursores con el mismo `pick_artistic` que usa la
+/// ventana, y sobre cada impacto aplica revelado y pigmento. Las claves salen
+/// del picking, no de recorrer el vector de objetos: así la fixture toca las
+/// superficies que de verdad se ven desde esa cámara, con las cartas que
+/// entregan sus primitivas.
+///
+/// El radio en `uv` se deriva de la métrica de cada superficie, igual que en
+/// la ventana, así que la huella mide lo mismo sobre una losa enorme y sobre
+/// un tablón.
+///
+/// Las texturas se **leen**: `stamp_texture` muestrea y estampa el color en
+/// la capa. Ninguna textura de la escena se modifica.
+fn fixture_artistica(diorama: &Blockout, camara: &Camera, ancho: usize, alto: usize) -> Artistico {
+    let mut artistico = Artistico::vacio();
+    let cuadro = PresentedFrame::full(*camara, (ancho, alto));
+    let radio_mundo = diorama.scale.scene_radius * BRUSH_RADIUS_FACTOR;
+
+    // Tres pigmentos planos y una tela, alternados por orden de impacto para
+    // que la fixture ejercite las dos rutas de composición.
+    let paleta = [
+        Color::from_srgb(0.66, 0.09, 0.15),
+        Color::from_srgb(0.85, 0.65, 0.17),
+        Color::from_srgb(0.18, 0.62, 0.68),
+    ];
+
+    for (i, cursor) in cursores_de_la_fixture(ancho, alto).into_iter().enumerate() {
+        let Some(objetivo) = pick_artistic(&diorama.scene, &diorama.accel, &cuadro, cursor) else {
+            continue;
+        };
+
+        let clave = SurfaceKey::new(objetivo.object_index, objetivo.uv_chart);
+        let Some((radio_u, radio_v)) = objetivo.uv_world_scale.uv_radii(radio_mundo) else {
+            continue;
+        };
+        let (u, v) = (objetivo.uv.x, objetivo.uv.y);
+
+        // Revelado en todas: es la herramienta por defecto de la ventana.
+        artistico
+            .masks
+            .stamp_ellipse(clave, u, v, radio_u, radio_v, 1.0);
+
+        // Y pigmento alternando plano y tela, para que la tabla incluya el
+        // coste de las dos composiciones y no solo de la barata.
+        match (i % 4, diorama.scene.textures.first()) {
+            (3, Some(tela)) => artistico
+                .pigment
+                .stamp_texture_ellipse(clave, u, v, radio_u, radio_v, tela, 2.0, 1.0),
+            _ => artistico.pigment.stamp_ellipse(
+                clave,
+                u,
+                v,
+                radio_u,
+                radio_v,
+                paleta[i % paleta.len()],
+                1.0,
+            ),
+        }
+
+        if !artistico.claves.contains(&clave) {
+            artistico.claves.push(clave);
+        }
+    }
+
+    artistico
+}
+
+/// Imprime un bloque artístico: las tres columnas de una misma escena y
+/// cámara, con los conteos y las superficies que toca la fixture.
+///
+/// No compara contra ningún umbral ni dice si cabe: eso lo decide quien lea
+/// la tabla. Lo que se imprime es lo que hace falta para decidirlo.
+fn reportar_artistico(
+    celdas: &[Celda],
+    niveles: &[Blockout],
+    artistico: &Artistico,
+    ancho: usize,
+    alto: usize,
+    titulo: &str,
+) {
+    println!("\n  {titulo}   {ancho} x {alto}");
+    println!(
+        "  fixture representativa: {} superficies con revelado, {} con pigmento, {} claves distintas",
+        artistico.masks.len(),
+        artistico.pigment.len(),
+        artistico.claves.len()
+    );
+    println!(
+        "  {:<14} {:>6} {:>9} {:>9} {:>9} {:>6} {:>12}",
+        "modo", "prim.", "minimo", "mediana", "maximo", "fps", "2os rayos"
+    );
+
+    for celda in celdas {
+        let d = summarize(&celda.tiempos);
+        let primitivas = niveles[celda.nivel].scene.objects.len();
+
+        println!(
+            "  {:<14} {:>6} {:>9.4} {:>9.4} {:>9.4} {:>6.1} {:>12}",
+            celda.modo.etiqueta(),
+            primitivas,
+            d.min,
+            d.median,
+            d.max,
+            1.0 / d.median,
+            celda.secundarios()
+        );
+    }
+
+    // Cocientes **pareados**: ronda contra ronda, que es lo que cancela la
+    // deriva térmica de cada vuelta. Ver `stats::median_ratio`.
+    if celdas.len() == 3 {
+        let base = &celdas[0].tiempos;
+
+        println!(
+            "  cociente pareado contra base:  vacio {:.3}x   pintado {:.3}x",
+            median_ratio(&celdas[1].tiempos, base),
+            median_ratio(&celdas[2].tiempos, base)
+        );
+    }
+}
+
 /// Una celda de la matriz: un nivel, un estado, una cámara y su muestra.
 struct Celda {
     nombre: String,
@@ -122,6 +359,8 @@ struct Celda {
     nivel: usize,
     reveal: RevealState,
     camara: Camera,
+    /// Qué renderer mide. Ver `Modo`.
+    modo: Modo,
     tiempos: Vec<f64>,
     /// Contadores del último cuadro trazado. Son deterministas para un
     /// estado y una cámara dados, así que uno basta.
@@ -130,11 +369,22 @@ struct Celda {
 
 impl Celda {
     fn nueva(nombre: String, nivel: usize, reveal: RevealState, camara: Camera) -> Self {
+        Celda::con_modo(nombre, nivel, reveal, camara, Modo::Base)
+    }
+
+    fn con_modo(
+        nombre: String,
+        nivel: usize,
+        reveal: RevealState,
+        camara: Camera,
+        modo: Modo,
+    ) -> Self {
         Celda {
             nombre,
             nivel,
             reveal,
             camara,
+            modo,
             tiempos: Vec::with_capacity(RONDAS),
             stats: TraversalStats::default(),
         }
@@ -176,6 +426,22 @@ fn medir(
     ancho: usize,
     alto: usize,
 ) {
+    medir_con(celdas, niveles, luces, ancho, alto, &Artistico::vacio());
+}
+
+/// Como `medir`, con una fixture artística concreta para las celdas que la
+/// pidan.
+///
+/// La fixture se presta: no se construye ni se clona por ronda, así que lo
+/// que se cronometra es el trazado y no su preparación.
+fn medir_con(
+    celdas: &mut [Celda],
+    niveles: &[Blockout],
+    luces: &[Vec<PointLight>],
+    ancho: usize,
+    alto: usize,
+    artistico: &Artistico,
+) {
     let mut framebuffer = Framebuffer::new(ancho, alto);
     let n = celdas.len();
 
@@ -188,16 +454,35 @@ fn medir(
             let i = (k + ronda) % n;
             let diorama = &niveles[celdas[i].nivel];
 
+            let vacio = Artistico::vacio();
+            let capas = match celdas[i].modo {
+                Modo::ArtisticoPintado => artistico,
+                _ => &vacio,
+            };
+
             let inicio = Instant::now();
-            let stats = render(
-                &mut framebuffer,
-                &diorama.scene,
-                &diorama.accel,
-                &luces[celdas[i].nivel],
-                &celdas[i].reveal,
-                &celdas[i].camara,
-                Shading::Material,
-            );
+            let stats = match celdas[i].modo {
+                Modo::Base => render(
+                    &mut framebuffer,
+                    &diorama.scene,
+                    &diorama.accel,
+                    &luces[celdas[i].nivel],
+                    &celdas[i].reveal,
+                    &celdas[i].camara,
+                    Shading::Material,
+                ),
+                Modo::ArtisticoVacio | Modo::ArtisticoPintado => render_artistic(
+                    &mut framebuffer,
+                    &diorama.scene,
+                    &diorama.accel,
+                    &luces[celdas[i].nivel],
+                    &celdas[i].reveal,
+                    &celdas[i].camara,
+                    Shading::Material,
+                    &capas.masks,
+                    &capas.pigment,
+                ),
+            };
             celdas[i].tiempos.push(inicio.elapsed().as_secs_f64());
             celdas[i].stats = stats;
         }
@@ -443,6 +728,164 @@ fn main() {
         }
     }
 
+    // ------------------------------------------- bloques artisticos
+    //
+    // Tres columnas por escenario, siempre sobre la **misma** escena, cámara
+    // y estado: lo único que cambia es qué renderer las traza y si las capas
+    // llevan pintura. Así la diferencia entre columnas es atribuible dentro
+    // de la corrida, que es lo que los cocientes pareados saben medir.
+    let artistico_hero = fixture_artistica(&niveles[1], &hero, ANCHO, ALTO);
+
+    let artisticas = |camara: Camera| {
+        vec![
+            Celda::con_modo(
+                "safe-revealing".to_string(),
+                1,
+                RevealState::worst_case(),
+                camara,
+                Modo::Base,
+            ),
+            Celda::con_modo(
+                "safe-revealing".to_string(),
+                1,
+                RevealState::worst_case(),
+                camara,
+                Modo::ArtisticoVacio,
+            ),
+            Celda::con_modo(
+                "safe-revealing".to_string(),
+                1,
+                RevealState::worst_case(),
+                camara,
+                Modo::ArtisticoPintado,
+            ),
+        ]
+    };
+
+    println!("\n\n  ====== modo artistico ======");
+    println!("  render_artistic, BrushMasks y PigmentMasks son API de la libreria:");
+    println!("  no dependen de la feature artistic-brush, que solo enciende el");
+    println!("  pincel de la ventana. Por eso esta tabla sale igual en las dos rutas.");
+    println!(
+        "  mascaras    {BRUSH_RESOLUTION} x {BRUSH_RESOLUTION} por superficie, radio {:.3} de mundo",
+        niveles[1].scale.scene_radius * BRUSH_RADIUS_FACTOR
+    );
+    println!(
+        "  fixture     rejilla de {} x {} cursores resueltos con pick_artistic",
+        REJILLA.0, REJILLA.1
+    );
+
+    let mut art_final = artisticas(hero);
+    medir_con(
+        &mut art_final,
+        &niveles,
+        &luces,
+        ANCHO,
+        ALTO,
+        &artistico_hero,
+    );
+    reportar_artistico(
+        &art_final,
+        &niveles,
+        &artistico_hero,
+        ANCHO,
+        ALTO,
+        "cuadro final, toma hero",
+    );
+
+    let artistico_perfil = fixture_artistica(&niveles[1], &hero, perfil.width, perfil.height);
+    let mut art_perfil = artisticas(hero);
+    medir_con(
+        &mut art_perfil,
+        &niveles,
+        &luces,
+        perfil.width,
+        perfil.height,
+        &artistico_perfil,
+    );
+    reportar_artistico(
+        &art_perfil,
+        &niveles,
+        &artistico_perfil,
+        perfil.width,
+        perfil.height,
+        "perfil interactivo, toma hero",
+    );
+
+    // ------------------------------------------ el zoom mas cercano
+    //
+    // El modo artistico baja el minimo de orbita a `1.7 x scene_radius`,
+    // frente al `1.8` del modo base. Acercarse llena mas el cuadro de
+    // geometria, y la Tarea 7.1 identifico el encuadre como el factor
+    // dominante: por eso este encuadre tiene su propio bloque.
+    //
+    // La camara se deriva aqui, no se lee de `main.rs`: aquella constante es
+    // privada y esta detras de una feature. La cifra que se imprime es la que
+    // usa este ejemplo, y si alla cambia, esta tabla deja de describirla.
+    let cercana = camara_de_zoom_artistico(&niveles[1]);
+
+    let artistico_cerca = fixture_artistica(&niveles[1], &cercana, ANCHO, ALTO);
+    let mut art_cerca = artisticas(cercana);
+    medir_con(
+        &mut art_cerca,
+        &niveles,
+        &luces,
+        ANCHO,
+        ALTO,
+        &artistico_cerca,
+    );
+    reportar_artistico(
+        &art_cerca,
+        &niveles,
+        &artistico_cerca,
+        ANCHO,
+        ALTO,
+        "cuadro final, zoom artistico minimo",
+    );
+    println!(
+        "  radio orbital              {:.3}   ({ARTISTIC_MIN_RADIUS_FACTOR:.2} x scene_radius {:.3})",
+        cercana.radius(),
+        niveles[1].scale.scene_radius
+    );
+    println!("  el modo base no llega aqui: su minimo es 1.8 x scene_radius.");
+
+    // ------------------------- el zoom mas cercano, en el perfil interactivo
+    //
+    // Este es el caso que de verdad se paga al pintar. Mientras el boton
+    // esta abajo la ventana esta en cambio sostenido, asi que dibuja al
+    // perfil interactivo y **no** al cuadro final: el bloque de `800 x 600`
+    // de arriba mide lo que cuesta el cuadro que se presenta al soltar, no
+    // lo que cuesta cada cuadro de un arrastre.
+    //
+    // Misma camara y mismo factor que el bloque anterior; lo unico que
+    // cambia es la resolucion, y la fixture se reconstruye a ella porque el
+    // picking depende del tamano del cuadro presentado.
+    let artistico_cerca_perfil =
+        fixture_artistica(&niveles[1], &cercana, perfil.width, perfil.height);
+    let mut art_cerca_perfil = artisticas(cercana);
+    medir_con(
+        &mut art_cerca_perfil,
+        &niveles,
+        &luces,
+        perfil.width,
+        perfil.height,
+        &artistico_cerca_perfil,
+    );
+    reportar_artistico(
+        &art_cerca_perfil,
+        &niveles,
+        &artistico_cerca_perfil,
+        perfil.width,
+        perfil.height,
+        "perfil interactivo, zoom artistico minimo",
+    );
+    println!("  es el cuadro que se traza mientras se arrastra el pincel.");
+
+    println!("\n  Las tres columnas artisticas comparten escena, camara y estado.");
+    println!("  La diferencia entre ellas es atribuible dentro de la corrida; la que");
+    println!("  hay entre bloques distintos no lo es, porque cambia el encuadre.");
+    println!("  Aqui no se declara margen ni aprobacion: la tabla es el dato.");
+
     println!("\n  La reserva esta en tiempo, no en primitivas: el coste no es lineal");
     println!("  en el conteo, asi que traducirla a densidad exige medir el nivel");
     println!("  objetivo. Y el escalon mas caro de la tabla no es el conteo sino la");
@@ -451,5 +894,178 @@ fn main() {
 
     if !cabe {
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use expedition33_continente_inacabado::input::{pick_artistic, PresentedFrame};
+
+    /// La fixture artistica tiene que ser **de verdad**: pintada sobre
+    /// superficies que existen, identificadas por el mismo picking que usa
+    /// la ventana, y no sobre claves inventadas.
+    ///
+    /// Sin esto, el tercer escenario mediria el coste de consultar dos mapas
+    /// vacios y lo llamaria «con pigmento», que es exactamente la clase de
+    /// cifra que no sirve para decidir nada.
+    #[test]
+    fn la_fixture_artistica_nace_de_impactos_reales() {
+        let diorama = nivel(WaterPreset::RefractiveWater, Density::Safe);
+        let camara = diorama.hero_camera();
+        let fixture = fixture_artistica(&diorama, &camara, ANCHO, ALTO);
+
+        // No esta vacia, y toca varias superficies distintas.
+        assert!(
+            fixture.masks.len() >= 3,
+            "el revelado toca {} superficies",
+            fixture.masks.len()
+        );
+        assert!(
+            fixture.pigment.len() >= 3,
+            "el pigmento toca {} superficies",
+            fixture.pigment.len()
+        );
+        assert!(
+            !fixture.claves.is_empty(),
+            "la fixture no registro ninguna clave"
+        );
+
+        // Y cada clave corresponde a un objeto real de la escena y a una
+        // carta que esa primitiva reconoce.
+        for clave in &fixture.claves {
+            let objeto = diorama
+                .scene
+                .objects
+                .get(clave.object_index)
+                .unwrap_or_else(|| panic!("la clave {clave:?} apunta fuera de la escena"));
+
+            assert!(
+                objeto.primitive.uv_world_scale(clave.uv_chart).is_some(),
+                "la carta de {clave:?} no es de su primitiva"
+            );
+        }
+    }
+
+    /// Las claves salen del picking, no de un recorrido del vector de
+    /// objetos: tienen que coincidir con lo que devuelve `pick_artistic`
+    /// para el mismo cursor.
+    #[test]
+    fn las_claves_coinciden_con_el_picking_de_la_ventana() {
+        let diorama = nivel(WaterPreset::RefractiveWater, Density::Safe);
+        let camara = diorama.hero_camera();
+        let fixture = fixture_artistica(&diorama, &camara, ANCHO, ALTO);
+        let cuadro = PresentedFrame::full(camara, (ANCHO, ALTO));
+
+        let mut confirmadas = 0usize;
+
+        for cursor in cursores_de_la_fixture(ANCHO, ALTO) {
+            if let Some(objetivo) = pick_artistic(&diorama.scene, &diorama.accel, &cuadro, cursor) {
+                let clave = SurfaceKey::new(objetivo.object_index, objetivo.uv_chart);
+
+                assert!(
+                    fixture.claves.contains(&clave),
+                    "el picking en {cursor:?} da {clave:?} y la fixture no la tiene"
+                );
+                confirmadas += 1;
+            }
+        }
+
+        assert!(
+            confirmadas >= 3,
+            "solo {confirmadas} cursores de la rejilla cayeron sobre el diorama"
+        );
+    }
+
+    /// El pigmento no puede dejar la textura compartida tocada: se muestrea,
+    /// no se modifica.
+    #[test]
+    fn la_fixture_no_altera_las_texturas_de_la_escena() {
+        let diorama = nivel(WaterPreset::RefractiveWater, Density::Safe);
+        let camara = diorama.hero_camera();
+
+        let antes: Vec<_> = diorama
+            .scene
+            .textures
+            .iter()
+            .map(|t| (t.width(), t.height(), t.peak()))
+            .collect();
+
+        let _ = fixture_artistica(&diorama, &camara, ANCHO, ALTO);
+
+        let despues: Vec<_> = diorama
+            .scene
+            .textures
+            .iter()
+            .map(|t| (t.width(), t.height(), t.peak()))
+            .collect();
+
+        assert_eq!(antes, despues, "la fixture toco una textura compartida");
+    }
+
+    /// El encuadre mas cercano del modo artistico tiene que quedar
+    /// **exactamente** donde dice su factor.
+    ///
+    /// Se comprueba el radio resultante y no el codigo que lo calcula: la
+    /// camara pasa por `with_radius_limits` y `zoom`, y `zoom` recorta contra
+    /// el minimo. Si ese recorte quedara mal puesto, la camara se detendria
+    /// en el minimo del modo base y el bloque mediria otro encuadre sin que
+    /// nada avisara.
+    #[test]
+    fn el_zoom_artistico_queda_exactamente_en_su_factor_de_escena() {
+        let diorama = nivel(WaterPreset::RefractiveWater, Density::Safe);
+        let camara = camara_de_zoom_artistico(&diorama);
+        let esperado = diorama.scale.scene_radius * ARTISTIC_MIN_RADIUS_FACTOR;
+
+        assert!(
+            (camara.radius() - esperado).abs() < 1e-3,
+            "radio {} y se esperaba {esperado}",
+            camara.radius()
+        );
+
+        // Y es de verdad mas cerca que la toma hero, o el bloque no mediria
+        // nada distinto.
+        assert!(
+            camara.radius() < diorama.hero_camera().radius(),
+            "el zoom artistico no se acerco: {} contra hero {}",
+            camara.radius(),
+            diorama.hero_camera().radius()
+        );
+    }
+
+    /// Y ese mismo encuadre tiene que poder alimentar un bloque **en el
+    /// perfil interactivo**, que es la resolucion a la que se pinta de
+    /// verdad.
+    #[test]
+    fn el_zoom_artistico_alimenta_una_fixture_en_el_perfil_interactivo() {
+        let diorama = nivel(WaterPreset::RefractiveWater, Density::Safe);
+        let camara = camara_de_zoom_artistico(&diorama);
+        let perfil = InteractiveProfile::default();
+
+        let fixture = fixture_artistica(&diorama, &camara, perfil.width, perfil.height);
+
+        assert!(
+            fixture.masks.len() >= 3,
+            "el revelado toca {} superficies en el perfil",
+            fixture.masks.len()
+        );
+        assert!(
+            fixture.pigment.len() >= 3,
+            "el pigmento toca {} superficies en el perfil",
+            fixture.pigment.len()
+        );
+
+        for clave in &fixture.claves {
+            let objeto = diorama
+                .scene
+                .objects
+                .get(clave.object_index)
+                .unwrap_or_else(|| panic!("la clave {clave:?} apunta fuera de la escena"));
+
+            assert!(
+                objeto.primitive.uv_world_scale(clave.uv_chart).is_some(),
+                "la carta de {clave:?} no es de su primitiva"
+            );
+        }
     }
 }

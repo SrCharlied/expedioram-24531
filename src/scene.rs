@@ -127,10 +127,11 @@ pub struct SceneObject {
 impl SceneObject {
     /// ¿Cambia de aspecto al pintarse?
     ///
-    /// Dos entradas del inventario no lo hacen, por razones opuestas:
-    /// `G-01`, el plinto, es lienzo y se queda así, y `G-04`, la paleta y el
-    /// pincel, nace ya en cristal porque es la herramienta con la que se
-    /// pinta. Las dos necesitan grupo por tipado y ninguna se revela.
+    /// Una entrada del inventario no lo hace: `G-01`, el plinto, que es
+    /// lienzo y se queda así. Necesita grupo por tipado y nunca se revela.
+    ///
+    /// Antes había una segunda, `G-04` —la paleta y el pincel de cristal—,
+    /// que nacía ya con su material final. Se retiró de la escena.
     pub fn is_revealable(&self) -> bool {
         self.initial_material != self.final_material
     }
@@ -229,6 +230,51 @@ impl Scene {
         let elegible = objeto.is_revealable() && objeto.reveal_group != RevealGroup::Finale;
 
         elegible.then_some(objeto.reveal_group)
+    }
+
+    /// Grupo de un objeto bajo la política **artística**, o `None` si ese
+    /// objeto no es una superficie que alguien deba poder pintar.
+    ///
+    /// # En qué se diferencia de `paintable_group`
+    ///
+    /// `paintable_group` responde «¿qué **región** revela este clic?», y por
+    /// eso excluye lo inerte y el finale: son las dos reglas que sostienen
+    /// la demostración de tres clics y el clímax del diorama.
+    ///
+    /// Esta responde otra pregunta: «¿es esto una superficie del diorama?».
+    /// El modo artístico pinta **todo** —el plinto, el continente de fondo,
+    /// el Monolito—, porque ahí el clic no adelanta ningún clímax: deposita
+    /// pigmento sobre una superficie concreta.
+    ///
+    /// Las entradas inertes se aceptan y no pasa nada raro: revelarlas no
+    /// cambia un píxel, porque su material inicial y su final son el mismo.
+    /// Lo que sí hacen es aceptar pigmento, que es justo lo que se quiere de
+    /// una base de lienzo.
+    ///
+    /// # Qué excluye
+    ///
+    /// `SpatialGroupId::InteractionProps`, que es el grupo reservado para
+    /// atrezo: piezas que explican la obra sin formar parte del cuadro.
+    ///
+    /// **Hoy ese grupo está vacío.** Lo ocupaba `G-04`, la paleta y el
+    /// pincel de cristal, y se retiró de la escena. El filtro se conserva
+    /// porque la distinción sigue siendo correcta y porque quitarlo sería
+    /// cambiar la política para no cambiar nada: mientras no haya atrezo,
+    /// **todo el diorama es pintable**, plinto y Monolito incluidos.
+    ///
+    /// El cielo no hace falta excluirlo: no hay impacto contra el skybox, así
+    /// que un rayo que se va no llega nunca hasta aquí.
+    ///
+    /// # Esta política **no** revela
+    ///
+    /// Devuelve el grupo del objeto tal cual, `Finale` incluido. Quien use
+    /// esto para revelar en vez de para pigmentar tiene que saber que el
+    /// grupo del Monolito puede salir por aquí; `RevealState` sigue siendo
+    /// la segunda capa que impide activarlo antes de tiempo.
+    pub fn artistic_group(&self, object_index: usize) -> Option<RevealGroup> {
+        let objeto = self.objects.get(object_index)?;
+
+        (objeto.spatial_group != SpatialGroupId::InteractionProps).then_some(objeto.reveal_group)
     }
 
     pub fn texture(&self, id: TextureId) -> &Texture {
@@ -330,6 +376,91 @@ mod tests {
         }
 
         scene
+    }
+
+    // ------------------------------------------ politica artistica
+
+    /// Cuatro objetos que cubren los casos que separan las dos politicas.
+    ///
+    /// Se construye aqui y no se toma del diorama real para que los indices
+    /// sean los que dice este test y no los que deje una reorganizacion de
+    /// la escena.
+    fn escena_de_politicas() -> Scene {
+        let mut scene = Scene::new();
+        let lienzo = scene.add_material(Material::new(Color::new(0.9, 0.9, 0.8)));
+        let pintado = scene.add_material(Material::new(Color::new(0.2, 0.4, 0.2)));
+
+        let mut poner = |grupo_espacial, grupo, inicial| {
+            scene.add_object(SceneObject {
+                primitive: Cuboid::centrado(Vec3::zeros(), Vec3::new(1.0, 1.0, 1.0)).into(),
+                initial_material: inicial,
+                final_material: pintado,
+                spatial_group: grupo_espacial,
+                reveal_group: grupo,
+            });
+        };
+
+        // 0: region normal, revelable.
+        poner(SpatialGroupId::Meadows, RevealGroup::Meadows, lienzo);
+        // 1: plinto inerte, del finale por tipado.
+        poner(SpatialGroupId::Global, RevealGroup::Finale, pintado);
+        // 2: monolito, revelable y del finale.
+        poner(SpatialGroupId::Monolith, RevealGroup::Finale, lienzo);
+        // 3: la paleta fisica, que es una herramienta y no un lienzo.
+        poner(
+            SpatialGroupId::InteractionProps,
+            RevealGroup::Meadows,
+            lienzo,
+        );
+
+        scene
+    }
+
+    #[test]
+    fn la_politica_de_entrega_solo_admite_las_tres_regiones() {
+        let scene = escena_de_politicas();
+
+        assert_eq!(scene.paintable_group(0), Some(RevealGroup::Meadows));
+        assert_eq!(scene.paintable_group(1), None, "el plinto es inerte");
+        assert_eq!(scene.paintable_group(2), None, "el monolito es del finale");
+        assert_eq!(
+            scene.paintable_group(3),
+            Some(RevealGroup::Meadows),
+            "la politica de entrega no sabe de props: ese filtro es artistico"
+        );
+    }
+
+    #[test]
+    fn la_politica_artistica_admite_todo_menos_las_herramientas() {
+        // El modo artistico pinta el diorama entero. Lo unico que excluye
+        // son la paleta y el pincel fisicos, que estan en la escena como
+        // atrezo y no como superficie que alguien quiera pintar.
+        let scene = escena_de_politicas();
+
+        assert_eq!(scene.artistic_group(0), Some(RevealGroup::Meadows));
+        assert_eq!(
+            scene.artistic_group(1),
+            Some(RevealGroup::Finale),
+            "el plinto inerte si acepta pigmento"
+        );
+        assert_eq!(
+            scene.artistic_group(2),
+            Some(RevealGroup::Finale),
+            "el monolito tambien"
+        );
+        assert_eq!(
+            scene.artistic_group(3),
+            None,
+            "la paleta y el pincel fisicos no son lienzo"
+        );
+    }
+
+    #[test]
+    fn ninguna_politica_inventa_un_objeto_que_no_existe() {
+        let scene = escena_de_politicas();
+
+        assert_eq!(scene.paintable_group(99), None);
+        assert_eq!(scene.artistic_group(99), None);
     }
 
     #[test]

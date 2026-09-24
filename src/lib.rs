@@ -8,6 +8,10 @@
 
 pub mod accel;
 pub mod bounds;
+pub mod brush;
+/// Pincel visual del modo artistico. Ver la feature `artistic-brush`.
+#[cfg(feature = "artistic-brush")]
+pub mod brush_gizmo;
 pub mod camera;
 pub mod color;
 pub mod cuboid;

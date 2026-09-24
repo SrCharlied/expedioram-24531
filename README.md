@@ -68,12 +68,49 @@ Los pilares del Rompeolas admiten dos formas, y las dos se compilan:
 ```bash
 cargo run --release                         # Ruta A: prismas hexagonales (lo entregado)
 cargo run --release --no-default-features   # Ruta B: cuboides verticales (respaldo)
+cargo run --release --no-default-features --features artistic-brush # Ruta B con pincel
 ```
 
-`Cargo.toml` declara `default = ["hex-prism"]`. La Ruta B **no está
-descartada**: se conserva como respaldo comprobable y los quality gates se
-ejecutan en las dos configuraciones, porque revertir la decisión tiene que ser
-una bandera y no un parche.
+`Cargo.toml` declara `default = ["hex-prism", "artistic-brush"]`. La Ruta B
+**no está descartada**: se conserva como respaldo comprobable con
+`--no-default-features`; puede recuperar el pincel con `--features
+artistic-brush`. Revertir una decisión sigue siendo una bandera y no un
+parche.
+
+## Modo artístico
+
+Es la interacción **principal y encendida por defecto**:
+
+```bash
+cargo run --release
+```
+
+El botón izquierdo pinta **donde se arrastra**, sobre la superficie que toca.
+El revelado regional clásico permanece como respaldo con
+`cargo run --release --no-default-features`.
+
+| Tecla | Acción |
+|---|---|
+| `Q` | revelar en local con el pincel |
+| `4` – `8` | pigmento plano: Carmesí, Oro, Violeta, Cian, Obsidiana |
+| `9` `0` `Z` `X` `C` `V` | pincel de textura: Lienzo, Pradera, Basalto, Madera, Cristal, Agua |
+| `M` `N` | engordar y afinar el pincel |
+| `1` `2` `3` | siguen revelando la región entera |
+| `L` | volver al lienzo y borrar lo pintado |
+
+El objetivo es **todo el diorama**, no solo las tres regiones: el plinto, el
+continente de fondo y el Monolito también se pintan.
+
+El grosor se fija en **unidades de mundo** y se normaliza por superficie, así
+que el trazo mide lo mismo sobre una losa enorme y sobre un tablón. La
+conversión la hace la métrica que entrega cada primitiva.
+
+Mientras se pinta se dibuja un **pincel en 3D** sobre la superficie señalada.
+Es un overlay: se proyecta con la cámara del cuadro presentado y se rasteriza
+con su propio z-buffer, pero **no entra en la escena ni en la jerarquía de
+aceleración**, así que no proyecta sombra, no recibe luz y no cuesta un rayo.
+
+Esta es la interacción que se entrega.
 
 ## Render sin ventana
 
@@ -213,9 +250,10 @@ silencioso a colores planos.
 ```bash
 cargo fmt -- --check
 cargo clippy --all-targets -- -D warnings
-cargo clippy --all-targets --no-default-features -- -D warnings
-cargo test                      # 436 tests
-cargo test --no-default-features # 423 tests
+cargo clippy --all-targets --no-default-features --features artistic-brush -- -D warnings
+cargo test                      # 533 tests: Ruta A + pincel
+cargo test --no-default-features --features artistic-brush # 513 tests: Ruta B + pincel
+cargo test --no-default-features # 423 tests: Ruta B clásica
 cargo build --release
 ```
 
@@ -288,8 +326,16 @@ Conviene decirlas, porque cambian cómo hay que leer las cifras:
 - El gate de fluidez se cumple con el perfil `320 × 240`. Con `400 × 300` el
   peor encuadre alcanzable queda al filo del techo de cuatro segundos.
 - La escena es un nivel fijo: no hay carga de escenas desde archivo.
-- El nivel candidato de `162` primitivas existe como parámetro medible y **no**
-  es lo que se envía; lo que se envía son `160`.
+- El nivel candidato de `156` primitivas existe como parámetro medible y **no**
+  es lo que se envía; lo que se envía son `154`.
+- La escena perdió `G-04` —la paleta y el pincel de cristal, seis primitivas de
+  decoración que no se podían usar—. Los conteos vigentes son `154` en el nivel
+  seguro refractivo, `153` sin el volumen de agua y `156` en el candidato. La
+  evidencia anterior a esa retirada habla de `160` y `162`: describe la escena
+  de entonces y se conserva sin tocar.
+- El modo artístico está medido, revisado visualmente y **promovido a la
+  entrega principal** el 23 de septiembre de 2026; la matriz y sus cifras
+  viven en `docs/evidence.md`.
 - El video de la entrega y la verificación en un clon limpio **no están
   ejecutados** en este repositorio.
 

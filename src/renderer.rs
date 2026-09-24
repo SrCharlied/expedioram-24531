@@ -5,6 +5,7 @@
 //! como en el render headless que exige el plan.
 
 use crate::accel::{SceneAccel, TraversalStats};
+use crate::brush::{BrushMasks, PigmentMasks, SurfaceKey};
 use crate::camera::Camera;
 use crate::color::Color;
 use crate::framebuffer::Framebuffer;
@@ -13,7 +14,7 @@ use crate::light::PointLight;
 use crate::material::{direct_diffuse, direct_specular, AMBIENT};
 use crate::optics::{fresnel, reflected_ray, refracted_ray, EnergySplit};
 use crate::ray::Ray;
-use crate::reveal::{resolve, RevealState};
+use crate::reveal::{resolve_with_brush, RevealState};
 use crate::scene::Scene;
 use crate::skybox::FALLBACK_COLOR;
 use crate::EPSILON;
@@ -217,6 +218,24 @@ pub fn color_por_normal(hit: &Hit) -> Color {
 /// solo si la medición lo exige, registrando qué se pierde.
 pub const MAX_DEPTH: u32 = 3;
 
+/// Las capas artísticas que un trazado lleva consigo.
+///
+/// Van juntas en una estructura `Copy` de dos referencias y no como dos
+/// parámetros sueltos por una razón práctica: `trace` ya tenía ocho
+/// argumentos y los dos viajan siempre al mismo sitio —las dos llamadas
+/// recursivas—, donde olvidar uno sería un fallo silencioso que solo se ve
+/// mirando un reflejo.
+///
+/// Prestar dos referencias no aloca ni clona nada. `Default` es el caso sin
+/// capas, que es el camino base.
+#[derive(Debug, Clone, Copy, Default)]
+struct Capas<'a> {
+    /// Cobertura de revelado. Ver `reveal::resolve_with_brush`.
+    brush: Option<&'a BrushMasks>,
+    /// Pigmento sobre el albedo ya resuelto.
+    pigment: Option<&'a PigmentMasks>,
+}
+
 /// Devuelve el color del objeto más cercano que toca el rayo.
 ///
 /// Entra con `MAX_DEPTH` y acota el resultado al final. Es la puerta que
@@ -231,6 +250,51 @@ pub fn cast_ray(
     stats: &mut TraversalStats,
 ) -> Color {
     cast_ray_depth(ray, scene, accel, lights, reveal, shading, MAX_DEPTH, stats)
+}
+
+/// Igual que `cast_ray`, contando además la pintura de `masks`.
+///
+/// La máscara viaja **entera** por la recursión: un reflejo o una
+/// refracción ven la misma capa artística que el rayo primario. Si no fuera
+/// así, lo que se pintara sobre una superficie desaparecería en cuanto se
+/// mirara reflejado en el agua, que es media escena del diorama.
+#[allow(clippy::too_many_arguments)]
+pub fn cast_ray_with_brush(
+    ray: &Ray,
+    scene: &Scene,
+    accel: &SceneAccel,
+    lights: &[PointLight],
+    reveal: &RevealState,
+    shading: Shading,
+    stats: &mut TraversalStats,
+    masks: &BrushMasks,
+) -> Color {
+    cast_ray_depth_with_brush(
+        ray, scene, accel, lights, reveal, shading, MAX_DEPTH, stats, masks,
+    )
+}
+
+/// Igual que `cast_ray`, con el revelado por pincel **y** el pigmento.
+///
+/// El pigmento se compone sobre el albedo que ya resolvieron el revelado y
+/// la máscara. Solo toca el albedo: los techos, el índice de refracción, el
+/// specular y el modo de sombra salen intactos, así que pintar no cambia ni
+/// un rayo secundario ni una sombra.
+#[allow(clippy::too_many_arguments)]
+pub fn cast_ray_artistic(
+    ray: &Ray,
+    scene: &Scene,
+    accel: &SceneAccel,
+    lights: &[PointLight],
+    reveal: &RevealState,
+    shading: Shading,
+    stats: &mut TraversalStats,
+    masks: &BrushMasks,
+    pigment: &PigmentMasks,
+) -> Color {
+    cast_ray_depth_artistic(
+        ray, scene, accel, lights, reveal, shading, MAX_DEPTH, stats, masks, pigment,
+    )
 }
 
 /// Igual que `cast_ray`, con la profundidad explícita.
@@ -254,7 +318,74 @@ pub fn cast_ray_depth(
     // de que el padre la pese por `kr` o `kt`, y un reflejo brillante se
     // vería apagado por una razón que no está en ninguna parte del modelo.
     acotar(trace(
-        ray, scene, accel, lights, reveal, shading, max_depth, stats,
+        ray,
+        scene,
+        accel,
+        lights,
+        reveal,
+        shading,
+        max_depth,
+        stats,
+        Capas::default(),
+    ))
+}
+
+/// Igual que `cast_ray_depth`, contando además la pintura de `masks`.
+#[allow(clippy::too_many_arguments)]
+pub fn cast_ray_depth_with_brush(
+    ray: &Ray,
+    scene: &Scene,
+    accel: &SceneAccel,
+    lights: &[PointLight],
+    reveal: &RevealState,
+    shading: Shading,
+    max_depth: u32,
+    stats: &mut TraversalStats,
+    masks: &BrushMasks,
+) -> Color {
+    acotar(trace(
+        ray,
+        scene,
+        accel,
+        lights,
+        reveal,
+        shading,
+        max_depth,
+        stats,
+        Capas {
+            brush: Some(masks),
+            pigment: None,
+        },
+    ))
+}
+
+/// Igual que `cast_ray_depth`, con las dos capas artísticas.
+#[allow(clippy::too_many_arguments)]
+pub fn cast_ray_depth_artistic(
+    ray: &Ray,
+    scene: &Scene,
+    accel: &SceneAccel,
+    lights: &[PointLight],
+    reveal: &RevealState,
+    shading: Shading,
+    max_depth: u32,
+    stats: &mut TraversalStats,
+    masks: &BrushMasks,
+    pigment: &PigmentMasks,
+) -> Color {
+    acotar(trace(
+        ray,
+        scene,
+        accel,
+        lights,
+        reveal,
+        shading,
+        max_depth,
+        stats,
+        Capas {
+            brush: Some(masks),
+            pigment: Some(pigment),
+        },
     ))
 }
 
@@ -283,6 +414,7 @@ fn trace(
     shading: Shading,
     depth: u32,
     stats: &mut TraversalStats,
+    capas: Capas,
 ) -> Color {
     if depth == 0 {
         return scene.skybox.sample(scene, &ray.direction, reveal);
@@ -300,7 +432,35 @@ fn trace(
     // interpola lienzo hacia material final según el progreso del grupo, y
     // toma el `shadow_mode` del final sin interpolarlo. Se hace una vez por
     // impacto y no una por luz: hay hasta tres luces por punto.
-    let material = resolve(scene, &objeto, reveal, &hit.uv);
+    //
+    // La cobertura del pincel entra aquí y en ningún otro sitio: es un
+    // escalar más en la misma resolución, así que no hay un segundo camino
+    // que mantener sincronizado. Sin máscaras vale cero, y con cero
+    // `resolve_with_brush` **es** el `resolve` de siempre.
+    let clave = SurfaceKey::new(hit.object_index, hit.uv_chart);
+    let cobertura = match capas.brush {
+        Some(masks) => masks.sample(clave, hit.uv.x, hit.uv.y),
+        None => 0.0,
+    };
+    let mut material = resolve_with_brush(scene, &objeto, reveal, &hit.uv, cobertura);
+
+    // El pigmento entra **solo** en el albedo, y encima de lo que ya
+    // resolvieron el revelado y la máscara. Componerlo aquí y no dentro de
+    // `resolve_with_brush` es lo que mantiene separadas las dos preguntas:
+    // cuánto se ha revelado esta superficie, y de qué color la pintaron.
+    //
+    // Los techos, el `ior`, el specular y el `shadow_mode` quedan intactos,
+    // así que `fresnel` y `EnergySplit` ven exactamente lo mismo con
+    // pigmento y sin él: pintar no puede crear ni destruir un rayo
+    // secundario, ni cambiar una sombra.
+    if let Some(pigment) = capas.pigment {
+        if let Some(visible) = pigment.sample(clave, hit.uv.x, hit.uv.y) {
+            // `source-over` en lineal, sin premultiplicar: el color del
+            // pigmento pesa su cobertura y el albedo de debajo el resto.
+            material.albedo =
+                visible.color * visible.coverage + material.albedo * (1.0 - visible.coverage);
+        }
+    }
 
     match shading {
         Shading::Normals => color_por_normal(&hit),
@@ -379,6 +539,7 @@ fn trace(
                     shading,
                     depth - 1,
                     stats,
+                    capas,
                 );
 
                 color = color + aporte * reparto.reflected;
@@ -403,6 +564,7 @@ fn trace(
                         shading,
                         depth - 1,
                         stats,
+                        capas,
                     );
 
                     color = color + aporte * reparto.transmitted;
@@ -473,6 +635,90 @@ pub fn render(
     camera: &Camera,
     shading: Shading,
 ) -> TraversalStats {
+    render_interno(
+        framebuffer,
+        scene,
+        accel,
+        lights,
+        reveal,
+        camera,
+        shading,
+        Capas::default(),
+    )
+}
+
+/// Igual que `render`, contando además la pintura de `masks`.
+///
+/// `masks` se presta una sola vez para todo el cuadro. No se construye ni se
+/// clona nada por píxel: cada impacto hace una consulta y sigue.
+#[allow(clippy::too_many_arguments)]
+pub fn render_with_brush(
+    framebuffer: &mut Framebuffer,
+    scene: &Scene,
+    accel: &SceneAccel,
+    lights: &[PointLight],
+    reveal: &RevealState,
+    camera: &Camera,
+    shading: Shading,
+    masks: &BrushMasks,
+) -> TraversalStats {
+    render_interno(
+        framebuffer,
+        scene,
+        accel,
+        lights,
+        reveal,
+        camera,
+        shading,
+        Capas {
+            brush: Some(masks),
+            pigment: None,
+        },
+    )
+}
+
+/// Igual que `render`, con las dos capas artísticas.
+///
+/// Las dos se prestan una sola vez para todo el cuadro: no se construye ni
+/// se clona nada por píxel.
+#[allow(clippy::too_many_arguments)]
+pub fn render_artistic(
+    framebuffer: &mut Framebuffer,
+    scene: &Scene,
+    accel: &SceneAccel,
+    lights: &[PointLight],
+    reveal: &RevealState,
+    camera: &Camera,
+    shading: Shading,
+    masks: &BrushMasks,
+    pigment: &PigmentMasks,
+) -> TraversalStats {
+    render_interno(
+        framebuffer,
+        scene,
+        accel,
+        lights,
+        reveal,
+        camera,
+        shading,
+        Capas {
+            brush: Some(masks),
+            pigment: Some(pigment),
+        },
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_interno(
+    framebuffer: &mut Framebuffer,
+    scene: &Scene,
+    accel: &SceneAccel,
+    lights: &[PointLight],
+    reveal: &RevealState,
+    camera: &Camera,
+    shading: Shading,
+    capas: Capas,
+) -> TraversalStats {
     let (ancho, alto) = (framebuffer.width, framebuffer.height);
     let mut stats = TraversalStats::default();
 
@@ -484,7 +730,9 @@ pub fn render(
             let ray = camera.ray_from_pixel(x, y, ancho, alto);
             stats.primary_rays += 1;
 
-            let color = cast_ray(&ray, scene, accel, lights, reveal, shading, &mut stats);
+            let color = acotar(trace(
+                &ray, scene, accel, lights, reveal, shading, MAX_DEPTH, &mut stats, capas,
+            ));
 
             framebuffer.set_current_color(color.to_hex());
             framebuffer.point(x, y);
@@ -497,12 +745,15 @@ pub fn render(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::brush::PigmentMasks;
     use crate::color::Color;
     use crate::cuboid::Cuboid;
+    use crate::hit::UvChart;
     use crate::light::{GroupMask, PointLight};
     use crate::material::{Material, ShadowMode};
     use crate::scene::{RevealGroup, SceneObject, SpatialGroupId};
     use crate::skybox::Skybox;
+    use nalgebra_glm::Vec2;
 
     /// Suelo amplio en el origen, para tener una superficie que iluminar.
     fn suelo() -> (Scene, SceneAccel) {
@@ -574,6 +825,614 @@ mod tests {
 
     fn brillo(color: Color) -> f32 {
         color.r + color.g + color.b
+    }
+
+    // ---------------------------------------- revelado local por pincel
+
+    /// Suelo que va de lienzo casi blanco a un final casi negro.
+    ///
+    /// Los materiales existentes de este modulo nacen y mueren iguales, asi
+    /// que no sirven para ver si un punto esta revelado. Este si: el color
+    /// del pixel dice el progreso.
+    fn suelo_revelable() -> (Scene, SceneAccel) {
+        let mut scene = Scene::new();
+        let lienzo = scene.add_material(Material::new(Color::new(0.92, 0.90, 0.84)));
+        let terminado = scene.add_material(Material::new(Color::new(0.06, 0.09, 0.12)));
+
+        scene.add_object(SceneObject {
+            primitive: Cuboid::centrado(Vec3::new(0.0, -0.5, 0.0), Vec3::new(20.0, 1.0, 20.0))
+                .into(),
+            initial_material: lienzo,
+            final_material: terminado,
+            spatial_group: SpatialGroupId::Global,
+            reveal_group: RevealGroup::Meadows,
+        });
+
+        let accel = SceneAccel::build(&scene).expect("hay geometria");
+
+        (scene, accel)
+    }
+
+    /// Espejo horizontal con una pared revelable detras, de modo que el
+    /// rayo **reflejado** es el unico que la alcanza.
+    fn espejo_y_pared_revelable() -> (Scene, SceneAccel) {
+        let mut scene = Scene::new();
+        let espejo =
+            scene.add_material(Material::new(Color::new(0.2, 0.2, 0.2)).with_caps(0.8, 0.0, 1.5));
+        let lienzo = scene.add_material(Material::new(Color::new(0.95, 0.93, 0.86)));
+        let terminado = scene.add_material(Material::new(Color::new(0.04, 0.05, 0.07)));
+
+        scene.add_object(SceneObject {
+            primitive: Cuboid::centrado(Vec3::new(0.0, -0.5, 0.0), Vec3::new(40.0, 1.0, 40.0))
+                .into(),
+            initial_material: espejo,
+            final_material: espejo,
+            spatial_group: SpatialGroupId::Global,
+            reveal_group: RevealGroup::Finale,
+        });
+
+        scene.add_object(SceneObject {
+            primitive: Cuboid::centrado(Vec3::new(0.0, 5.0, -10.0), Vec3::new(40.0, 20.0, 1.0))
+                .into(),
+            initial_material: lienzo,
+            final_material: terminado,
+            spatial_group: SpatialGroupId::Global,
+            reveal_group: RevealGroup::Meadows,
+        });
+
+        let accel = SceneAccel::build(&scene).expect("hay geometria");
+
+        (scene, accel)
+    }
+
+    /// Suelo inerte de un color dado, con la geometria de `suelo_revelable`.
+    ///
+    /// Sirve para escribir el resultado esperado como **otra escena** en vez
+    /// de como una formula copiada del renderer: si el pigmento sustituye
+    /// bien el albedo, pintar de rojo es indistinguible de que el material
+    /// fuera rojo.
+    fn suelo_de_un_color(color: Color) -> (Scene, SceneAccel) {
+        let mut scene = Scene::new();
+        let material = scene.add_material(Material::new(color));
+
+        scene.add_object(SceneObject {
+            primitive: Cuboid::centrado(Vec3::new(0.0, -0.5, 0.0), Vec3::new(20.0, 1.0, 20.0))
+                .into(),
+            initial_material: material,
+            final_material: material,
+            spatial_group: SpatialGroupId::Global,
+            reveal_group: RevealGroup::Meadows,
+        });
+
+        let accel = SceneAccel::build(&scene).expect("hay geometria");
+
+        (scene, accel)
+    }
+
+    /// Clave de la superficie que toca un rayo. Se resuelve por
+    /// interseccion y no a mano, para no depender del orden de los objetos.
+    fn clave_de(scene: &Scene, accel: &SceneAccel, ray: &Ray) -> (SurfaceKey, Vec2) {
+        let hit = accel
+            .intersect(scene, ray, &mut TraversalStats::default())
+            .expect("el rayo tiene que impactar");
+
+        (SurfaceKey::new(hit.object_index, hit.uv_chart), hit.uv)
+    }
+
+    fn estado_con(grupo: RevealGroup, t: f32) -> RevealState {
+        let mut estado = RevealState::unpainted();
+        estado.set_progress(grupo, t);
+
+        estado
+    }
+
+    /// Color del rayo al origen, con la escena revelable y la mascara dada.
+    fn color_con_mascara(
+        scene: &Scene,
+        accel: &SceneAccel,
+        reveal: &RevealState,
+        masks: &BrushMasks,
+    ) -> Color {
+        cast_ray_with_brush(
+            &rayo_al_origen(),
+            scene,
+            accel,
+            &[luz_cenital(10.0)],
+            reveal,
+            Shading::Material,
+            &mut TraversalStats::default(),
+            masks,
+        )
+    }
+
+    fn color_sin_mascara(scene: &Scene, accel: &SceneAccel, reveal: &RevealState) -> Color {
+        cast_ray(
+            &rayo_al_origen(),
+            scene,
+            accel,
+            &[luz_cenital(10.0)],
+            reveal,
+            Shading::Material,
+            &mut TraversalStats::default(),
+        )
+    }
+
+    #[test]
+    fn una_mascara_vacia_deja_el_render_byte_a_byte_donde_estaba() {
+        // Lo que sostiene el corte: el modo base no se toca. Se usa la
+        // escena con bloqueador para que haya sombras y rayos que contar.
+        let (scene, accel) = suelo_con_bloqueador(ShadowMode::Opaque, SpatialGroupId::Global);
+        let luces = [luz_cenital(10.0)];
+        let camara = Camera::new(
+            Vec3::new(0.0, 6.0, 9.0),
+            Vec3::zeros(),
+            Vec3::zeros(),
+            Vec3::new(0.0, 1.0, 0.0),
+            crate::camera::DEFAULT_VERTICAL_FOV,
+        );
+        let reveal = RevealState::painted();
+
+        let mut base = Framebuffer::new(24, 18);
+        let mut con_pincel = Framebuffer::new(24, 18);
+        let vacia = BrushMasks::new(8, 8);
+
+        let stats_base = render(
+            &mut base,
+            &scene,
+            &accel,
+            &luces,
+            &reveal,
+            &camara,
+            Shading::Material,
+        );
+        let stats_pincel = render_with_brush(
+            &mut con_pincel,
+            &scene,
+            &accel,
+            &luces,
+            &reveal,
+            &camara,
+            Shading::Material,
+            &vacia,
+        );
+
+        assert_eq!(base.buffer, con_pincel.buffer, "el framebuffer difiere");
+        assert_eq!(stats_base, stats_pincel, "los contadores difieren");
+        assert!(
+            stats_base.primary_rays > 0,
+            "el render tiene que trazar algo"
+        );
+    }
+
+    #[test]
+    fn cast_ray_es_el_caso_sin_pincel() {
+        let (scene, accel) = suelo_revelable();
+        let vacia = BrushMasks::new(8, 8);
+
+        for t in [0.0f32, 0.35, 1.0] {
+            let reveal = estado_con(RevealGroup::Meadows, t);
+
+            assert_eq!(
+                color_sin_mascara(&scene, &accel, &reveal),
+                color_con_mascara(&scene, &accel, &reveal, &vacia),
+                "progreso {t}"
+            );
+        }
+    }
+
+    #[test]
+    fn el_pincel_revela_su_superficie_con_el_estado_sin_pintar() {
+        let (scene, accel) = suelo_revelable();
+        let (clave, uv) = clave_de(&scene, &accel, &rayo_al_origen());
+
+        let mut masks = BrushMasks::new(64, 64);
+        masks.stamp(clave, uv.x, uv.y, 0.3, 1.0);
+
+        let pintado = color_con_mascara(
+            &scene,
+            &accel,
+            &estado_con(RevealGroup::Meadows, 0.0),
+            &masks,
+        );
+        let terminado = color_sin_mascara(&scene, &accel, &estado_con(RevealGroup::Meadows, 1.0));
+
+        assert_eq!(
+            pintado, terminado,
+            "el pincel al cien por cien tiene que igualar al revelado completo"
+        );
+    }
+
+    #[test]
+    fn una_clave_equivocada_no_toca_el_pixel() {
+        // Ni otro objeto ni otra carta del mismo objeto: la pintura vive
+        // donde dice su clave y en ningun otro sitio.
+        let (scene, accel) = suelo_revelable();
+        let (clave, uv) = clave_de(&scene, &accel, &rayo_al_origen());
+        let reveal = estado_con(RevealGroup::Meadows, 0.0);
+        let lienzo = color_sin_mascara(&scene, &accel, &reveal);
+
+        let otro_objeto = SurfaceKey::new(clave.object_index + 1, clave.uv_chart);
+        let otra_carta = SurfaceKey::new(
+            clave.object_index,
+            UvChart::new(clave.uv_chart.id().wrapping_add(1)),
+        );
+
+        for equivocada in [otro_objeto, otra_carta] {
+            let mut masks = BrushMasks::new(64, 64);
+            masks.stamp(equivocada, uv.x, uv.y, 0.5, 1.0);
+
+            assert_eq!(
+                color_con_mascara(&scene, &accel, &reveal, &masks),
+                lienzo,
+                "la clave {equivocada:?} no deberia pintar este pixel"
+            );
+        }
+    }
+
+    #[test]
+    fn una_cobertura_parcial_iguala_al_progreso_global_equivalente() {
+        let (scene, accel) = suelo_revelable();
+        let (clave, uv) = clave_de(&scene, &accel, &rayo_al_origen());
+
+        for cobertura in [0.25f32, 0.5, 0.75] {
+            let mut masks = BrushMasks::new(64, 64);
+            masks.stamp(clave, uv.x, uv.y, 0.3, cobertura);
+
+            let con_pincel = color_con_mascara(
+                &scene,
+                &accel,
+                &estado_con(RevealGroup::Meadows, 0.0),
+                &masks,
+            );
+            let global =
+                color_sin_mascara(&scene, &accel, &estado_con(RevealGroup::Meadows, cobertura));
+
+            assert_eq!(con_pincel, global, "cobertura {cobertura}");
+        }
+    }
+
+    #[test]
+    fn la_mascara_viaja_con_el_rayo_reflejado() {
+        // El requisito que no se ve en el pixel primario: la pared solo se
+        // alcanza por reflexion, asi que si la mascara no se propagara,
+        // pintarla no cambiaria nada.
+        let (scene, accel) = espejo_y_pared_revelable();
+        let primario = rayo_al_origen();
+
+        let hit = accel
+            .intersect(&scene, &primario, &mut TraversalStats::default())
+            .expect("el primario da en el espejo");
+        let secundario = reflected_ray(&hit, &primario.direction);
+        let (clave, uv) = clave_de(&scene, &accel, &secundario);
+
+        assert_ne!(
+            clave.object_index, hit.object_index,
+            "el reflejo tiene que alcanzar otra superficie"
+        );
+
+        let reveal = estado_con(RevealGroup::Meadows, 0.0);
+        let sin_pintar = color_sin_mascara(&scene, &accel, &reveal);
+
+        let mut masks = BrushMasks::new(64, 64);
+        masks.stamp(clave, uv.x, uv.y, 0.4, 1.0);
+        let con_pintura = color_con_mascara(&scene, &accel, &reveal, &masks);
+
+        assert_ne!(
+            con_pintura, sin_pintar,
+            "pintar lo que solo se ve reflejado tiene que notarse"
+        );
+
+        let global = color_sin_mascara(&scene, &accel, &estado_con(RevealGroup::Meadows, 1.0));
+
+        assert_eq!(
+            con_pintura, global,
+            "y tiene que coincidir con revelar esa region entera"
+        );
+    }
+
+    // ------------------------------------------ pigmento sobre el albedo
+
+    const PIGMENTO: Color = Color {
+        r: 0.85,
+        g: 0.20,
+        b: 0.05,
+    };
+
+    /// Color del rayo al origen con las dos capas artisticas.
+    fn color_artistico(
+        scene: &Scene,
+        accel: &SceneAccel,
+        reveal: &RevealState,
+        masks: &BrushMasks,
+        pigment: &PigmentMasks,
+        stats: &mut TraversalStats,
+    ) -> Color {
+        cast_ray_artistic(
+            &rayo_al_origen(),
+            scene,
+            accel,
+            &[luz_cenital(10.0)],
+            reveal,
+            Shading::Material,
+            stats,
+            masks,
+            pigment,
+        )
+    }
+
+    #[test]
+    fn un_pigmento_vacio_deja_el_render_del_pincel_donde_estaba() {
+        let (scene, accel) = suelo_con_bloqueador(ShadowMode::Opaque, SpatialGroupId::Global);
+        let luces = [luz_cenital(10.0)];
+        let camara = Camera::new(
+            Vec3::new(0.0, 6.0, 9.0),
+            Vec3::zeros(),
+            Vec3::zeros(),
+            Vec3::new(0.0, 1.0, 0.0),
+            crate::camera::DEFAULT_VERTICAL_FOV,
+        );
+        let reveal = RevealState::painted();
+        let masks = BrushMasks::new(8, 8);
+        let pigment = PigmentMasks::new(8, 8);
+
+        let mut solo_pincel = Framebuffer::new(24, 18);
+        let mut artistico = Framebuffer::new(24, 18);
+
+        let stats_pincel = render_with_brush(
+            &mut solo_pincel,
+            &scene,
+            &accel,
+            &luces,
+            &reveal,
+            &camara,
+            Shading::Material,
+            &masks,
+        );
+        let stats_artistico = render_artistic(
+            &mut artistico,
+            &scene,
+            &accel,
+            &luces,
+            &reveal,
+            &camara,
+            Shading::Material,
+            &masks,
+            &pigment,
+        );
+
+        assert_eq!(
+            solo_pincel.buffer, artistico.buffer,
+            "el framebuffer difiere"
+        );
+        assert_eq!(stats_pincel, stats_artistico, "los contadores difieren");
+        assert!(stats_pincel.primary_rays > 0);
+    }
+
+    #[test]
+    fn un_pigmento_opaco_sustituye_el_albedo_resuelto() {
+        // Sobre una superficie ya revelada: lo que se ve es el pigmento y
+        // no el material final, iluminado por las mismas luces.
+        let (scene, accel) = suelo_revelable();
+        let (clave, uv) = clave_de(&scene, &accel, &rayo_al_origen());
+        let revelado = estado_con(RevealGroup::Meadows, 1.0);
+
+        let mut pigment = PigmentMasks::new(64, 64);
+        pigment.stamp(clave, uv.x, uv.y, 0.3, PIGMENTO, 1.0);
+
+        let pintado = color_artistico(
+            &scene,
+            &accel,
+            &revelado,
+            &BrushMasks::new(8, 8),
+            &pigment,
+            &mut TraversalStats::default(),
+        );
+
+        // La misma escena cuyo material final **es** el pigmento: si el
+        // albedo se sustituye del todo, los dos colores coinciden.
+        let equivalente = suelo_de_un_color(PIGMENTO);
+        let esperado = cast_ray(
+            &rayo_al_origen(),
+            &equivalente.0,
+            &equivalente.1,
+            &[luz_cenital(10.0)],
+            &revelado,
+            Shading::Material,
+            &mut TraversalStats::default(),
+        );
+
+        assert_eq!(pintado, esperado, "un pigmento opaco manda sobre el albedo");
+    }
+
+    #[test]
+    fn un_pigmento_semitransparente_mezcla_contra_el_albedo_resuelto() {
+        // A mitad de alfa, el albedo visible es el promedio lineal del
+        // pigmento y del material que habia debajo.
+        let (scene, accel) = suelo_revelable();
+        let (clave, uv) = clave_de(&scene, &accel, &rayo_al_origen());
+        let revelado = estado_con(RevealGroup::Meadows, 1.0);
+        let vacias = BrushMasks::new(8, 8);
+
+        let mut pigment = PigmentMasks::new(64, 64);
+        pigment.stamp(clave, uv.x, uv.y, 0.3, PIGMENTO, 0.5);
+
+        let mezclado = color_artistico(
+            &scene,
+            &accel,
+            &revelado,
+            &vacias,
+            &pigment,
+            &mut TraversalStats::default(),
+        );
+
+        // El material final de `suelo_revelable`, mezclado a medias con el
+        // pigmento, servido como escena de un solo color.
+        let debajo = Color::new(0.06, 0.09, 0.12);
+        let promedio = PIGMENTO * 0.5 + debajo * 0.5;
+        let equivalente = suelo_de_un_color(promedio);
+        let esperado = cast_ray(
+            &rayo_al_origen(),
+            &equivalente.0,
+            &equivalente.1,
+            &[luz_cenital(10.0)],
+            &revelado,
+            Shading::Material,
+            &mut TraversalStats::default(),
+        );
+
+        assert_eq!(mezclado, esperado, "la mezcla no es la lineal esperada");
+    }
+
+    #[test]
+    fn un_pigmento_con_la_clave_equivocada_no_toca_el_pixel() {
+        let (scene, accel) = suelo_revelable();
+        let (clave, uv) = clave_de(&scene, &accel, &rayo_al_origen());
+        let reveal = estado_con(RevealGroup::Meadows, 1.0);
+        let vacias = BrushMasks::new(8, 8);
+
+        let limpio = color_artistico(
+            &scene,
+            &accel,
+            &reveal,
+            &vacias,
+            &PigmentMasks::new(64, 64),
+            &mut TraversalStats::default(),
+        );
+
+        let equivocadas = [
+            SurfaceKey::new(clave.object_index + 1, clave.uv_chart),
+            SurfaceKey::new(
+                clave.object_index,
+                UvChart::new(clave.uv_chart.id().wrapping_add(1)),
+            ),
+        ];
+
+        for equivocada in equivocadas {
+            let mut pigment = PigmentMasks::new(64, 64);
+            pigment.stamp(equivocada, uv.x, uv.y, 0.5, PIGMENTO, 1.0);
+
+            assert_eq!(
+                color_artistico(
+                    &scene,
+                    &accel,
+                    &reveal,
+                    &vacias,
+                    &pigment,
+                    &mut TraversalStats::default()
+                ),
+                limpio,
+                "la clave {equivocada:?} no deberia pintar este pixel"
+            );
+        }
+    }
+
+    #[test]
+    fn el_pigmento_cambia_el_color_y_no_la_optica() {
+        // Sobre el espejo, que si genera secundarios: el pixel cambia de
+        // color y los contadores de rayos y sombras se quedan clavados.
+        let (scene, accel) = espejo_y_pared_revelable();
+        let (clave, uv) = clave_de(&scene, &accel, &rayo_al_origen());
+        let reveal = estado_con(RevealGroup::Meadows, 0.0);
+        let vacias = BrushMasks::new(8, 8);
+
+        let mut sin_pigmento = TraversalStats::default();
+        let limpio = color_artistico(
+            &scene,
+            &accel,
+            &reveal,
+            &vacias,
+            &PigmentMasks::new(64, 64),
+            &mut sin_pigmento,
+        );
+
+        let mut pigment = PigmentMasks::new(64, 64);
+        pigment.stamp(clave, uv.x, uv.y, 0.3, PIGMENTO, 1.0);
+
+        let mut con_pigmento = TraversalStats::default();
+        let pintado = color_artistico(
+            &scene,
+            &accel,
+            &reveal,
+            &vacias,
+            &pigment,
+            &mut con_pigmento,
+        );
+
+        assert_ne!(pintado, limpio, "el pigmento tiene que verse");
+        assert_eq!(
+            sin_pigmento, con_pigmento,
+            "el pigmento no puede mover ni un rayo secundario ni una sombra"
+        );
+        assert!(
+            sin_pigmento.reflection_rays > 0,
+            "el ejemplo tiene que generar reflexion"
+        );
+    }
+
+    #[test]
+    fn el_pigmento_viaja_con_el_rayo_reflejado() {
+        let (scene, accel) = espejo_y_pared_revelable();
+        let primario = rayo_al_origen();
+
+        let hit = accel
+            .intersect(&scene, &primario, &mut TraversalStats::default())
+            .expect("el primario da en el espejo");
+        let secundario = reflected_ray(&hit, &primario.direction);
+        let (clave, uv) = clave_de(&scene, &accel, &secundario);
+
+        assert_ne!(clave.object_index, hit.object_index);
+
+        let reveal = estado_con(RevealGroup::Meadows, 0.0);
+        let vacias = BrushMasks::new(8, 8);
+        let limpio = color_artistico(
+            &scene,
+            &accel,
+            &reveal,
+            &vacias,
+            &PigmentMasks::new(64, 64),
+            &mut TraversalStats::default(),
+        );
+
+        let mut pigment = PigmentMasks::new(64, 64);
+        pigment.stamp(clave, uv.x, uv.y, 0.4, PIGMENTO, 1.0);
+
+        let reflejado = color_artistico(
+            &scene,
+            &accel,
+            &reveal,
+            &vacias,
+            &pigment,
+            &mut TraversalStats::default(),
+        );
+
+        assert_ne!(
+            reflejado, limpio,
+            "pintar lo que solo se ve reflejado tiene que notarse"
+        );
+    }
+
+    #[test]
+    fn cast_ray_with_brush_es_el_caso_sin_pigmento() {
+        let (scene, accel) = suelo_revelable();
+        let masks = BrushMasks::new(8, 8);
+        let pigment = PigmentMasks::new(8, 8);
+
+        for t in [0.0f32, 0.4, 1.0] {
+            let reveal = estado_con(RevealGroup::Meadows, t);
+
+            assert_eq!(
+                color_con_mascara(&scene, &accel, &reveal, &masks),
+                color_artistico(
+                    &scene,
+                    &accel,
+                    &reveal,
+                    &masks,
+                    &pigment,
+                    &mut TraversalStats::default()
+                ),
+                "progreso {t}"
+            );
+        }
     }
 
     #[test]

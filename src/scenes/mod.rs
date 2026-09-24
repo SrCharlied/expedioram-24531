@@ -1,11 +1,14 @@
 //! Constructores de escena, uno por región, más el ensamblado del nivel
 //! seguro.
 //!
-//! El inventario fija conteos exactos por entrada y los suma a **160
+//! El inventario fija conteos exactos por entrada y los suma a **154
 //! primitivas trazables** en nivel seguro. Esos números no son
 //! orientativos: son el presupuesto contra el que se mide el rendimiento,
 //! así que el ensamblado los comprueba entrada por entrada en vez de
 //! confiar en que cuadren.
+//!
+//! Fueron `160` hasta que se retiró `G-04`, la paleta y el pincel de
+//! cristal: seis primitivas de decoración que no se podían usar.
 
 pub mod breakwater;
 pub mod continent;
@@ -86,10 +89,9 @@ pub(crate) fn masa(
 
 /// Añade un cuboide **inerte**: mismo material inicial y final.
 ///
-/// Solo dos entradas del inventario lo son, y por razones opuestas: `G-01`
-/// (el plinto) es lienzo y nunca se pinta, y `G-04` (la paleta y el pincel)
-/// nace ya en cristal porque es la herramienta con la que se pinta, no parte
-/// del cuadro.
+/// Hoy solo `G-01`, el plinto, lo es: nace y muere en lienzo, así que
+/// pintarlo no cambia un píxel. La otra, `G-04` —la paleta y el pincel de
+/// cristal—, se retiró de la escena.
 pub(crate) fn masa_inerte(
     scene: &mut Scene,
     centro: Vec3,
@@ -308,8 +310,11 @@ pub fn cargar_skybox(scene: &mut Scene, raiz: &Path) -> Result<Skybox, TextureEr
 /// añaden al final de su lista.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Density {
-    /// Las `160` primitivas del nivel seguro. Es lo que se presenta y lo
+    /// Las `154` primitivas del nivel seguro. Es lo que se presenta y lo
     /// que sostiene todos los gates hasta la Tarea 7.1.
+    ///
+    /// Va por `SAFE`, igual que `Target` va por `TARGET`: fueron `160`
+    /// hasta que se retiró `G-04`.
     Safe,
     /// El nivel seguro más el lote incremental de la Tarea 7.2 que esté en
     /// evaluación. Es un **candidato**, no lo que se envía; vive para poder
@@ -338,9 +343,9 @@ impl Presupuesto {
 }
 
 /// Conteos del nivel seguro. Vienen del presupuesto consolidado del
-/// inventario y suman 160.
+/// inventario y suman 154.
 pub const SAFE: Presupuesto = Presupuesto {
-    global: 27,
+    global: 21,
     meadows: 37,
     breakwater: 38,
     flying_waters: 58,
@@ -363,7 +368,7 @@ pub const SAFE: Presupuesto = Presupuesto {
 /// del volumen de agua, y ahí el reflejo se come el detalle.
 ///
 /// Ninguno sigue debajo de este candidato. Cada lote parte otra vez de las
-/// `160` del nivel seguro; no se acumulan.
+/// `154` del nivel seguro; no se acumulan.
 ///
 /// # Por qué solo estas dos
 ///
@@ -374,7 +379,7 @@ pub const SAFE: Presupuesto = Presupuesto {
 /// Y con ellas `A-11` llega a su máximo del inventario. Si se conservan, esa
 /// entrada queda cerrada.
 pub const TARGET: Presupuesto = Presupuesto {
-    global: 27,
+    global: 21,
     meadows: 37,
     breakwater: 38,
     flying_waters: 60,
@@ -539,7 +544,6 @@ pub fn anclas_del_diorama() -> SceneAnchors {
         breakwater_anchor: Vec3::new(-4.2, 2.4, -1.9),
         flying_waters_anchor: Vec3::new(0.0, 0.0, 4.2),
         boat_anchor: flying_waters::centro_visible_del_barco(Vec3::new(0.0, 0.0, 4.2)),
-        palette_anchor: Vec3::new(6.6, 0.4, 5.8),
         hero_camera_anchor: origen,
         broken_edge_anchor: Vec3::new(0.0, 1.2, 6.6),
     }
@@ -603,8 +607,8 @@ mod tests {
         assert_eq!(TARGET.breakwater, SAFE.breakwater);
         assert_eq!(TARGET.flying_waters, SAFE.flying_waters + 2);
 
-        assert_eq!(SAFE.total(), 160);
-        assert_eq!(TARGET.total(), 162);
+        assert_eq!(SAFE.total(), 154);
+        assert_eq!(TARGET.total(), 156);
     }
 
     #[test]
@@ -643,8 +647,8 @@ mod tests {
             assert_eq!(objetivo.scene.objects.len(), TARGET.total() - sin_volumen);
         }
 
-        assert_eq!(SAFE.total(), 160);
-        assert_eq!(TARGET.total(), 162);
+        assert_eq!(SAFE.total(), 154);
+        assert_eq!(TARGET.total(), 156);
     }
 
     #[test]
@@ -688,7 +692,7 @@ mod tests {
         // que seguir midiendo **la misma escena** que aprobo el Hito 6.
         let seguro = safe_level(WaterPreset::RefractiveWater);
 
-        assert_eq!(seguro.scene.objects.len(), 160);
+        assert_eq!(seguro.scene.objects.len(), 154);
     }
 
     #[test]
@@ -700,7 +704,7 @@ mod tests {
         let seguro = safe_level(WaterPreset::RefractiveWater);
         let objetivo = target_level(WaterPreset::RefractiveWater);
 
-        assert_eq!(objetivo.scene.objects.len(), 162);
+        assert_eq!(objetivo.scene.objects.len(), 156);
         assert_eq!(sobrante(&seguro, &objetivo).len(), 2);
     }
 
@@ -928,62 +932,99 @@ mod tests {
         }
     }
 
-    /// En el estado sin pintar, lo unico que no es lienzo son las seis
-    /// piezas de `G-04`.
+    /// En el estado sin pintar, **todo** el diorama es lienzo.
     ///
     /// Es el contrato de la revelacion visto del lado de la escena: si un
     /// objeto naciera ya con su material final, pintarlo no cambiaria nada
     /// y el fallo pasaria inadvertido hasta el Hito 6. Es exactamente lo
     /// que ocurrio antes de partir `masa` en dos.
+    ///
+    /// Antes habia una excepcion, las seis piezas de `G-04`, la paleta y el
+    /// pincel de cristal. Se retiraron de la escena: eran decoracion que no
+    /// se podia usar.
     #[test]
-    fn sin_pintar_solo_la_paleta_escapa_del_lienzo() {
+    fn sin_pintar_todo_el_diorama_nace_en_lienzo() {
         for water in [WaterPreset::InteriorVisible, WaterPreset::OpaqueWater] {
             let diorama = safe_level(water);
-            let paleta_canvas = diorama.scene.objects[0].initial_material;
+            let lienzo = diorama.scene.objects[0].initial_material;
 
             let ajenos: Vec<_> = diorama
                 .scene
                 .objects
                 .iter()
-                .filter(|objeto| objeto.initial_material != paleta_canvas)
+                .enumerate()
+                .filter(|(_, objeto)| objeto.initial_material != lienzo)
+                .map(|(i, objeto)| (i, objeto.spatial_group))
                 .collect();
 
-            assert_eq!(
-                ajenos.len(),
-                6,
-                "{water:?}: {} objetos no nacen en lienzo",
+            assert!(
+                ajenos.is_empty(),
+                "{water:?}: {} objetos no nacen en lienzo: {ajenos:?}",
                 ajenos.len()
             );
+        }
+    }
 
-            for objeto in ajenos {
-                assert_eq!(
-                    objeto.spatial_group,
-                    SpatialGroupId::InteractionProps,
-                    "un objeto fuera de G-04 no nace en lienzo"
-                );
-                // Y son inertes: la herramienta no se pinta.
-                assert_eq!(objeto.initial_material, objeto.final_material);
-            }
+    /// `InteractionProps` sigue existiendo como grupo y como politica, pero
+    /// ya no hay geometria dentro.
+    ///
+    /// El enum se conserva a proposito: `Scene::artistic_group` lo usa para
+    /// excluir atrezo, y quitarlo obligaria a tocar esa politica y sus
+    /// tests. Lo que este test fija es que **hoy** no excluye nada, y que
+    /// por tanto todo el diorama es pintable en modo artistico.
+    #[test]
+    fn el_nivel_seguro_no_tiene_geometria_de_interaccion() {
+        for water in [
+            WaterPreset::InteriorVisible,
+            WaterPreset::OpaqueWater,
+            WaterPreset::RefractiveWater,
+        ] {
+            let diorama = safe_level(water);
+            let props = diorama
+                .scene
+                .objects
+                .iter()
+                .filter(|o| o.spatial_group == SpatialGroupId::InteractionProps)
+                .count();
+
+            assert_eq!(props, 0, "{water:?} todavia tiene atrezo");
         }
     }
 
     #[test]
-    fn el_presupuesto_seguro_suma_160() {
-        assert_eq!(SAFE.total(), 160);
+    fn los_presupuestos_son_exactos_entrada_por_entrada() {
+        // Los numeros que sostienen la matriz, escritos una vez. El global
+        // baja de `27` a `21` al retirar las seis piezas de `G-04`.
+        assert_eq!(SAFE.global, 21);
+        assert_eq!(SAFE.meadows, 37);
+        assert_eq!(SAFE.breakwater, 38);
+        assert_eq!(SAFE.flying_waters, 58);
+        assert_eq!(SAFE.total(), 154);
+
+        assert_eq!(TARGET.global, 21);
+        assert_eq!(TARGET.meadows, 37);
+        assert_eq!(TARGET.breakwater, 38);
+        assert_eq!(TARGET.flying_waters, 60);
+        assert_eq!(TARGET.total(), 156);
     }
 
     #[test]
-    fn el_preset_opaco_conserva_las_160_primitivas() {
+    fn el_presupuesto_seguro_suma_154() {
+        assert_eq!(SAFE.total(), 154);
+    }
+
+    #[test]
+    fn el_preset_opaco_conserva_las_154_primitivas() {
         let nivel = safe_level(WaterPreset::OpaqueWater);
 
-        assert_eq!(nivel.scene.objects.len(), 160);
+        assert_eq!(nivel.scene.objects.len(), 154);
     }
 
     #[test]
-    fn el_preset_de_interior_visible_deja_159() {
+    fn el_preset_de_interior_visible_deja_153() {
         let nivel = safe_level(WaterPreset::InteriorVisible);
 
-        assert_eq!(nivel.scene.objects.len(), 159);
+        assert_eq!(nivel.scene.objects.len(), 153);
     }
 
     #[test]

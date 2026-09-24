@@ -16,7 +16,8 @@
 //! `30° + k · 60°` a distancia del circunradio.
 
 use crate::bounds::Aabb;
-use crate::hit::Hit;
+use crate::hit::{Hit, UvChart};
+use crate::primitive::UvWorldScale;
 use crate::ray::Ray;
 use crate::ray_intersect::RayIntersect;
 use crate::EPSILON;
@@ -104,6 +105,48 @@ impl HexPrism {
         let v = (relativo.y + self.media_altura) / (2.0 * self.media_altura);
 
         Vec2::new(u.clamp(0.0, 1.0), v.clamp(0.0, 1.0))
+    }
+
+    /// Carta de la cara `cara`, con el mismo indice que usa `planos`.
+    ///
+    /// Los seis laterales comparten **una sola** carta, y no es un descuido:
+    /// su `u` es distancia recorrida sobre el perimetro, de modo que la cara
+    /// `k` ocupa `[k/6, (k+1)/6]` y ninguna se solapa con otra. Son seis
+    /// tramos de una misma parametrizacion continua, y partirlos en seis
+    /// cartas rompería la textura que da la vuelta.
+    ///
+    /// Las dos tapas si son cartas propias: las dos se proyectan en XZ, asi
+    /// que el mismo `(x, z)` da la misma `uv` arriba y abajo.
+    fn carta_de_cara(cara: usize) -> UvChart {
+        if cara < LADOS {
+            UvChart::new(1)
+        } else if cara == LADOS {
+            UvChart::new(2)
+        } else {
+            UvChart::new(3)
+        }
+    }
+
+    /// Métrica mundo/`uv` de una de sus cartas.
+    ///
+    /// El lateral mide el **perímetro** en `u` —seis lados, y el lado de un
+    /// hexágono regular es su circunradio— y la altura total en `v`, que es
+    /// justo lo que recorre el mapeo de `uv_en_cara`.
+    ///
+    /// Las tapas se proyectan en `XZ` normalizadas al diámetro, así que sus
+    /// dos coordenadas recorren lo mismo. Que la forma no llene esa caja en
+    /// `X` no cambia la métrica: `u = 0..1` sigue abarcando el diámetro, y
+    /// es esa correspondencia la que un pincel necesita.
+    ///
+    /// Devuelve `None` para cualquier carta que no sea suya.
+    pub fn uv_world_scale(&self, chart: UvChart) -> Option<UvWorldScale> {
+        let diametro = 2.0 * self.radio;
+
+        match chart.id() {
+            1 => UvWorldScale::new(LADOS as f32 * self.radio, 2.0 * self.media_altura),
+            2 | 3 => UvWorldScale::new(diametro, diametro),
+            _ => None,
+        }
     }
 
     pub fn bounds(&self) -> Aabb {
@@ -202,14 +245,17 @@ impl RayIntersect for HexPrism {
         let punto = ray.at(t);
         let (normal, _) = planos[cara];
 
-        Some(Hit::new(ray, t, normal, self.uv_en_cara(&punto, cara)))
+        Some(
+            Hit::new(ray, t, normal, self.uv_en_cara(&punto, cara))
+                .on_chart(HexPrism::carta_de_cara(cara)),
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hit::Hit;
+    use crate::hit::{Hit, UvChart};
     use crate::ray::Ray;
     use crate::ray_intersect::RayIntersect;
     use nalgebra_glm::Vec3;
@@ -455,6 +501,107 @@ mod tests {
             desde_la_cara_0.uv.x,
             desde_la_cara_1.uv.x
         );
+    }
+
+    /// Dispara verticalmente contra una tapa, desde fuera.
+    fn disparar_a_la_tapa(arriba: bool) -> Hit {
+        let signo = if arriba { 1.0 } else { -1.0 };
+        let origen = CENTRO + Vec3::new(0.0, signo * 3.0, 0.0);
+        let ray = Ray::new(origen, Vec3::new(0.0, -signo, 0.0));
+
+        prisma().ray_intersect(&ray).expect("la tapa se toca")
+    }
+
+    #[test]
+    fn el_lateral_mide_el_perimetro_y_la_altura() {
+        // `u` da la vuelta al prisma: seis lados de longitud igual al
+        // circunradio. `v` recorre la altura total.
+        let prisma = prisma();
+        let lateral = disparar_a(0, 0.0).uv_chart;
+
+        let escala = prisma
+            .uv_world_scale(lateral)
+            .expect("el lateral tiene metrica");
+
+        assert!(
+            (escala.u - 6.0 * RADIO).abs() < 1e-5,
+            "u = {} y el perimetro es {}",
+            escala.u,
+            6.0 * RADIO
+        );
+        assert!((escala.v - ALTURA).abs() < 1e-5, "v = {}", escala.v);
+    }
+
+    #[test]
+    fn las_tapas_miden_el_diametro_en_los_dos_ejes() {
+        // Se proyectan en XZ normalizadas al diametro, asi que las dos
+        // coordenadas recorren lo mismo.
+        let prisma = prisma();
+
+        for arriba in [true, false] {
+            let carta = disparar_a_la_tapa(arriba).uv_chart;
+            let escala = prisma.uv_world_scale(carta).expect("la tapa tiene metrica");
+
+            assert!((escala.u - 2.0 * RADIO).abs() < 1e-5, "u = {}", escala.u);
+            assert!((escala.v - 2.0 * RADIO).abs() < 1e-5, "v = {}", escala.v);
+        }
+    }
+
+    #[test]
+    fn una_carta_ajena_al_prisma_no_tiene_metrica() {
+        let prisma = prisma();
+
+        assert_eq!(prisma.uv_world_scale(UvChart::WHOLE), None);
+        assert_eq!(prisma.uv_world_scale(UvChart::new(9)), None);
+    }
+
+    #[test]
+    fn los_seis_laterales_comparten_una_sola_carta() {
+        // A diferencia del cuboide, aqui `u` ya es un perimetro continuo:
+        // la cara `k` ocupa `[k/6, (k+1)/6]` y no se solapa con ninguna
+        // otra. Separarlas en seis cartas partiria la textura que da la
+        // vuelta en seis trozos inconexos, que es justo lo que el mapeo
+        // por perimetro existe para evitar.
+        let lateral = disparar_a(0, 0.0).uv_chart;
+
+        for k in 1..LADOS {
+            assert_eq!(
+                disparar_a(k, 0.0).uv_chart,
+                lateral,
+                "la cara {k} deberia compartir la carta lateral"
+            );
+        }
+    }
+
+    #[test]
+    fn las_dos_tapas_son_cartas_propias_y_distintas() {
+        // Las tapas si se solapan con todo: las dos se mapean por
+        // proyeccion en XZ, asi que el mismo `(x, z)` da la misma `uv`
+        // arriba y abajo. Y ninguna comparte parametrizacion con el
+        // lateral.
+        let lateral = disparar_a(0, 0.0).uv_chart;
+        let superior = disparar_a_la_tapa(true).uv_chart;
+        let inferior = disparar_a_la_tapa(false).uv_chart;
+
+        assert_ne!(superior, inferior, "arriba y abajo no son la misma carta");
+        assert_ne!(superior, lateral);
+        assert_ne!(inferior, lateral);
+    }
+
+    #[test]
+    fn las_tapas_se_solapan_en_uv_y_solo_las_separa_la_carta() {
+        // El caso concreto que la carta resuelve en esta primitiva: mismo
+        // punto en XZ, misma `uv`, tapas opuestas.
+        let superior = disparar_a_la_tapa(true);
+        let inferior = disparar_a_la_tapa(false);
+
+        assert!(
+            (superior.uv - inferior.uv).magnitude() < 1e-4,
+            "el ejemplo exige uv iguales: {:?} contra {:?}",
+            superior.uv,
+            inferior.uv
+        );
+        assert_ne!(superior.uv_chart, inferior.uv_chart);
     }
 
     #[test]

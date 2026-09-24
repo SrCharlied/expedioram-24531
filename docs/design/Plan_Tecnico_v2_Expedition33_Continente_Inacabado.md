@@ -268,12 +268,14 @@ let progress = reveal_state.progress(object.reveal_group);
 
 Consecuencias que esta decisión garantiza:
 
-- No existen 160 copias mutables del progreso.
+- No existen 154 copias mutables del progreso.
 - Un clic modifica un solo `f32`, no un recorrido sobre la escena.
 - Los objetos permanecen completamente estáticos; la aceleración nunca se reconstruye ni se invalida.
 - El test de clic repetido tiene una única fuente que observar.
 
-Las cinco entradas globales (`G-01` … `G-05`) van a `Finale`. Dos son **inertes**: `G-01` (plinto) nace y muere en `canvas_unpainted`, y `G-04` (paleta y pincel) nace ya en `pictorial_crystal` — la herramienta con la que se pinta no puede estar sin pintar. Ambas necesitan grupo por tipado, no por comportamiento.
+Las entradas globales van a `Finale`. Una es **inerte**: `G-01` (plinto), que nace y muere en `canvas_unpainted` y necesita grupo por tipado, no por comportamiento.
+
+`G-04` (paleta y pincel) era la segunda inerte —nacía ya en `pictorial_crystal`, porque la herramienta con la que se pinta no puede estar sin pintar— y **se retiró de la escena**. El grupo espacial `interaction_props` se conserva y hoy está vacío.
 
 **Consecuencia aceptada:** la revelación es *uniforme dentro del grupo*. No hay escalonamiento por objeto (`reveal_order` queda fuera del MVP). El Monolito se pinta de una sola vez al entrar en `Finale`, y el orden interno de Aguas descrito en el inventario es una lectura artística, no un comportamiento implementado.
 
@@ -966,17 +968,21 @@ src/scenes/flying_waters.rs
 Agregar primitivas seguras sin reflexión/refracción todavía:
 
 ```text
-Global 27
+Global 21
 Praderas 37
 Rompeolas 38
 Aguas 58
-Total 160 (incluye A-01)
+Total 154 (incluye A-01)
 ```
+
+El global bajó de `27` a `21`, y el total de `160` a `154`, al retirar las
+seis primitivas de `G-04`. Lo escrito antes de esa fecha usa las cifras de
+entonces.
 
 A-01 debe admitir dos presets tempranos:
 
-1. `safe-interior-visible`: no insertar el volumen de agua como primitiva intersectable; puede mostrarse únicamente como wireframe/debug marker. Quedan `159` primitivas trazables y los rayos alcanzan barco, mástil, cadena, ancla, kelp, rocas y lecho.
-2. `safe-opaque-water`: insertar A-01 como cuboide azul opaco. Conserva las `160` primitivas y sirve para validar el volumen/composición, pero **no** para aprobar rendimiento porque oculta aproximadamente 44 primitivas interiores.
+1. `safe-interior-visible`: no insertar el volumen de agua como primitiva intersectable; puede mostrarse únicamente como wireframe/debug marker. Quedan `153` primitivas trazables y los rayos alcanzan barco, mástil, cadena, ancla, kelp, rocas y lecho.
+2. `safe-opaque-water`: insertar A-01 como cuboide azul opaco. Conserva las `154` primitivas y sirve para validar el volumen/composición, pero **no** para aprobar rendimiento porque oculta aproximadamente 44 primitivas interiores.
 
 No crear todavía una falsa transparencia sin óptica. El preset canónico de benchmark temprano es `safe-interior-visible`.
 
@@ -1000,7 +1006,7 @@ Registrar por preset en `docs/evidence.md`:
 
 - CPU.
 - Resolución.
-- Primitivas trazables (`159` sin A-01; `160` con A-01).
+- Primitivas trazables (`153` sin A-01; `154` con A-01).
 - Grupos/clusters.
 - Luces con sombra.
 - Rays y primitive tests instrumentados, si están disponibles.
@@ -1123,7 +1129,7 @@ Tests:
 - Progress intermedio mezcla de forma estable.
 - Cambiar progress no modifica bounds ni conteo de objetos.
 - `shadow_mode` NO se interpola: el agua reporta `Ignore` también en `progress = 0.0`.
-- `G-01` y `G-04` producen el mismo material en todo el rango de progress.
+- `G-01` produce el mismo material en todo el rango de progress. `G-04` hacía lo mismo y ya no está en la escena.
 
 ### Tarea 4.5 — Implementar skybox equirectangular
 
@@ -1662,11 +1668,11 @@ Confirmar:
 
 ## Integración
 
-- Presupuesto safe exactamente `160`.
+- Presupuesto safe exactamente `154`.
 - Render `32 × 24` sin NaN.
 - PNG headless válido.
-- Preset sin A-01 expone y mide el interior de Aguas (`159` trazables).
-- Preset opaco conserva `160` primitivas y documenta la poda.
+- Preset sin A-01 expone y mide el interior de Aguas (`153` trazables).
+- Preset opaco conserva `154` primitivas y documenta la poda.
 - `Hit` resuelve materiales por `object_index`, sin `material_index`.
 - Barco visible bajo agua.
 
@@ -1677,11 +1683,11 @@ Confirmar:
 ## Nivel seguro — obligatorio
 
 ```text
-Global       27
+Global       21
 Praderas     37
 Rompeolas    38
 Aguas        58
-Total       160
+Total       154
 ```
 
 ## Nivel objetivo — condicionado por medición
@@ -1766,7 +1772,7 @@ El proyecto está terminado cuando:
 - [ ] Las tres regiones se revelan.
 - [ ] Aguas Voladoras es legible y protagonista.
 - [ ] Monolito se activa al final.
-- [ ] Nivel safe respeta 160 primitivas.
+- [ ] Nivel safe respeta 154 primitivas.
 - [ ] Rendimiento está medido, no supuesto.
 - [ ] El progreso de revelación vive solo en `RevealState`; `SceneObject` es inmutable.
 - [ ] `reveal_duration` se derivó de `interactive_frame_time` medido y quedó registrada.

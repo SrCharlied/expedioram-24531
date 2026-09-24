@@ -78,16 +78,20 @@ fn masa(
     });
 }
 
-/// Entradas globales del nivel seguro: **27 primitivas trazables**.
+/// Entradas globales del nivel seguro: **21 primitivas trazables**.
 ///
 /// | Entrada | Primitivas |
 /// |---|---:|
 /// | `G-01` plinto | 1 |
 /// | `G-02` continente simplificado | 10 |
 /// | `G-03` Monolito | 10 |
-/// | `G-04` paleta y pincel | 6 |
 ///
 /// `G-05` (fragmentos) es opcional y vale cero en nivel seguro.
+///
+/// `G-04` —la paleta y el pincel de cristal, seis primitivas al borde de
+/// Aguas Voladoras— **se retiró**. Era decoración que explicaba la obra,
+/// pero no se podía usar: ni se pintaba ni servía para pintar, y ocupaba
+/// una esquina del encuadre. Nada la sustituye.
 ///
 /// Devuelve la altura medida del Monolito, que alimenta el encuadre y la
 /// derivación del radio orbital.
@@ -157,28 +161,6 @@ pub fn globales(scene: &mut Scene, paleta: &Palette, anchors: &SceneAnchors) -> 
         cima = cima.max(offset.y + tamano.y * 0.5);
     }
 
-    // `G-04` · paleta y pincel, seis primitivas. Nace ya en cristal: es la
-    // herramienta con la que se pinta, no parte del cuadro por pintar.
-    let base = anchors.palette_anchor;
-    let piezas = [
-        (Vec3::new(0.0, 0.05, 0.0), Vec3::new(1.5, 0.10, 1.1)),
-        (Vec3::new(-0.45, 0.14, 0.0), Vec3::new(0.30, 0.08, 0.30)),
-        (Vec3::new(0.05, 0.14, 0.28), Vec3::new(0.26, 0.08, 0.26)),
-        (Vec3::new(0.48, 0.14, -0.18), Vec3::new(0.24, 0.08, 0.24)),
-        (Vec3::new(0.30, 0.34, 0.42), Vec3::new(0.07, 0.55, 0.07)),
-        (Vec3::new(0.30, 0.65, 0.42), Vec3::new(0.11, 0.16, 0.11)),
-    ];
-    for (offset, tamano) in piezas {
-        masa_inerte(
-            scene,
-            base + offset,
-            tamano,
-            paleta.pictorial_crystal,
-            SpatialGroupId::InteractionProps,
-            RevealGroup::Finale,
-        );
-    }
-
     cima
 }
 
@@ -202,7 +184,6 @@ pub fn blockout() -> Blockout {
     let breakwater_anchor = Vec3::new(-4.2, 2.4, -1.9);
     let bay_center = Vec3::new(0.0, 0.0, 4.2);
     let broken_edge_anchor = Vec3::new(0.0, 1.2, 6.6);
-    let palette_anchor = Vec3::new(6.6, 0.4, 5.8);
 
     let monolith_height = monolito(&mut scene, monolith_base_anchor, paleta.monolito);
 
@@ -237,7 +218,6 @@ pub fn blockout() -> Blockout {
         // bahia, que es lo mas parecido a «lo que L-02 debe iluminar»
         // cuando todavia no hay nada dentro.
         boat_anchor: Vec3::new(bay_center.x, WATER_SURFACE_Y, bay_center.z),
-        palette_anchor,
         hero_camera_anchor: eye_at_yaw(orbit_center, orbit_radius, HERO_YAW_DEGREES),
         broken_edge_anchor,
     };

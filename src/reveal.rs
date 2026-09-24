@@ -401,9 +401,51 @@ fn mezcla(a: f32, b: f32, t: f32) -> f32 {
 /// barco parpadearía entre iluminado y negro justo durante la transición
 /// estrella del diorama.
 pub fn resolve(scene: &Scene, object: &SceneObject, reveal: &RevealState, uv: &Vec2) -> Material {
+    resolve_with_brush(scene, object, reveal, uv, 0.0)
+}
+
+/// Material visible contando además lo que el pincel haya cubierto en ese
+/// punto.
+///
+/// El progreso efectivo es el **mayor** de los dos: el del grupo y el de la
+/// cobertura local. El pincel suma y nunca resta, y la razón es concreta: si
+/// se combinaran de cualquier otra forma, una región ya revelada
+/// retrocedería a lienzo en las zonas que nadie pintó a mano, y el revelado
+/// por región —que es lo que gobierna la demostración— dejaría de verse
+/// entero.
+///
+/// `coverage` llega de una máscara y se trata como **dato**, no como valor
+/// de confianza: fuera de `0.0..=1.0` se recorta, y `NaN` cuenta como cero.
+/// Cero y no «no tocar»: una máscara a medio inicializar no puede revelar
+/// nada por accidente, y ese es el fallo que costaría encontrar mirando la
+/// imagen.
+///
+/// Todo lo demás es idéntico a `resolve` —la mezcla en lineal, el
+/// `shadow_mode` sin interpolar, las propiedades ópticas—, porque es
+/// literalmente el mismo cuerpo: `resolve` es este con cobertura cero.
+pub fn resolve_with_brush(
+    scene: &Scene,
+    object: &SceneObject,
+    reveal: &RevealState,
+    uv: &Vec2,
+    coverage: f32,
+) -> Material {
     let inicial = scene.material(object.initial_material);
     let final_ = scene.material(object.final_material);
-    let t = reveal.progress(object.reveal_group).clamp(0.0, 1.0);
+
+    // `clamp` propaga `NaN`, así que el caso se aparta antes de recortar.
+    let local = if coverage.is_nan() {
+        0.0
+    } else {
+        coverage.clamp(0.0, 1.0)
+    };
+
+    // Con `local` en cero esto es la identidad sobre el valor que calculaba
+    // `resolve`, que es lo que mantiene el modo base byte a byte.
+    let t = reveal
+        .progress(object.reveal_group)
+        .clamp(0.0, 1.0)
+        .max(local);
 
     // Atajos para los dos extremos: son el caso común —una región está
     // pintada o no lo está la mayor parte del tiempo— y se ahorran un
@@ -595,8 +637,8 @@ mod tests {
 
     #[test]
     fn una_entrada_inerte_da_el_mismo_material_en_todo_el_rango() {
-        // `G-01` (plinto) y `G-04` (paleta) tienen el mismo material inicial
-        // y final: su pertenencia a `Finale` no debe cambiar como se ven.
+        // `G-01`, el plinto, tiene el mismo material inicial y final: su
+        // pertenencia a `Finale` no debe cambiar como se ve.
         let mut scene = Scene::new();
         let unico = scene.add_material(Material::new(Color::new(0.6, 0.6, 0.55)));
 
@@ -1234,6 +1276,155 @@ mod tests {
         }
 
         assert_eq!(estado.phase(RevealGroup::Finale), RevealPhase::Revealing);
+    }
+
+    // -------------------------------------- cobertura local de pincel
+
+    /// Estado con un solo grupo avanzado, el del objeto de `escena()`.
+    fn con_progreso(t: f32) -> RevealState {
+        let mut estado = RevealState::unpainted();
+        estado.set_progress(RevealGroup::FlyingWaters, t);
+
+        estado
+    }
+
+    #[test]
+    fn sin_pincel_y_sin_revelado_se_ve_el_lienzo() {
+        let (scene, objeto, lienzo, _) = escena();
+        let esperado = scene.material(lienzo);
+
+        let visible = resolve_with_brush(&scene, &objeto, &RevealState::unpainted(), &uv(), 0.0);
+
+        assert_eq!(visible.albedo, esperado.albedo);
+        assert_eq!(visible.reflection_cap, esperado.reflection_cap);
+        assert_eq!(visible.ior, esperado.ior);
+    }
+
+    #[test]
+    fn el_pincel_solo_revela_sin_ayuda_del_estado_global() {
+        // Lo que hace util este corte: la region esta sin pintar y aun asi
+        // lo que el pincel cubrio se ve terminado.
+        let (scene, objeto, _, agua) = escena();
+        let esperado = scene.material(agua);
+
+        let visible = resolve_with_brush(&scene, &objeto, &RevealState::unpainted(), &uv(), 1.0);
+
+        assert_eq!(visible.albedo, esperado.albedo);
+        assert_eq!(visible.reflection_cap, esperado.reflection_cap);
+        assert!((visible.ior - esperado.ior).abs() < 1e-6);
+    }
+
+    #[test]
+    fn una_cobertura_mayor_que_el_estado_gobierna_la_mezcla() {
+        // Con el estado por detras, manda el pincel: el resultado tiene que
+        // ser identico al que daria ese mismo progreso de forma global.
+        let (scene, objeto, _, _) = escena();
+
+        for (global, cobertura) in [(0.0f32, 0.5f32), (0.2, 0.75), (0.5, 0.9)] {
+            let con_pincel =
+                resolve_with_brush(&scene, &objeto, &con_progreso(global), &uv(), cobertura);
+            let equivalente = resolve(&scene, &objeto, &con_progreso(cobertura), &uv());
+
+            assert_eq!(
+                con_pincel, equivalente,
+                "global {global} con cobertura {cobertura}"
+            );
+        }
+    }
+
+    #[test]
+    fn una_cobertura_menor_no_deshace_lo_ya_revelado() {
+        // El pincel suma, nunca resta. Sin esto, mirar una zona poco
+        // pintada de una region ya revelada la haria retroceder a lienzo.
+        let (scene, objeto, _, _) = escena();
+
+        for (global, cobertura) in [(0.8f32, 0.2f32), (1.0, 0.0), (1.0, 0.5), (0.5, 0.5)] {
+            let con_pincel =
+                resolve_with_brush(&scene, &objeto, &con_progreso(global), &uv(), cobertura);
+            let sin_pincel = resolve(&scene, &objeto, &con_progreso(global), &uv());
+
+            assert_eq!(
+                con_pincel, sin_pincel,
+                "global {global} no deberia moverse con cobertura {cobertura}"
+            );
+        }
+    }
+
+    #[test]
+    fn una_cobertura_no_finita_o_fuera_de_rango_es_segura() {
+        // `NaN` cuenta como cero, y no como «no tocar»: una mascara sin
+        // inicializar no puede revelar nada por accidente. Lo que si se
+        // recorta es un valor finito fuera de rango.
+        let (scene, objeto, _, _) = escena();
+        let estado = con_progreso(0.3);
+
+        let referencia = resolve(&scene, &objeto, &estado, &uv());
+        let terminado = resolve(&scene, &objeto, &RevealState::painted(), &uv());
+
+        for cobertura in [f32::NAN, -1.0, -0.0, f32::NEG_INFINITY] {
+            assert_eq!(
+                resolve_with_brush(&scene, &objeto, &estado, &uv(), cobertura),
+                referencia,
+                "la cobertura {cobertura} no deberia revelar nada"
+            );
+        }
+
+        for cobertura in [1.0f32, 2.0, 1e9, f32::INFINITY] {
+            assert_eq!(
+                resolve_with_brush(&scene, &objeto, &estado, &uv(), cobertura),
+                terminado,
+                "la cobertura {cobertura} equivale a revelado completo"
+            );
+        }
+    }
+
+    #[test]
+    fn el_pincel_no_toca_el_shadow_mode_ni_invalida_la_optica() {
+        // Las dos invariantes que el corte no puede romper: el modo de
+        // sombra sale entero del material final, y ningun punto intermedio
+        // produce un material invalido.
+        let (scene, objeto, _, _) = escena();
+
+        for paso in 0..=10 {
+            let cobertura = paso as f32 / 10.0;
+
+            for global in [0.0f32, 0.35, 1.0] {
+                let visible =
+                    resolve_with_brush(&scene, &objeto, &con_progreso(global), &uv(), cobertura);
+
+                assert_eq!(
+                    visible.shadow_mode,
+                    ShadowMode::Ignore,
+                    "global {global}, cobertura {cobertura}"
+                );
+                assert!(visible.albedo_texture.is_none());
+                assert!(visible.is_valid(), "global {global}, cobertura {cobertura}");
+            }
+        }
+
+        for cobertura in [f32::NAN, f32::INFINITY, -5.0] {
+            let visible = resolve_with_brush(&scene, &objeto, &con_progreso(0.5), &uv(), cobertura);
+
+            assert_eq!(visible.shadow_mode, ShadowMode::Ignore);
+            assert!(visible.is_valid(), "cobertura {cobertura}");
+        }
+    }
+
+    #[test]
+    fn resolve_es_exactamente_el_caso_sin_pincel() {
+        // El modo base tiene que quedar byte a byte donde estaba: es lo que
+        // ve el renderer hoy, y este corte no lo toca.
+        let (scene, objeto, _, _) = escena();
+
+        for paso in 0..=20 {
+            let estado = con_progreso(paso as f32 / 20.0);
+
+            assert_eq!(
+                resolve(&scene, &objeto, &estado, &uv()),
+                resolve_with_brush(&scene, &objeto, &estado, &uv(), 0.0),
+                "paso {paso}"
+            );
+        }
     }
 
     #[test]

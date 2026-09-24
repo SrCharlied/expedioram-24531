@@ -22,8 +22,23 @@ default-run = "expedition33_continente_inacabado"
 # poder compararse, y porque revertir la decision tiene que ser una bandera
 # y no un parche.
 [features]
-default = ["hex-prism"]
+default = ["hex-prism", "artistic-brush"]
 hex-prism = []
+
+# Version artistica: el boton izquierdo revela **localmente** con un pincel
+# en vez de revelar la region entera. Forma parte de la entrega por defecto
+# junto a `hex-prism`.
+#
+# El revelado regional conserva su ruta de respaldo sin features; la Ruta B
+# puede recuperar el pincel con una feature explicita:
+#
+#   cargo run --release --no-default-features
+#   cargo run --release --no-default-features --features artistic-brush
+#
+# La feature solo la lee `src/main.rs`. La libreria compila igual con ella
+# y sin ella: `BrushMasks` y `render_with_brush` estan siempre disponibles
+# y siempre probados.
+artistic-brush = []
 
 [dependencies]
 nalgebra-glm = "0.18.0"

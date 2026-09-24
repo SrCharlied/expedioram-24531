@@ -3326,3 +3326,180 @@ Ninguna de estas filas puede completarse por estimación. Cada hito llena la suy
 | 8 | Hardware de medición y tiempos finales en release | Pendiente |
 
 **Regla.** Todos los benchmarks se ejecutan en release. El perfil `dev` de este proyecto lleva `opt-level = 3` heredado de la base académica, así que un tiempo medido en debug **parece** comparable a release y no lo es.
+
+
+---
+
+# Revisión artística posterior a la retirada de `G-04`
+
+**2026-09-23.** Todo lo que hay por encima de esta línea describe la escena
+**anterior**: `160` primitivas en el nivel seguro, `162` en el candidato, y
+`G-04` —la paleta y el pincel de cristal— dentro del diorama. Esas cifras no
+se han tocado y no deben leerse como si describieran lo que hay hoy.
+
+Esta sección registra lo vigente.
+
+## Qué cambió en la escena
+
+`G-04` se retiró: seis primitivas de `pictorial_crystal` sobre el plinto, al
+borde de Aguas Voladoras. Eran decoración que explicaba la obra sin poder
+usarse —ni se pintaban ni servían para pintar— y ocupaban una esquina del
+encuadre.
+
+| | Antes | Vigente |
+|---|---:|---:|
+| Presupuesto global | `27` | **`21`** |
+| `safe-refractive-water` | `160` | **`154`** |
+| `safe-opaque-water` | `160` | `154` |
+| `safe-interior-visible` | `159` | **`153`** |
+| Candidato `target` | `162` | **`156`** |
+
+El grupo espacial `InteractionProps` **se conserva** y hoy está vacío. La
+consecuencia es que todo el diorama es pintable en el modo artístico: plinto,
+continente de fondo y Monolito incluidos.
+
+No se ha redibujado ningún diagrama. El blueprint SVG histórico sigue
+mostrando la paleta, y describe la escena de entonces.
+
+## El modo artístico
+
+Feature **encendida por defecto** junto a `hex-prism`, `artistic-brush`. El
+binario principal pinta localmente; el revelado regional clásico se conserva
+como respaldo con `--no-default-features`, y Ruta B puede recuperar el pincel
+con `--no-default-features --features artistic-brush`.
+
+Con ella, el botón izquierdo pinta donde se arrastra:
+
+| Tecla | Acción |
+|---|---|
+| `Q` | revelar en local con el pincel |
+| `4` – `8` | pigmento plano: Carmesí, Oro, Violeta, Cian, Obsidiana |
+| `9` `0` `Z` `X` `C` `V` | pincel de textura: Lienzo, Pradera, Basalto, Madera, Cristal, Agua |
+| `M` `N` | engordar y afinar el pincel, en **radio de mundo** |
+| `1` `2` `3` | siguen revelando la región entera |
+| `L` | volver al lienzo y borrar máscaras y pigmento |
+
+El grosor se fija en unidades de mundo y se normaliza por superficie con la
+métrica que entrega cada primitiva, así que el trazo mide lo mismo sobre una
+losa enorme y sobre un tablón.
+
+Mientras se pinta se dibuja un **pincel en 3D** sobre la superficie señalada.
+Es un overlay: se proyecta con la cámara del cuadro presentado y se rasteriza
+con su propio z-buffer, pero **no entra en la escena ni en la jerarquía de
+aceleración**. No proyecta sombra, no recibe luz y no cuesta un rayo. La
+contrapartida es que no tiene oclusión contra el mundo: si queda detrás de una
+roca, se sigue viendo entero. Es deliberado.
+
+La Ruta A —`hex-prism`— y el pincel son la entrega por defecto. La Ruta B es el
+respaldo con `--no-default-features`; puede combinarse con el pincel mediante
+`--features artistic-brush`.
+
+## Benchmark artístico
+
+**2026-09-23**, HAC. `HEAD` en `ed11e3ff2f76f4a239961e2c098834d1dda9b624`.
+
+> **El árbol de trabajo no está commiteado.** Las cifras de abajo miden el
+> código del árbol, no el de ese commit. Cualquiera que quiera reproducirlas
+> necesita ese árbol, no ese `HEAD`.
+
+```bash
+cargo run --release --example performance_matrix                       # Ruta A
+cargo run --release --no-default-features --example performance_matrix # Ruta B
+```
+
+| Ruta | SHA-256 de la salida | RC |
+|---|---|---:|
+| A, `hex-prism` | `294d68ec99ac8fcfcb96ec3b3c24eeb2a1d3e4626628e274195cfbae06c517fd` | `0` |
+| B, `--no-default-features` | `8da5ff3405f48f5d5b5a2dc87ca337c9df674ede9deaae6eb5a987a569c7b06b` | `0` |
+
+### El caso que importa
+
+El escenario `art-pintado` al zoom artístico mínimo —`1.7 × scene_radius`— y a
+la resolución del perfil interactivo, `320 × 240`. Es el cuadro que se traza
+**mientras se arrastra el pincel**: durante un arrastre la ventana está en
+cambio sostenido, así que dibuja al perfil y no al cuadro final.
+
+| Ruta | Tiempo por cuadro | Margen sobre el crítico |
+|---|---:|---:|
+| A | `0.1455 s` | `1.83x` |
+| B | `0.1520 s` | `1.75x` |
+
+Crítico del gate: `0.2667 s`, que son `4.0 / 15`.
+
+### La fixture
+
+Determinista y construida por **picking**, no a mano: una rejilla fija de
+cursores resueltos con `pick_artistic`, el mismo que usa la ventana. De cada
+impacto se toma su `SurfaceKey` real y su métrica.
+
+- **17 superficies** con revelado y con pigmento.
+- Máscaras de `128 × 128` por superficie.
+- Radio del pincel `0.025 × scene_radius`.
+- El pigmento alterna plano y textura; las texturas se **muestrean**, ninguna
+  se modifica.
+
+El ejemplo mide tres columnas por escenario sobre la misma escena, cámara y
+estado: `base` —`render()`—, `art-vacio` —`render_artistic` con las capas
+vacías, que aísla el coste de consultarlas— y `art-pintado`. Entre columnas de
+un mismo bloque la diferencia es atribuible; entre bloques distintos no, porque
+cambia el encuadre.
+
+### Lo que esto **no** dice
+
+- **La decisión de entrega está tomada.** Charlie promovió el modo artístico a
+  la configuración principal tras la medición y revisión visual. Los márgenes
+  de arriba son la evidencia que respalda esa decisión.
+- **La revisión visual humana sí aprobó** la interacción artística: pigmentos,
+  texturas, radio de mundo, composición sin `G-04` y el pincel 3D denso. Esa
+  aprobación, junto con los benchmarks, sustenta la promoción a la entrega
+  base.
+- La evidencia PNG vigente vive en `evidence/hito9_artistic/`; no sustituye
+  los ocho PNG de `evidence/hito8/`, que siguen siendo el registro de la
+  escena con `G-04` y con `160` primitivas.
+- El `README`, el inventario y el plan técnico quedaron reconciliados con estas
+  cifras en esta misma fecha. El resto de este documento, no.
+
+---
+
+## Evidencia PNG — Hito 9 artístico
+
+Los cuatro cuadros son PNG RGB de `800 × 600`, Ruta A `hex-prism`, preset
+`safe-refractive-water` con texturas y cámara hero. Se generaron por
+`examples/artistic_evidence.rs`, que crea la fixture por `pick_artistic`:
+rejilla `9 × 7`, radio `0.025 × scene_radius` (`0.3015` unidades de mundo),
+máscaras `128 × 128` y nueve `SurfaceKey` reales con revelado y pigmento.
+
+```bash
+cargo test --example artistic_evidence --features artistic-brush
+cargo run --release --features artistic-brush --example artistic_evidence
+sha256sum evidence/hito9_artistic/*.png
+```
+
+| Archivo | Estado | SHA-256 |
+|---|---|---|
+| `01-canvas-actual.png` | Lienzo inicial, sin capas ni revelado | `c5736f90bf1df3f516bb81378044e2c7ac1a13068bfc4c8b88f07e33737533a2` |
+| `02-artistico-vacio.png` | Diorama revelado, capas artísticas vacías | `75e00441e4d86831bcca203b973dcb65a3466055ce45913d75e029c1eb96a0d8` |
+| `03-artistico-pintado.png` | Fixture local no vacía: nueve superficies con revelado y pigmento | `48f61a32df8c266c3044e0b1cf464cd2d53d9096349472a314e2b889e2ec1e12` |
+| `04-pincel-en-uso.png` | La fixture más un pincel overlay sobre `object 71`, `UvChart(1)` | `1337449f60e62b466b6614383591be568c1c90335ca5b39939e6821a36508799` |
+
+Un segundo render del supervisor a
+`C:/Users/carlo/AppData/Local/Temp/hito9-supervisor-1790214366/` produjo los
+mismos cuatro hashes. La trazabilidad del pincel se prueba por picking y no por
+una posición escrita a mano; sigue siendo un overlay que no muta BVH, rayos ni
+geometría.
+
+La revisión visual humana ya aprobó la ruta artística. Estos PNG son evidencia
+versionada de la escena vigente, no una nueva aprobación ni un reemplazo de la
+evidencia histórica.
+
+---
+
+## Pendientes tras esta revisión
+
+| Hito | Qué | Estado |
+|---|---|---|
+| — | Decisión de entrega sobre `artistic-brush` | **Promovida** — feature por defecto junto a `hex-prism` |
+| — | Revisión visual del pincel 3D y de la paleta | **Aprobada** — queda separada de la decisión de entrega |
+| — | Evidencia PNG de la escena de `154` | **Registrada** — `evidence/hito9_artistic/`, cuatro PNG con hashes |
+| — | Regenerar el blueprint SVG sin `G-04` | **Abierta** — hoy sigue mostrando la paleta |
+| — | Gates de rendimiento del Hito 7 recalculados sobre `154` | **Abierto** — los registrados arriba son de `160` |

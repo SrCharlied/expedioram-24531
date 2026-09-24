@@ -66,7 +66,7 @@ Debe comunicar color, altura y conexión con el Monolito mediante una implementa
 
 Versión mínima que debe verse terminada:
 
-- 160 primitivas trazables estimadas.
+- 154 primitivas trazables. Fueron 160 hasta que se retiró `G-04`.
 - Tres regiones legibles.
 - Aguas Voladoras completa en composición básica.
 - Materiales diferenciados.
@@ -175,9 +175,9 @@ Todo objeto de una región se expresa respecto de su ancla. Esto permite mover u
 
 | ID | Uso | Características |
 |---|---|---|
-| `canvas_unpainted` | Estado inicial de la escena, salvo `G-04` | Textura de lienzo, marfil, mate, opaco, no reflectivo |
+| `canvas_unpainted` | Estado inicial de **toda** la escena | Textura de lienzo, marfil, mate, opaco, no reflectivo |
 
-Única excepción: `G-04` (paleta y pincel) nace ya en `pictorial_crystal`. Es la herramienta con la que se pinta, no parte del cuadro por pintar.
+Sin excepciones: todo el diorama nace en lienzo. La hubo —`G-04`, la paleta y el pincel, nacía ya en `pictorial_crystal`— hasta que esa entrada se retiró de la escena.
 
 ### Cinco materiales finales puntuables
 
@@ -231,10 +231,10 @@ Las cinco entradas globales van a `finale`, pero dos de ellas son **asignaciones
 | `G-01` plinto | `canvas_unpainted` → `canvas_unpainted` | inerte; el lienzo sostiene el diorama y nunca se pinta |
 | `G-02` continente simplificado | `canvas_unpainted` → `meadow` | se pinta |
 | `G-03` Monolito | `canvas_unpainted` → `pictorial_crystal` | se pinta |
-| `G-04` paleta y pincel | `pictorial_crystal` → `pictorial_crystal` | inerte; ya está pintada desde el arranque |
+| ~~`G-04` paleta y pincel~~ | — | **retirada de la escena** |
 | `G-05` fragmentos | `canvas_unpainted` → `pictorial_crystal` | se pinta |
 
-`G-02` en `finale` es una decisión de lectura: el continente **es** el lienzo inacabado y solo se completa cuando las tres regiones están listas. `G-04` en `finale` es una formalidad de tipado: la paleta necesita un grupo, pero es la herramienta, no el cuadro.
+`G-02` en `finale` es una decisión de lectura: el continente **es** el lienzo inacabado y solo se completa cuando las tres regiones están listas. `G-04` estaba en `finale` por una formalidad de tipado —la paleta necesitaba un grupo—, y esa entrada ya no existe.
 
 ### Conservación de energía y Fresnel
 
@@ -295,10 +295,10 @@ Por defecto:
 | Plinto | 1 | 1 |
 | Continente simplificado | 10 | 14 |
 | Monolito | 10 | 12 |
-| Paleta y pincel | 6 | 6 |
+| ~~Paleta y pincel~~ | ~~6~~ → 0 | ~~6~~ → 0 |
 | Fragmentos globales | 0 | 8 |
 | Acentos sin geometría | 0 | 0 |
-| **Subtotal seguro** | **27** | **Hasta 41** |
+| **Subtotal seguro** | **21** | **Hasta 35** |
 
 ## G-01 · Plinto del lienzo
 
@@ -355,23 +355,38 @@ spatial_group: monolith
 
 No hay escalonamiento interno: el Monolito parece incompleto porque el grupo `finale` está en `0.0`, no porque unas masas vayan por delante de otras.
 
-## G-04 · Paleta y pincel
+## ~~G-04 · Paleta y pincel~~ — retirada
+
+**Esta entrada ya no existe en la escena.** Eran seis primitivas de
+`pictorial_crystal` sobre el plinto, al borde de Aguas Voladoras, que
+explicaban la obra sin poder usarse: ni se pintaban ni servían para pintar, y
+ocupaban una esquina del encuadre.
+
+Se retiraron con sus seis primitivas y con el ancla `palette_anchor` que las
+situaba. El presupuesto global baja de `27` a `21` y el total del nivel seguro
+de `160` a `154`. Nada la sustituye.
+
+El grupo espacial `interaction_props` **se conserva** —la distinción entre
+atrezo y lienzo sigue siendo correcta— pero hoy está vacío, y por eso todo el
+diorama es pintable en el modo artístico. Ver `Scene::artistic_group`.
+
+La especificación original queda abajo como registro de lo que hubo, no de lo
+que hay:
 
 ```yaml
+# RETIRADA — no se construye
 id: global.palette_brush
 category: hero
 primitive: cuboid_composition
-required: true
-count_safe: 6
-count_target_max: 6
+required: false
+count_safe: 0
+count_target_max: 0
 initial_material: pictorial_crystal
 final_material: pictorial_crystal
 shadow_mode: opaque
 reveal_group: finale
 spatial_group: interaction_props
 ```
-
-**Nota:** la paleta permanece sobre el plinto, fuera del terreno. Su geometría final dependerá del método de interacción.
 
 **Revelación:** es la única entrada que nace pintada. `initial_material` y `final_material` son ambos `pictorial_crystal`, así que su pertenencia a `finale` es inerte: nunca cambia de apariencia. La herramienta con la que se pinta no puede estar sin pintar.
 
@@ -1042,11 +1057,23 @@ El skybox o término ambiental no lanza rayos de sombra. Cada luz puntual obliga
 
 | Grupo | Nivel seguro | Nivel objetivo máximo |
 |---|---:|---:|
-| Global | 27 | 41 |
+| Global | 21 | 35 |
 | Praderas Primaverales | 37 | 66 |
 | Acantilado Rompeolas | 38 | 65 |
 | Aguas Voladoras | 58 | 103 |
-| **Total** | **160** | **275** |
+| **Total** | **154** | **269** |
+
+Los conteos vigentes del nivel construido, que es lo que fijan los tests:
+
+| Preset | Primitivas |
+|---|---:|
+| `safe-refractive-water` | **154** |
+| `safe-opaque-water` | 154 |
+| `safe-interior-visible` | 153 |
+| Candidato `target` | **156** |
+
+Fueron `160` / `162` hasta la retirada de `G-04`. La evidencia anterior a esa
+fecha usa aquellas cifras y describe la escena de entonces.
 
 A `800 × 600`, sin aceleración:
 
