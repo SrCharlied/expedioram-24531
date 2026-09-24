@@ -53,6 +53,47 @@ impl Framebuffer {
         }
     }
 
+    /// Rellena un rectángulo, recortado contra el buffer.
+    ///
+    /// Existe para la interfaz del pincel, que se dibuja **encima** del
+    /// cuadro ya trazado. Recorta en vez de exigir que quepa: un panel
+    /// anclado a una esquina puede quedar a caballo del borde en una ventana
+    /// pequeña, y eso tiene que recortarse, no reventar.
+    ///
+    /// Un rectángulo sin área no pinta nada.
+    pub fn fill_rect(&mut self, x: usize, y: usize, ancho: usize, alto: usize, color: u32) {
+        if ancho == 0 || alto == 0 || x >= self.width || y >= self.height {
+            return;
+        }
+
+        let hasta_x = (x + ancho).min(self.width);
+        let hasta_y = (y + alto).min(self.height);
+
+        for fila in y..hasta_y {
+            for columna in x..hasta_x {
+                self.buffer[fila * self.width + columna] = color;
+            }
+        }
+    }
+
+    /// Dibuja el **marco** de un rectángulo, de un píxel de grosor.
+    ///
+    /// Recorta igual que `fill_rect`: los lados que caen fuera del buffer
+    /// simplemente no se dibujan.
+    pub fn stroke_rect(&mut self, x: usize, y: usize, ancho: usize, alto: usize, color: u32) {
+        if ancho == 0 || alto == 0 {
+            return;
+        }
+
+        // Arriba y abajo.
+        self.fill_rect(x, y, ancho, 1, color);
+        self.fill_rect(x, y + alto - 1, ancho, 1, color);
+
+        // Izquierda y derecha.
+        self.fill_rect(x, y, 1, alto, color);
+        self.fill_rect(x + ancho - 1, y, 1, alto, color);
+    }
+
     pub fn set_background_color(&mut self, color: u32) {
         self.background_color = color;
     }
@@ -193,5 +234,67 @@ mod tests {
         destino.blit_upscaled(&origen);
 
         assert_eq!(destino.buffer.len(), 16);
+    }
+
+    // --------------------------------------------- primitivas 2D de la UI
+
+    #[test]
+    fn un_rectangulo_relleno_cubre_exactamente_su_area() {
+        let mut fb = Framebuffer::new(20, 10);
+        fb.fill_rect(3, 2, 5, 4, 0x00FF0000);
+
+        for y in 0..10 {
+            for x in 0..20 {
+                let dentro = (3..8).contains(&x) && (2..6).contains(&y);
+                let pixel = fb.buffer[y * 20 + x];
+
+                assert_eq!(
+                    pixel != 0,
+                    dentro,
+                    "({x}, {y}) deberia estar {}",
+                    if dentro { "dentro" } else { "fuera" }
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn un_rectangulo_que_se_sale_se_recorta_sin_desbordar() {
+        // Lo que este test existe para atrapar: una UI anclada a la esquina
+        // con un panel un pixel mas grande que la ventana no puede escribir
+        // fuera del buffer ni entrar en panico.
+        let mut fb = Framebuffer::new(8, 6);
+
+        fb.fill_rect(6, 4, 100, 100, 0x00FFFFFF);
+        fb.fill_rect(0, 0, 1000, 1000, 0x0000FF00);
+        fb.stroke_rect(7, 5, 50, 50, 0x000000FF);
+
+        assert_eq!(fb.buffer.len(), 8 * 6, "el buffer cambio de tamano");
+    }
+
+    #[test]
+    fn un_rectangulo_degenerado_no_pinta_nada() {
+        let mut fb = Framebuffer::new(10, 10);
+        let limpio = fb.buffer.clone();
+
+        fb.fill_rect(2, 2, 0, 5, 0x00FF0000);
+        fb.fill_rect(2, 2, 5, 0, 0x00FF0000);
+        fb.stroke_rect(2, 2, 0, 0, 0x00FF0000);
+
+        assert_eq!(fb.buffer, limpio, "un rectangulo sin area pinto algo");
+    }
+
+    #[test]
+    fn un_borde_dibuja_el_marco_y_deja_el_interior() {
+        let mut fb = Framebuffer::new(12, 12);
+        fb.stroke_rect(2, 2, 6, 5, 0x0000FF00);
+
+        // Las cuatro esquinas del marco.
+        for (x, y) in [(2, 2), (7, 2), (2, 6), (7, 6)] {
+            assert_ne!(fb.buffer[y * 12 + x], 0, "falta la esquina ({x}, {y})");
+        }
+
+        // Y el interior sigue vacio.
+        assert_eq!(fb.buffer[4 * 12 + 4], 0, "el borde relleno el interior");
     }
 }

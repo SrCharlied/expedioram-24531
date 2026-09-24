@@ -12,6 +12,12 @@ pub mod brush;
 /// Pincel visual del modo artistico. Ver la feature `artistic-brush`.
 #[cfg(feature = "artistic-brush")]
 pub mod brush_gizmo;
+/// Paleta del pincel: herramientas, estado y disposicion de su interfaz.
+///
+/// Es la **unica** fuente de los pigmentos y las telas: el teclado y la UI
+/// leen de aqui, para que no puedan prometer cosas distintas.
+#[cfg(feature = "artistic-brush")]
+pub mod brush_palette;
 pub mod camera;
 pub mod color;
 pub mod cuboid;

@@ -95,6 +95,7 @@ El revelado regional clásico permanece como respaldo con
 | `4` – `8` | pigmento plano: Carmesí, Oro, Violeta, Cian, Obsidiana |
 | `9` `0` `Z` `X` `C` `V` | pincel de textura: Lienzo, Pradera, Basalto, Madera, Cristal, Agua |
 | `M` `N` | engordar y afinar el pincel |
+| `P` | abrir o plegar la paleta visual; sus celdas también se eligen con clic |
 | `1` `2` `3` | siguen revelando la región entera |
 | `L` | volver al lienzo y borrar lo pintado |
 
@@ -109,6 +110,13 @@ Mientras se pinta se dibuja un **pincel en 3D** sobre la superficie señalada.
 Es un overlay: se proyecta con la cámara del cuadro presentado y se rasteriza
 con su propio z-buffer, pero **no entra en la escena ni en la jerarquía de
 aceleración**, así que no proyecta sombra, no recibe luz y no cuesta un rayo.
+
+En la esquina inferior derecha hay una cápsula persistente `P ABRIR`. Al
+pulsarla o hacerle clic se despliega una paleta fija con Revelar, los cinco
+pigmentos y las seis texturas; `P CERRAR` la pliega. Los clics dentro del
+panel —incluidos sus huecos— se consumen por la interfaz y nunca pintan el
+diorama detrás. La herramienta activa lleva doble borde dorado y las telas se
+ven como miniaturas muestreadas de los assets reales.
 
 Esta es la interacción que se entrega.
 

@@ -38,7 +38,10 @@ use expedition33_continente_inacabado::brush::{BrushMasks, PigmentMasks, Surface
 #[cfg(feature = "artistic-brush")]
 use expedition33_continente_inacabado::brush_gizmo::draw_brush_gizmo;
 #[cfg(feature = "artistic-brush")]
-use expedition33_continente_inacabado::color::Color;
+use expedition33_continente_inacabado::brush_palette::{
+    dibujar_paleta, herramienta_de_tecla, Disposicion, Herramienta, Impacto, Paleta,
+    TECLA_DE_LA_PALETA, TEXTURAS,
+};
 use expedition33_continente_inacabado::framebuffer::Framebuffer;
 #[cfg(feature = "artistic-brush")]
 use expedition33_continente_inacabado::input::pick_artistic;
@@ -144,96 +147,32 @@ const ARTISTIC_MIN_RADIUS_FACTOR: f32 = 1.7;
 #[cfg(feature = "artistic-brush")]
 const BRUSH_OPACITY: f32 = 1.0;
 
-/// Los cinco pigmentos curados, con la tecla que los elige.
+/// Traducción de `minifb::Key` a la tecla que nombra `brush_palette`.
 ///
-/// Los componentes están en **sRGB**, que es como se eligen y se comparan
-/// colores mirando una pantalla. La conversión a lineal ocurre en un solo
-/// sitio —`Herramienta::color`, con `Color::from_srgb`— porque mezclarlos
-/// sin convertir daría una paleta que se ve bien en la tabla y mal en el
-/// diorama.
-///
-/// Son cinco y fijos a propósito: no hay selector libre. Una paleta
-/// pequeña y elegida es una decisión de composición; un `RGB` abierto
-/// traslada esa decisión a quien mueva el ratón.
+/// Es lo único que este archivo sabe de la paleta: qué botón físico
+/// corresponde a qué carácter. Qué hace ese carácter lo decide el módulo, y
+/// es la misma tabla que alimenta la interfaz.
 #[cfg(feature = "artistic-brush")]
-const PIGMENTOS: [(&str, Key, [f32; 3]); 5] = [
-    ("Carmesi", Key::Key4, [0.66, 0.09, 0.15]),
-    ("Oro", Key::Key5, [0.85, 0.65, 0.17]),
-    ("Violeta", Key::Key6, [0.42, 0.24, 0.60]),
-    ("Cian", Key::Key7, [0.18, 0.62, 0.68]),
-    ("Obsidiana", Key::Key8, [0.09, 0.10, 0.13]),
+const TECLAS_DE_LA_PALETA: [(Key, char); 12] = [
+    (Key::Q, 'q'),
+    (Key::Key4, '4'),
+    (Key::Key5, '5'),
+    (Key::Key6, '6'),
+    (Key::Key7, '7'),
+    (Key::Key8, '8'),
+    (Key::Key9, '9'),
+    (Key::Key0, '0'),
+    (Key::Z, 'z'),
+    (Key::X, 'x'),
+    (Key::C, 'c'),
+    (Key::V, 'v'),
 ];
-
-/// Los seis pinceles de textura: nombre, tecla, índice en `scene.textures`
-/// y escala `uv`.
-///
-/// Los índices son los de `scenes::RUTAS_TEXTURAS`, que es el orden en que
-/// `Palette::registrar_con_texturas` las añade a la escena: `0` canvas,
-/// `1` water, `2` wet_basalt, `3` aged_wood, `4` meadow, `5`
-/// pictorial_crystal. Los dos del skybox vienen después y no se ofrecen
-/// como pincel.
-///
-/// Las escalas son las que ya usa cada material en el diorama, así que una
-/// pincelada de basalto tiene el mismo grano que el Rompeolas en vez de uno
-/// elegido aparte.
-///
-/// Aquí no se carga nada: son las texturas que `safe_level_con` ya dejó en
-/// la escena. Si alguna faltara, el arranque habría abortado con su ruta.
-#[cfg(feature = "artistic-brush")]
-const TEXTURAS: [(&str, Key, usize, f32); 6] = [
-    ("Lienzo", Key::Key9, 0, 6.0),
-    ("Pradera", Key::Key0, 4, 4.0),
-    ("Basalto", Key::Z, 2, 3.0),
-    ("Madera", Key::X, 3, 1.0),
-    ("Cristal", Key::C, 5, 1.5),
-    ("Agua", Key::V, 1, 2.0),
-];
-
-/// Qué hace el botón izquierdo.
-///
-/// Las tres clases comparten geometría —la misma `SurfaceKey`, la misma
-/// `uv`, el mismo criterio de continuidad— y se diferencian solo en sobre
-/// qué capa escriben y con qué.
-#[cfg(feature = "artistic-brush")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Herramienta {
-    /// Descubre el material final donde se arrastra.
-    Revelar,
-    /// Pinta un color plano encima. El índice es una entrada de `PIGMENTOS`.
-    Pigmento(usize),
-    /// Estampa una tela. El índice es una entrada de `TEXTURAS`.
-    Textura(usize),
-}
-
-#[cfg(feature = "artistic-brush")]
-impl Herramienta {
-    /// Nombre para la consola.
-    fn nombre(self) -> &'static str {
-        match self {
-            Herramienta::Revelar => "revelar",
-            Herramienta::Pigmento(i) => PIGMENTOS[i].0,
-            Herramienta::Textura(i) => TEXTURAS[i].0,
-        }
-    }
-}
-
-/// Color lineal de un pigmento de la paleta.
-///
-/// El **único** punto donde la paleta cruza de sRGB a lineal.
-#[cfg(feature = "artistic-brush")]
-fn color_de_pigmento(i: usize) -> Color {
-    let [r, g, b] = PIGMENTOS[i].2;
-
-    Color::from_srgb(r, g, b)
-}
 
 /// Índice de `aged_wood` en `scene.textures`, para el mango del pincel
 /// visual.
 ///
 /// Es la madera del pecio: la herramienta está hecha del mismo material que
-/// el naufragio que flota en Aguas Voladoras. Sale del mismo orden que
-/// documenta `TEXTURAS`, y se nombra aparte porque aquí no es una tela que
-/// se pueda elegir sino una pieza del gizmo.
+/// el naufragio que flota en Aguas Voladoras.
 #[cfg(feature = "artistic-brush")]
 const TEXTURA_DEL_MANGO: usize = 3;
 
@@ -258,12 +197,16 @@ const CERDAS_DE_RESERVA: u32 = 0x00D8D2C4;
 fn cerdas_de(herramienta: Herramienta, scene: &Scene, uv: &Vec2) -> u32 {
     match herramienta {
         Herramienta::Revelar => CERDAS_AL_REVELAR,
-        Herramienta::Pigmento(i) => color_de_pigmento(i).to_hex(),
+        Herramienta::Pigmento(i) => expedition33_continente_inacabado::brush_palette::PIGMENTOS[i]
+            .color()
+            .to_hex(),
         Herramienta::Textura(i) => {
-            let (_, _, indice, escala) = TEXTURAS[i];
+            let tela = &TEXTURAS[i];
 
-            match scene.textures.get(indice) {
-                Some(tela) => tela.sample(uv.x * escala, uv.y * escala).to_hex(),
+            match scene.textures.get(tela.indice) {
+                Some(textura) => textura
+                    .sample(uv.x * tela.escala, uv.y * tela.escala)
+                    .to_hex(),
                 None => CERDAS_DE_RESERVA,
             }
         }
@@ -469,15 +412,22 @@ fn main() -> ExitCode {
 
         println!("  9 / 0 / Z / X / C / V  pincel de textura");
 
-        let paleta: Vec<&str> = PIGMENTOS.iter().map(|(nombre, _, _)| *nombre).collect();
+        let paleta: Vec<&str> = expedition33_continente_inacabado::brush_palette::PIGMENTOS
+            .iter()
+            .map(|p| p.nombre)
+            .collect();
         println!("  paleta   {}", paleta.join(", "));
 
         let telas: Vec<String> = TEXTURAS
             .iter()
-            .map(|(nombre, _, _, escala)| format!("{nombre} x{escala:.1}"))
+            .map(|tela| format!("{} x{:.1}", tela.nombre, tela.escala))
             .collect();
         println!("  telas    {}", telas.join(", "));
         println!("  M / N    engordar / afinar el pincel");
+        println!(
+            "  {}        abrir y plegar la paleta     clic en la capsula abajo a la derecha",
+            TECLA_DE_LA_PALETA.to_ascii_uppercase()
+        );
         println!("           pincel visual al pintar: se apoya en la superficie senalada");
         println!(
             "  pincel   mascara {BRUSH_RESOLUTION} x {BRUSH_RESOLUTION} por superficie, radio {:.3} de mundo",
@@ -508,6 +458,12 @@ fn main() -> ExitCode {
     #[cfg(not(feature = "artistic-brush"))]
     let mut boton_anterior = false;
 
+    // El flanco del botón, para que un clic sobre la interfaz cuente una
+    // vez. Al pintar no hace falta —sostener **es** la interacción— pero la
+    // paleta sí necesita distinguir pulsar de mantener.
+    #[cfg(feature = "artistic-brush")]
+    let mut boton_anterior_artistico = false;
+
     // Una máscara por superficie pintada, para todo el ciclo. Se presta al
     // renderer por referencia: no se construye ni se clona nada por cuadro.
     #[cfg(feature = "artistic-brush")]
@@ -530,7 +486,16 @@ fn main() -> ExitCode {
     // Qué hace el botón izquierdo. Arranca revelando, que es la herramienta
     // que la demostración necesita si nadie toca nada.
     #[cfg(feature = "artistic-brush")]
-    let mut herramienta = Herramienta::Revelar;
+    let mut paleta = Paleta::default();
+
+    // Qué telas tienen su asset cargado. Se calcula una vez: la escena no
+    // cambia, y una celda que no se puede elegir tiene que verse así desde
+    // el primer cuadro.
+    #[cfg(feature = "artistic-brush")]
+    let telas_disponibles: Vec<bool> = TEXTURAS
+        .iter()
+        .map(|tela| scene.textures.get(tela.indice).is_some())
+        .collect();
 
     // Grosor vigente del pincel, en unidades de **mundo**. Alimenta las
     // tres herramientas, para que cambiar de tela no cambie el trazo, y se
@@ -671,6 +636,12 @@ fn main() -> ExitCode {
             }
         }
 
+        // ¿Cambió la interfaz este cuadro? Si sí, hay que volver a trazar
+        // aunque nada más se mueva: la paleta se dibuja **encima** del
+        // framebuffer, y `FramePlan::Reuse` la dejaría congelada.
+        #[cfg(feature = "artistic-brush")]
+        let mut paleta_cambio = false;
+
         // ------------------------------------------------ elegir herramienta
         //
         // Fuera de `input::demo_action` a propósito: esa lista es la del
@@ -681,19 +652,12 @@ fn main() -> ExitCode {
         {
             let mut elegida = None;
 
-            if window.is_key_pressed(Key::Q, KeyRepeat::No) {
-                elegida = Some(Herramienta::Revelar);
-            }
-
-            for (i, (_, tecla, _)) in PIGMENTOS.iter().enumerate() {
-                if window.is_key_pressed(*tecla, KeyRepeat::No) {
-                    elegida = Some(Herramienta::Pigmento(i));
-                }
-            }
-
-            for (i, (_, tecla, _, _)) in TEXTURAS.iter().enumerate() {
-                if window.is_key_pressed(*tecla, KeyRepeat::No) {
-                    elegida = Some(Herramienta::Textura(i));
+            // Una sola traducción: de `minifb::Key` a `char`, y de ahí a
+            // `brush_palette`. La tabla que dice qué hace cada tecla es la
+            // misma que dibuja la interfaz.
+            for (tecla, caracter) in TECLAS_DE_LA_PALETA {
+                if window.is_key_pressed(tecla, KeyRepeat::No) {
+                    elegida = herramienta_de_tecla(caracter);
                 }
             }
 
@@ -702,25 +666,39 @@ fn main() -> ExitCode {
             // por cuadro durante un arrastre llenaría la consola de la misma
             // línea, y esto se sabe una sola vez.
             if let Some(Herramienta::Textura(i)) = elegida {
-                let (nombre, _, indice, _) = TEXTURAS[i];
-
-                if scene.textures.get(indice).is_none() {
-                    eprintln!("  aviso: la textura {nombre} no esta cargada (indice {indice})");
+                if !telas_disponibles[i] {
+                    eprintln!(
+                        "  aviso: la textura {} no esta cargada (indice {})",
+                        TEXTURAS[i].nombre, TEXTURAS[i].indice
+                    );
                     elegida = None;
                 }
             }
 
             if let Some(nueva) = elegida {
-                if nueva != herramienta {
-                    herramienta = nueva;
-
+                if paleta.elegir(nueva) {
                     // Cambiar de herramienta corta el trazo: sin esto, un
                     // arrastre iniciado revelando seguiría como una línea
                     // de color desde el punto donde se pulsó la tecla.
                     trazo = None;
 
-                    println!("  herramienta: {}", herramienta.nombre());
+                    println!("  herramienta: {}", nueva.nombre());
                 }
+            }
+
+            // `P` pliega y despliega el panel.
+            if window.is_key_pressed(Key::P, KeyRepeat::No) {
+                paleta.alternar();
+                paleta_cambio = true;
+
+                println!(
+                    "  paleta: {}",
+                    if paleta.abierta() {
+                        "abierta"
+                    } else {
+                        "plegada"
+                    }
+                );
             }
         }
 
@@ -768,6 +746,76 @@ fn main() -> ExitCode {
         #[cfg(feature = "artistic-brush")]
         let mut pincel_cambio = false;
 
+        // La disposición de este cuadro. Se recalcula siempre porque es
+        // barato y porque el estado de plegado puede haber cambiado.
+        #[cfg(feature = "artistic-brush")]
+        let disposicion =
+            Disposicion::calcular(paleta.abierta(), WIDTH, HEIGHT, &telas_disponibles);
+
+        // ------------------------------------------------ la interfaz primero
+        //
+        // Un clic sobre la paleta **se consume** y no llega nunca a
+        // `pick_artistic`: pulsar un color no puede además pintar un trazo
+        // en el diorama que hay detrás del panel.
+        #[cfg(feature = "artistic-brush")]
+        let mut clic_consumido = false;
+
+        #[cfg(feature = "artistic-brush")]
+        {
+            let clic = boton && !boton_anterior_artistico;
+            boton_anterior_artistico = boton;
+
+            if clic {
+                if let Some(cursor) = window.get_mouse_pos(MouseMode::Discard) {
+                    match disposicion.impacto(cursor) {
+                        Impacto::Capsula => {
+                            paleta.alternar();
+                            paleta_cambio = true;
+                            clic_consumido = true;
+                            trazo = None;
+
+                            println!(
+                                "  paleta: {}",
+                                if paleta.abierta() {
+                                    "abierta"
+                                } else {
+                                    "plegada"
+                                }
+                            );
+                        }
+                        Impacto::Celda(i) => {
+                            // Todo el panel consume, incluidos sus huecos.
+                            clic_consumido = true;
+
+                            if let Some(celda) = disposicion.celdas.get(i) {
+                                if celda.activable && paleta.elegir(celda.herramienta) {
+                                    // Igual que por teclado: cambiar de
+                                    // herramienta corta el trazo.
+                                    trazo = None;
+                                    paleta_cambio = true;
+
+                                    println!("  herramienta: {}", celda.herramienta.nombre());
+                                } else if !celda.activable {
+                                    eprintln!(
+                                        "  aviso: la textura {} no esta cargada",
+                                        celda.herramienta.nombre()
+                                    );
+                                }
+                            }
+                        }
+                        Impacto::Fuera => {}
+                    }
+                }
+            }
+
+            // Un clic que abrió o plegó el panel no pinta **en ese mismo
+            // cuadro**: sería pintar donde el usuario solo quería tocar la
+            // interfaz.
+            if paleta_cambio {
+                clic_consumido = true;
+            }
+        }
+
         // El pincel visual de **este** cuadro: dónde apoyarlo, hacia dónde y
         // de qué color. Nace vacío en cada vuelta, así que soltar el botón lo
         // hace desaparecer sin que nadie tenga que borrarlo.
@@ -776,10 +824,16 @@ fn main() -> ExitCode {
 
         #[cfg(feature = "artistic-brush")]
         {
-            let objetivo = if boton {
-                window
-                    .get_mouse_pos(MouseMode::Discard)
-                    .and_then(|cursor| pick_artistic(&scene, &accel, &presentado, cursor))
+            let objetivo = if boton && !clic_consumido {
+                window.get_mouse_pos(MouseMode::Discard).and_then(|cursor| {
+                    match disposicion.impacto(cursor) {
+                        // Arrastrar por encima del panel tampoco pinta: el
+                        // panel tapa lo que hay detrás, y pintar a ciegas
+                        // ahí sería una sorpresa.
+                        Impacto::Fuera => pick_artistic(&scene, &accel, &presentado, cursor),
+                        _ => None,
+                    }
+                })
             } else {
                 None
             };
@@ -815,7 +869,7 @@ fn main() -> ExitCode {
                         _ => None,
                     };
 
-                    match herramienta {
+                    match paleta.herramienta() {
                         // Revelado, igual que antes de que hubiera paleta.
                         Herramienta::Revelar => match desde {
                             Some((au, av)) => masks.stroke_ellipse(
@@ -836,7 +890,9 @@ fn main() -> ExitCode {
                         // aplica el color elegido, y las medias tintas salen
                         // de pasar por encima de otro pigmento.
                         Herramienta::Pigmento(i) => {
-                            let color = color_de_pigmento(i);
+                            let color = expedition33_continente_inacabado::brush_palette::PIGMENTOS
+                                [i]
+                                .color();
 
                             match desde {
                                 Some((au, av)) => pigmentos.stroke_ellipse(
@@ -851,7 +907,7 @@ fn main() -> ExitCode {
                         // indexar aquí convertiría un asset ausente en un
                         // panic a mitad de un arrastre.
                         Herramienta::Textura(i) => {
-                            let (_, _, indice, escala) = TEXTURAS[i];
+                            let (indice, escala) = (TEXTURAS[i].indice, TEXTURAS[i].escala);
 
                             if let Some(tela) = scene.textures.get(indice) {
                                 match desde {
@@ -872,7 +928,7 @@ fn main() -> ExitCode {
                     gizmo = Some((
                         objetivo.point,
                         objetivo.normal,
-                        cerdas_de(herramienta, &scene, &objetivo.uv),
+                        cerdas_de(paleta.herramienta(), &scene, &objetivo.uv),
                     ));
 
                     trazo = Some((clave, u, v));
@@ -975,6 +1031,14 @@ fn main() -> ExitCode {
             cuadro_final_pendiente = true;
         }
 
+        // La interfaz cambió: hay que volver a trazar para que el panel
+        // aparezca o desaparezca. Sin esto, `FramePlan::Reuse` presentaría
+        // otra vez el framebuffer anterior con la paleta congelada.
+        #[cfg(feature = "artistic-brush")]
+        if paleta_cambio {
+            cuadro_final_pendiente = true;
+        }
+
         // La decisión vive en `renderer::plan_frame`, con su tabla probada.
         match plan_frame(sostenido, cuadro_final_pendiente) {
             FramePlan::Interactive => {
@@ -1020,6 +1084,10 @@ fn main() -> ExitCode {
             }
 
             gizmo_anterior = gizmo.is_some();
+
+            // La paleta va la **última**: es interfaz, y tiene que leerse
+            // por encima del diorama y del propio pincel.
+            dibujar_paleta(&mut framebuffer, &disposicion, &paleta, &scene.textures);
         }
 
         // `update_with_buffer` va siempre, también cuando no se dibujó: es

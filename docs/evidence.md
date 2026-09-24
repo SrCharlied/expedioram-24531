@@ -3494,6 +3494,32 @@ evidencia histórica.
 
 ---
 
+## Evidencia PNG — Hito 10, paleta del pincel
+
+La interfaz aprobada mantiene una cápsula persistente abajo a la derecha:
+`P ABRIR` cuando está plegada y `P CERRAR` cuando el panel fijo está abierto.
+La paleta contiene Revelar, cinco pigmentos y seis miniaturas de textura real;
+la muestra activa lleva doble borde dorado. Sus clics se consumen antes de
+`pick_artistic`, por lo que no pintan el diorama que queda detrás del panel.
+
+```bash
+cargo test -- brush_palette framebuffer
+cargo run --release --example brush_palette_preview -- evidence/hito10_palette
+sha256sum evidence/hito10_palette/*.png
+```
+
+| Archivo | Estado | SHA-256 |
+|---|---|---|
+| `palette-collapsed.png` | Cápsula `P ABRIR` sobre el diorama revelado | `498df69f84fcb7864aeb402e2ce7583696ae2485784b79f72f6dd1555665fcc5` |
+| `palette-open.png` | Panel abierto: 12 celdas, Cian activo y seis texturas disponibles | `8c459c2bc1477faf90c4b91c58a39b3ef3ab500a55e7936647a0833ce44ce2c4` |
+
+Los dos PNG son RGB `800 × 600`, Ruta A `hex-prism`, toma hero y 154
+primitivas. Se generaron con `examples/brush_palette_preview.rs` sobre el
+diorama real revelado y no sustituyen Hito 9. La dirección visual fue aprobada
+por Charlie; la prueba manual de entrada queda a cargo suyo.
+
+---
+
 ## Pendientes tras esta revisión
 
 | Hito | Qué | Estado |
@@ -3501,5 +3527,6 @@ evidencia histórica.
 | — | Decisión de entrega sobre `artistic-brush` | **Promovida** — feature por defecto junto a `hex-prism` |
 | — | Revisión visual del pincel 3D y de la paleta | **Aprobada** — queda separada de la decisión de entrega |
 | — | Evidencia PNG de la escena de `154` | **Registrada** — `evidence/hito9_artistic/`, cuatro PNG con hashes |
+| — | Paleta visual plegable `P` | **Aprobada y registrada** — `evidence/hito10_palette/` |
 | — | Regenerar el blueprint SVG sin `G-04` | **Abierta** — hoy sigue mostrando la paleta |
 | — | Gates de rendimiento del Hito 7 recalculados sobre `154` | **Abierto** — los registrados arriba son de `160` |
