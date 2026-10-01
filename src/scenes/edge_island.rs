@@ -25,6 +25,10 @@
 //!    enterrada en la isla, otra bajo la meseta de Praderas— se retiran, y
 //!    sobre la isla entra una escalera de dieciséis prismas que crece hacia
 //!    el Rompeolas original y se queda a `0.40` de él.
+//! 7. **Praderas.** Sus 37 piezas se reescriben con la composición aprobada
+//!    en su preview de fidelidad, dentro del territorio que les dejó el
+//!    reparto. Vive en `meadows_delivery`; la entrega sin este paso es
+//!    `delivery_level_previo_con`, y se conserva como línea base.
 //!
 //! # El presupuesto
 //!
@@ -38,7 +42,7 @@
 //! región, la losa, la isla—, así que si el nivel seguro cambiara, la
 //! entrega se recolocaría con él en vez de quedarse descuadrada.
 
-use super::{nivel_con, Density, Presupuesto, WaterPreset, Xorshift32, SAFE};
+use super::{meadows_delivery, nivel_con, Density, Presupuesto, WaterPreset, Xorshift32, SAFE};
 use crate::accel::{ClusterPlan, SceneAccel};
 use crate::bounds::Aabb;
 use crate::cuboid::Cuboid;
@@ -185,9 +189,40 @@ pub fn delivery_level(water: WaterPreset) -> Blockout {
 /// `InteriorVisible` el volumen se retira **al final**, así que los tres
 /// presets comparten geometría y sólo difieren en él, como en el nivel
 /// seguro.
+///
+/// Praderas lleva la composición aprobada en `meadows_delivery`: las mismas
+/// 37 piezas, en su territorio, reescritas sobre el reparto de esta
+/// composición. Lo ajeno a Praderas es idéntico a `delivery_level_previo_con`.
 pub fn delivery_level_con(
     water: WaterPreset,
     raiz_assets: Option<&Path>,
+) -> Result<Blockout, TextureError> {
+    entrega_con(water, raiz_assets, true)
+}
+
+/// La entrega **anterior** a la promoción de Praderas, sin texturas.
+pub fn delivery_level_previo(water: WaterPreset) -> Blockout {
+    delivery_level_previo_con(water, None).expect("sin assets no hay error posible")
+}
+
+/// La entrega **anterior** a la promoción de Praderas: la isla de borde con
+/// las 37 piezas del nivel seguro trasladadas en bloque.
+///
+/// No es lo que se presenta. Se conserva como línea base: es la escena sobre
+/// la que se aprobó el preview de Praderas
+/// (`examples/meadows_fidelity_preview.rs`) y contra la que se comprueba que
+/// la promoción no toca nada fuera de Praderas.
+pub fn delivery_level_previo_con(
+    water: WaterPreset,
+    raiz_assets: Option<&Path>,
+) -> Result<Blockout, TextureError> {
+    entrega_con(water, raiz_assets, false)
+}
+
+fn entrega_con(
+    water: WaterPreset,
+    raiz_assets: Option<&Path>,
+    praderas_aprobadas: bool,
 ) -> Result<Blockout, TextureError> {
     let medida = match water {
         WaterPreset::InteriorVisible => WaterPreset::RefractiveWater,
@@ -196,6 +231,14 @@ pub fn delivery_level_con(
 
     let seguro = nivel_con(medida, Density::Safe, raiz_assets)?;
     let mut entrega = componer(seguro);
+
+    // Antes de medir: la escala y la jerarquía se toman sobre la geometría
+    // final. Praderas no sale de su territorio, así que el radio medido no
+    // cambia, y lo comprueba un test.
+    if praderas_aprobadas {
+        let ancla = entrega.anchors.meadows_anchor;
+        meadows_delivery::aplicar(&mut entrega.scene, ancla);
+    }
 
     if water == WaterPreset::InteriorVisible {
         let volumen = volumen_de_agua(&entrega.scene.objects);
@@ -977,7 +1020,7 @@ mod tests {
     use crate::scene_builder::{
         derive_orbit_radius, eye_at_yaw, measure_scene_radius, Blockout, HERO_YAW_DEGREES,
     };
-    use crate::scenes::{safe_level, WaterPreset, SAFE};
+    use crate::scenes::{delivery_level_previo, safe_level, WaterPreset, SAFE};
 
     /// Tolerancia de las comparaciones geométricas.
     const EPS: f32 = 1.0e-4;
@@ -1213,7 +1256,17 @@ mod tests {
 
         // Praderas y Aguas: la misma region, entera, en otro sitio. Cada
         // pieza conserva su tamano y todas comparten un solo vector.
-        for grupo in [SpatialGroupId::Meadows, SpatialGroupId::FlyingWaters] {
+        //
+        // Praderas se mide sobre la composicion **previa** a su promocion:
+        // el reparto la traslada en bloque y despues `meadows_delivery`
+        // reescribe sus 37 piezas dentro de ese mismo territorio, que es lo
+        // que comprueban sus propios tests.
+        let previo = delivery_level_previo(WaterPreset::RefractiveWater);
+
+        for (grupo, nivel) in [
+            (SpatialGroupId::Meadows, &previo),
+            (SpatialGroupId::FlyingWaters, &nivel),
+        ] {
             let antes = indices(&clasico.scene, grupo);
             let ahora = indices(&nivel.scene, grupo);
 

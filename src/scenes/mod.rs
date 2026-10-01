@@ -17,14 +17,21 @@
 //! primitivas, `154 - 2 + 16`. Vive en `edge_island` y se obtiene con
 //! `delivery_level_con`. El nivel seguro de `154` se conserva sin cambios
 //! como línea base de las mediciones de los hitos 3 a 7.
+//!
+//! Praderas, en la entrega, lleva la composición aprobada en su preview de
+//! fidelidad (`meadows_delivery`). La entrega sin ella sigue disponible como
+//! `delivery_level_previo_con`: es la base sobre la que se aprobó.
 
 pub mod breakwater;
 pub mod continent;
 pub mod edge_island;
 pub mod flying_waters;
 pub mod meadows;
+pub mod meadows_delivery;
 
-pub use edge_island::{delivery_level, delivery_level_con, DELIVERY};
+pub use edge_island::{
+    delivery_level, delivery_level_con, delivery_level_previo, delivery_level_previo_con, DELIVERY,
+};
 
 use crate::accel::{ClusterPlan, SceneAccel};
 use crate::color::Color;

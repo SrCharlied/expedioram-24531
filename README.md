@@ -48,6 +48,13 @@ aprobada mirando los renders del preview de fidelidad del Rompeolas:
 - Sobre la isla, una **segunda formación** de dieciséis prismas en cuatro
   bandas (`6/5/3/2`): pequeña y baja en el extremo libre, gruesa y alta hacia
   el Rompeolas original, a `0.40` de él sin tocarlo.
+- **Praderas** lleva la composición aprobada en su preview de fidelidad
+  (`refined_water_polish`): las mismas 37 piezas, dentro de su territorio,
+  reescritas como meseta flotante de terrazas asimétricas, frente oscuro,
+  tapiz procedural verde y magenta, dos árboles a los flancos y **seis
+  caídas de agua** refractiva (`0.9 / 0.9`, `ior 1.333`) con brillo propio.
+  Vive en `src/scenes/meadows_delivery.rs`; materiales y texturas son
+  nuevos y solo de Praderas.
 
 | | Primitivas |
 |---|---:|
@@ -61,6 +68,20 @@ formación. El nivel seguro de `154` se conserva sin cambios: sobre él se
 midieron los gates de los hitos 3 a 7 y con él se siguen reproduciendo. La
 composición vive en `src/scenes/edge_island.rs` y se construye encima del
 nivel seguro, midiendo cada paso contra algo ya medido.
+
+La promoción de Praderas no cambia el conteo ni nada ajeno a ella: la
+entrega anterior sigue disponible como `delivery_level_previo_con`, y un test
+exige que todo lo que no es Praderas —geometría, materiales compartidos,
+anclas, escala, cámaras, luces y jerarquía— sea idéntico byte a byte. Para
+volver a ver la comparación con la que se aprobó:
+
+```bash
+cargo run --release --example meadows_fidelity_preview -- <carpeta>
+```
+
+Escribe en `<carpeta>` la entrega previa y las tres variantes del preview, en
+hero y en cenital a `78°`. La variante `refined_water_polish` es,
+comprobado por test con los assets reales, la escena que abre la entrega.
 
 ## Controles
 
@@ -297,9 +318,9 @@ silencioso a colores planos.
 cargo fmt -- --check
 cargo clippy --all-targets -- -D warnings
 cargo clippy --all-targets --no-default-features --features artistic-brush -- -D warnings
-cargo test                      # 615 tests: Ruta A + pincel
-cargo test --no-default-features --features artistic-brush # 595 tests: Ruta B + pincel
-cargo test --no-default-features # 563 tests: Ruta B clásica
+cargo test                      # 623 tests: Ruta A + pincel
+cargo test --no-default-features --features artistic-brush # 603 tests: Ruta B + pincel
+cargo test --no-default-features # 571 tests: Ruta B clásica
 cargo build --release
 ```
 
@@ -314,8 +335,8 @@ revelación están fijados así.
 
 `evidence/hito8/` contiene los ocho PNG de la entrega del Hito 8: cinco
 estados de revelación acumulativos y tres ángulos de órbita. Muestran la
-escena de **`154`**, anterior a la isla de borde, y se conservan como
-evidencia histórica. `docs/evidence.md` registra cada hito con sus
+escena de **`154`**, anterior a la isla de borde y a la promoción de
+Praderas, y se conservan como evidencia histórica. `docs/evidence.md` registra cada hito con sus
 mediciones, sus hashes y su procedencia, incluida la promoción de la isla de
 borde.
 
@@ -410,7 +431,8 @@ src/
 ├── input.rs           picking contra el cuadro presentado
 ├── camera.rs          órbita, zoom y generación de rayos
 ├── skybox.rs          panoramas equirectangulares
-├── scenes/            el diorama por regiones; edge_island.rs, la entrega
+├── scenes/            el diorama por regiones; edge_island.rs, la entrega;
+│                      meadows_delivery.rs, la Praderas de la entrega
 └── bin/
     ├── render_scene.rs     render headless a PNG
     └── generate_assets.rs  generador determinista de texturas
