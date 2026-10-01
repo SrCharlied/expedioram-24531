@@ -1669,6 +1669,7 @@ Confirmar:
 ## Integración
 
 - Presupuesto safe exactamente `154`.
+- Presupuesto de la entrega exactamente `168` = `154 − 2 + 16`, región por región.
 - Render `32 × 24` sin NaN.
 - PNG headless válido.
 - Preset sin A-01 expone y mide el interior de Aguas (`153` trazables).
@@ -1688,6 +1689,20 @@ Praderas     37
 Rompeolas    38
 Aguas        58
 Total       154
+```
+
+## Entrega — isla de borde
+
+La escena que se presenta desde el 29 de septiembre de 2026. Se construye
+sobre el nivel seguro, que no cambia; ver `src/scenes/edge_island.rs` y el
+inventario, §12.
+
+```text
+Global       19   (−2 masas de G-02)
+Praderas     37
+Rompeolas    54   (+16 prismas de la segunda formación)
+Aguas        58
+Total       168
 ```
 
 ## Nivel objetivo — condicionado por medición
@@ -1773,6 +1788,7 @@ El proyecto está terminado cuando:
 - [ ] Aguas Voladoras es legible y protagonista.
 - [ ] Monolito se activa al final.
 - [ ] Nivel safe respeta 154 primitivas.
+- [ ] La entrega respeta 168 primitivas y su cambio de presupuesto está documentado.
 - [ ] Rendimiento está medido, no supuesto.
 - [ ] El progreso de revelación vive solo en `RevealState`; `SceneObject` es inmutable.
 - [ ] `reveal_duration` se derivó de `interactive_frame_time` medido y quedó registrada.

@@ -27,7 +27,7 @@ use expedition33_continente_inacabado::scene::RevealGroup;
 use expedition33_continente_inacabado::scene::{cubo_de_prueba, Scene};
 use expedition33_continente_inacabado::scene_builder::{SceneScale, HERO_YAW_DEGREES};
 use expedition33_continente_inacabado::scenes::continent::blockout;
-use expedition33_continente_inacabado::scenes::{safe_level_con, WaterPreset};
+use expedition33_continente_inacabado::scenes::{delivery_level_con, safe_level_con, WaterPreset};
 
 const USO: &str = "\
 Render sin ventana del Continente Inacabado.
@@ -54,6 +54,11 @@ Render sin ventana del Continente Inacabado.
 Sin --reveal ni --paint se pinta todo (equivale a --reveal 1).
 
 Presets disponibles:
+  delivery-refractive-water  la entrega: isla de borde sobre el nivel
+                          seguro, 168 primitivas (154 - 2 + 16), con el
+                          volumen de agua real. Es lo que se presenta.
+  delivery-interior-visible  la entrega sin el volumen de agua (167).
+  delivery-opaque-water   la entrega con los techos opticos en cero (168).
   safe-refractive-water   nivel seguro con el volumen de agua real (160
                           primitivas): 0.9/0.9, ior 1.333. Es el preset
                           canonico desde la Tarea 5.4 y el que se presenta.
@@ -337,6 +342,31 @@ fn preset(
             let raiz = std::path::PathBuf::from(".");
             let nivel =
                 safe_level_con(water, if texturas { Some(&raiz) } else { None }).map_err(|e| {
+                    format!(
+                        "{e}
+  genera los assets con: cargo run --release --bin generate_assets"
+                    )
+                })?;
+            let grados_yaw = yaw.unwrap_or(HERO_YAW_DEGREES);
+            let camera = match elevation {
+                Some(elev) => nivel.camera_at(grados_yaw, elev),
+                None => nivel.camera_at_yaw(grados_yaw),
+            };
+            let escala = nivel.scale;
+            let lights = luces_del_diorama(&nivel.anchors, &nivel.scale);
+
+            Ok((nivel.scene, nivel.accel, lights, camera, Some(escala)))
+        }
+        "delivery-refractive-water" | "delivery-interior-visible" | "delivery-opaque-water" => {
+            let water = match nombre {
+                "delivery-refractive-water" => WaterPreset::RefractiveWater,
+                "delivery-opaque-water" => WaterPreset::OpaqueWater,
+                _ => WaterPreset::InteriorVisible,
+            };
+
+            let raiz = std::path::PathBuf::from(".");
+            let nivel = delivery_level_con(water, if texturas { Some(&raiz) } else { None })
+                .map_err(|e| {
                     format!(
                         "{e}
   genera los assets con: cargo run --release --bin generate_assets"

@@ -57,7 +57,7 @@ use expedition33_continente_inacabado::renderer::{
 use expedition33_continente_inacabado::reveal::{reveal_duration, reveal_speed, RevealState};
 #[cfg(feature = "artistic-brush")]
 use expedition33_continente_inacabado::scene::Scene;
-use expedition33_continente_inacabado::scenes::{safe_level_con, WaterPreset};
+use expedition33_continente_inacabado::scenes::{delivery_level_con, WaterPreset};
 #[cfg(feature = "artistic-brush")]
 use nalgebra_glm::{Vec2, Vec3};
 
@@ -234,16 +234,18 @@ fn main() -> ExitCode {
     )
     .unwrap();
 
-    // Nivel seguro con el volumen de agua **refractivo**, que es el preset
-    // canónico desde la Tarea 5.4: 154 primitivas, techos `0.9 / 0.9` e
-    // `ior 1.333`. Los rayos cruzan la superficie y alcanzan las 44
-    // primitivas del interior —barco, mástil, cadena, ancla, kelp y rocas—.
+    // La entrega: la composición de isla de borde sobre el nivel seguro,
+    // `168` primitivas (`154 - 2 + 16`), con el volumen de agua
+    // **refractivo**, que es el preset canónico desde la Tarea 5.4: techos
+    // `0.9 / 0.9` e `ior 1.333`. Los rayos cruzan la superficie y alcanzan
+    // las 44 primitivas del interior —barco, mástil, cadena, ancla, kelp y
+    // rocas—.
     //
     // Las texturas se cargan desde la raíz del proyecto. Si falta alguna,
     // se aborta con su ruta en vez de arrancar con colores planos que nadie
     // distinguiría de un material mal ajustado.
     let raiz = PathBuf::from(".");
-    let diorama = match safe_level_con(WaterPreset::RefractiveWater, Some(&raiz)) {
+    let diorama = match delivery_level_con(WaterPreset::RefractiveWater, Some(&raiz)) {
         Ok(diorama) => diorama,
         Err(e) => {
             eprintln!("error: {e}");

@@ -67,6 +67,8 @@ Debe comunicar color, altura y conexión con el Monolito mediante una implementa
 Versión mínima que debe verse terminada:
 
 - 154 primitivas trazables. Fueron 160 hasta que se retiró `G-04`.
+- La **entrega** es la composición de isla de borde construida sobre este
+  nivel: `168` primitivas, `154 − 2 + 16`. Ver §12.
 - Tres regiones legibles.
 - Aguas Voladoras completa en composición básica.
 - Materiales diferenciados.
@@ -1075,6 +1077,40 @@ Los conteos vigentes del nivel construido, que es lo que fijan los tests:
 Fueron `160` / `162` hasta la retirada de `G-04`. La evidencia anterior a esa
 fecha usa aquellas cifras y describe la escena de entonces.
 
+## Entrega — isla de borde (29 de septiembre de 2026)
+
+Lo que se presenta es la composición de isla de borde, construida **encima**
+del nivel seguro en `src/scenes/edge_island.rs`. Cambia el presupuesto de dos
+entradas, con autorización explícita y **solo** para la segunda formación del
+Rompeolas:
+
+| Grupo | Nivel seguro | Cambio | Entrega |
+|---|---:|---:|---:|
+| Global | 21 | `−2` masas de `G-02` | 19 |
+| Praderas Primaverales | 37 | | 37 |
+| Acantilado Rompeolas | 38 | `+16` prismas de la segunda formación | 54 |
+| Aguas Voladoras | 58 | | 58 |
+| **Total** | **154** | | **168** |
+
+- **`G-02` baja de 10 a 8.** Las dos masas que salen son las que nadie veía
+  desde arriba: una quedaba dentro de la isla larga y la otra bajo la meseta
+  de Praderas. De las ocho restantes, una es la losa del Rompeolas, otra la
+  isla larga del oeste y otra la terraza de transición entre las dos.
+- **El Rompeolas sube de 38 a 54.** `R-01`, `R-02` y `R-03` siguen intactos;
+  los dieciséis prismas son una entrada nueva, la **segunda formación**, sobre
+  la isla: bandas `6/5/3/2` que crecen en grosor y altura hacia el Rompeolas
+  original, a un claro de `0.40`. Toman material y grupo de revelación de
+  `R-01`, y son `HexPrism` en la Ruta A y cuboides en la B.
+
+| Preset de la entrega | Primitivas |
+|---|---:|
+| `delivery-refractive-water` | **168** |
+| `delivery-opaque-water` | 168 |
+| `delivery-interior-visible` | 167 |
+
+El nivel seguro de `154` y el candidato de `156` se conservan sin cambios como
+línea base de las mediciones.
+
 A `800 × 600`, sin aceleración:
 
 ```text
@@ -1136,7 +1172,7 @@ SpatialCluster {
 }
 ```
 
-Una entrada hero compacta produce normalmente un `SpatialCluster`. Un generador puede producir varios cuando su distribución es larga, curva o dispersa; R-01 produce obligatoriamente cuatro. La travesía es:
+Una entrada hero compacta produce normalmente un `SpatialCluster`. Un generador puede producir varios cuando su distribución es larga, curva o dispersa; R-01 produce obligatoriamente cuatro en el nivel seguro. En la entrega el Rompeolas se parte en dos: el original sobre su losa y la segunda formación sobre la isla, porque entre ellos está el aire. La travesía es:
 
 1. Probar `scene_bounds`.
 2. Calcular `t_enter` para los bounds de cada región alcanzada.

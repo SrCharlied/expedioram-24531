@@ -9,11 +9,22 @@
 //!
 //! Fueron `160` hasta que se retiró `G-04`, la paleta y el pincel de
 //! cristal: seis primitivas de decoración que no se podían usar.
+//!
+//! # La entrega
+//!
+//! Lo que se presenta ya no es el nivel seguro tal cual, sino la
+//! composición de **isla de borde** construida encima de él: `168`
+//! primitivas, `154 - 2 + 16`. Vive en `edge_island` y se obtiene con
+//! `delivery_level_con`. El nivel seguro de `154` se conserva sin cambios
+//! como línea base de las mediciones de los hitos 3 a 7.
 
 pub mod breakwater;
 pub mod continent;
+pub mod edge_island;
 pub mod flying_waters;
 pub mod meadows;
+
+pub use edge_island::{delivery_level, delivery_level_con, DELIVERY};
 
 use crate::accel::{ClusterPlan, SceneAccel};
 use crate::color::Color;

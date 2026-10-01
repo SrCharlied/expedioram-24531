@@ -34,6 +34,34 @@ El Monolito no se elige: `RevealState::activate` lo prohíbe hasta que las tres
 regiones están pintadas, y el avance por tiempo lo arranca en el mismo tick que
 completa la última.
 
+## La escena entregada
+
+Lo que abre `cargo run --release` es la composición de **isla de borde**,
+aprobada mirando los renders del preview de fidelidad del Rompeolas:
+
+- Plinto de `22 × 19`. Praderas, Rompeolas y Aguas Voladoras ocupan cada una
+  su parcela, con un claro medido entre ellas; el Monolito no se mueve.
+- El Rompeolas original —`R-01`, `R-02` y `R-03`, treinta y ocho piezas— es
+  una macroformación de cinco filas apoyada en su losa de `G-02`.
+- Al oeste, una **isla larga** verde que entra tres unidades en la base, con
+  una **terraza de transición** entre las dos.
+- Sobre la isla, una **segunda formación** de dieciséis prismas en cuatro
+  bandas (`6/5/3/2`): pequeña y baja en el extremo libre, gruesa y alta hacia
+  el Rompeolas original, a `0.40` de él sin tocarlo.
+
+| | Primitivas |
+|---|---:|
+| Nivel seguro histórico (`safe_level`) | `154` |
+| Masas de `G-02` retiradas —las dos que ninguna cámara veía— | `−2` |
+| Prismas de la segunda formación | `+16` |
+| **Entrega (`delivery_level`)** | **`168`** |
+
+El aumento de presupuesto está autorizado **solo** para la segunda
+formación. El nivel seguro de `154` se conserva sin cambios: sobre él se
+midieron los gates de los hitos 3 a 7 y con él se siguen reproduciendo. La
+composición vive en `src/scenes/edge_island.rs` y se construye encima del
+nivel seguro, midiendo cada paso contra algo ya medido.
+
 ## Controles
 
 | Tecla | Acción |
@@ -133,8 +161,17 @@ cargo run --release --bin render_scene -- \
 
 Banderas principales: `--preset`, `--width`, `--height`, `--yaw`,
 `--elevation`, `--shading`, `--reveal`, `--paint`, `--benchmark`,
-`--no-textures`, `--output`. Presets: `safe-refractive-water` —el canónico—,
-`safe-interior-visible`, `safe-opaque-water`, `blockout` y `cubo`.
+`--no-textures`, `--output`. Presets: `delivery-refractive-water` —la
+entrega, `168` primitivas—, `delivery-interior-visible`,
+`delivery-opaque-water`, `safe-refractive-water` —el nivel seguro de `154`,
+canónico de las mediciones—, `safe-interior-visible`, `safe-opaque-water`,
+`blockout` y `cubo`.
+
+```bash
+# la entrega, toma hero y cenital
+cargo run --release --bin render_scene --   --preset delivery-refractive-water --output hero.png
+cargo run --release --bin render_scene --   --preset delivery-refractive-water --elevation 78 --output cenital.png
+```
 
 ### `--paint`: un estado por región
 
@@ -179,10 +216,11 @@ un despacho dinámico ahí cuesta una indirección por prueba.
 ### Aceleración
 
 Jerarquía estática de tres niveles: **escena → grupo espacial → cluster →
-primitiva**. Siete grupos espaciales; el Rompeolas se parte en cuatro clusters,
-uno por tramo contiguo del arco, para que ningún AABB quede lleno de aire. Los
-hijos se recorren ordenados por `t_enter` y se podan contra el `closest_t`
-actual.
+primitiva**. Siete grupos espaciales; en el nivel seguro el Rompeolas se parte
+en cuatro clusters, uno por tramo contiguo del arco, para que ningún AABB quede
+lleno de aire. En la entrega se parte en dos: el Rompeolas original sobre su
+losa y la segunda formación sobre la isla, que es donde está el aire. Los hijos
+se recorren ordenados por `t_enter` y se podan contra el `closest_t` actual.
 
 ### Materiales y luz
 
@@ -259,9 +297,9 @@ silencioso a colores planos.
 cargo fmt -- --check
 cargo clippy --all-targets -- -D warnings
 cargo clippy --all-targets --no-default-features --features artistic-brush -- -D warnings
-cargo test                      # 533 tests: Ruta A + pincel
-cargo test --no-default-features --features artistic-brush # 513 tests: Ruta B + pincel
-cargo test --no-default-features # 496 tests: Ruta B clásica
+cargo test                      # 615 tests: Ruta A + pincel
+cargo test --no-default-features --features artistic-brush # 595 tests: Ruta B + pincel
+cargo test --no-default-features # 563 tests: Ruta B clásica
 cargo build --release
 ```
 
@@ -274,9 +312,12 @@ revelación están fijados así.
 
 ## Evidencia
 
-`evidence/hito8/` contiene los ocho PNG de la entrega: cinco estados de
-revelación acumulativos y tres ángulos de órbita. `docs/evidence.md` registra
-cada hito con sus mediciones, sus hashes y su procedencia.
+`evidence/hito8/` contiene los ocho PNG de la entrega del Hito 8: cinco
+estados de revelación acumulativos y tres ángulos de órbita. Muestran la
+escena de **`154`**, anterior a la isla de borde, y se conservan como
+evidencia histórica. `docs/evidence.md` registra cada hito con sus
+mediciones, sus hashes y su procedencia, incluida la promoción de la isla de
+borde.
 
 Las carpetas `evidence/hito4` a `evidence/hito7` conservan la evidencia de los
 experimentos anteriores, **incluidos los rechazados**: un candidato descartado
@@ -335,10 +376,17 @@ Conviene decirlas, porque cambian cómo hay que leer las cifras:
   peor encuadre alcanzable queda al filo del techo de cuatro segundos.
 - La escena es un nivel fijo: no hay carga de escenas desde archivo.
 - El nivel candidato de `156` primitivas existe como parámetro medible y **no**
-  es lo que se envía; lo que se envía son `154`.
+  es lo que se envía. Lo que se envía es la entrega de isla de borde, `168`
+  primitivas: el nivel seguro de `154` menos dos masas de `G-02` más dieciséis
+  prismas.
+- Los gates de rendimiento del Hito 7 —la rejilla de cuarenta y ocho cámaras—
+  **no se han recalculado sobre las `168`**. Un benchmark informativo de la
+  toma hero no la encontró más lenta que el nivel seguro; eso no sustituye la
+  matriz.
 - La escena perdió `G-04` —la paleta y el pincel de cristal, seis primitivas de
-  decoración que no se podían usar—. Los conteos vigentes son `154` en el nivel
-  seguro refractivo, `153` sin el volumen de agua y `156` en el candidato. La
+  decoración que no se podían usar—. Los conteos vigentes son `168` en la
+  entrega (`167` sin el volumen de agua), `154` en el nivel seguro refractivo,
+  `153` sin el volumen de agua y `156` en el candidato. La
   evidencia anterior a esa retirada habla de `160` y `162`: describe la escena
   de entonces y se conserva sin tocar.
 - El modo artístico está medido, revisado visualmente y **promovido a la
@@ -362,7 +410,7 @@ src/
 ├── input.rs           picking contra el cuadro presentado
 ├── camera.rs          órbita, zoom y generación de rayos
 ├── skybox.rs          panoramas equirectangulares
-├── scenes/            el diorama por regiones
+├── scenes/            el diorama por regiones; edge_island.rs, la entrega
 └── bin/
     ├── render_scene.rs     render headless a PNG
     └── generate_assets.rs  generador determinista de texturas

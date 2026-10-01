@@ -3530,3 +3530,130 @@ por Charlie; la prueba manual de entrada queda a cargo suyo.
 | — | Paleta visual plegable `P` | **Aprobada y registrada** — `evidence/hito10_palette/` |
 | — | Regenerar el blueprint SVG sin `G-04` | **Abierta** — hoy sigue mostrando la paleta |
 | — | Gates de rendimiento del Hito 7 recalculados sobre `154` | **Abierto** — los registrados arriba son de `160` |
+
+---
+
+# Promoción de la isla de borde a la entrega — 29 de septiembre de 2026
+
+**Estado: implementada y verificada técnicamente.** La aprobación visual es de
+Charlie y queda **pendiente de su revisión** de los renders de producción;
+nada de esta sección la afirma.
+
+Todo lo anterior a esta línea describe escenas anteriores y no se ha tocado.
+
+## La decisión
+
+La candidata `second_breakwater_stair_dense` del preview de fidelidad del
+Rompeolas —aprobada por Charlie— pasa a ser la entrega por defecto:
+
+- base de `22 × 19` y tres territorios separados; el Monolito, Praderas, Aguas
+  y el volumen `A-01` quedan donde los deja esa composición;
+- Rompeolas original intacto —`R-01`, `R-02`, `R-03`— sobre su losa;
+- isla larga verde al oeste y terraza de transición entre la base y la isla;
+- segunda formación de dieciséis prismas sobre la isla, pequeña y baja hacia el
+  extremo libre y grande y alta hacia el Rompeolas original, a `0.40` de él.
+
+## El presupuesto
+
+| Región | Nivel seguro | Cambio | Entrega |
+|---|---:|---:|---:|
+| Global (`G-01`, `G-02`, Monolito) | `21` | `−2` | `19` |
+| Praderas | `37` | | `37` |
+| Rompeolas | `38` | `+16` | `54` |
+| Aguas Voladoras | `58` | | `58` |
+| **Total** | **`154`** | | **`168`** |
+
+Las dos masas de `G-02` que salen son las que ninguna cámara veía desde
+arriba: una quedaba enterrada dentro de la isla larga y la otra bajo la meseta
+de Praderas. Los dieciséis prismas que entran van en el grupo del Rompeolas,
+detrás de sus treinta y ocho piezas, con el material y el grupo de revelación
+de `R-01`. El aumento está autorizado **solo** para esta segunda formación.
+
+| Preset de la entrega | Primitivas |
+|---|---:|
+| `delivery-refractive-water` | **`168`** |
+| `delivery-opaque-water` | `168` |
+| `delivery-interior-visible` | `167` |
+
+El nivel seguro de `154` y el candidato `target` de `156` **no cambian**:
+siguen siendo la línea base de las mediciones de los hitos 3 a 7.
+
+## La implementación
+
+`src/scenes/edge_island.rs`, sin dependencia del preview: `delivery_level` y
+`delivery_level_con` construyen el nivel seguro y le aplican seis pasos
+medidos —macroformación, territorio de `22 × 19`, apoyo, isla larga,
+transición y segunda formación—. La escala se vuelve a medir sobre la
+geometría final y la jerarquía se construye después, con el Rompeolas en dos
+clusters: el original (`38`) y la segunda formación (`16`).
+
+`src/main.rs` abre la entrega y `render_scene` gana los tres presets
+`delivery-*`.
+
+## Verificación
+
+**RED.** Las dieciocho pruebas de `edge_island` se escribieron antes que la
+implementación: `cargo test --lib edge_island` no compiló, con `32` errores
+`E0425` por `delivery_level`, `formacion_secundaria`, `DELIVERY`,
+`MASAS_RETIRADAS`, `PRISMAS_SECUNDARIOS` y `CLARO_AL_ROMPEOLAS_ORIGINAL`.
+
+**Equivalencia con la candidata aprobada.** Un crate temporal, fuera del
+repositorio, compiló una copia del preview junto a la librería y comparó las
+dos escenas en las dos rutas:
+
+| | Ruta A | Ruta B |
+|---|---|---|
+| Objetos | `168` / `168` | `168` / `168` |
+| Cajas distintas | `0` (diferencia máxima `0`) | `0` |
+| Materiales, grupos o tipos distintos | `0` | `0` |
+| Anclas y escala | idénticas | idénticas |
+
+**Renders.** Los de producción salen **idénticos byte a byte** a los que se
+aprobaron (Ruta A, `800 × 600`, texturas reales, todo pintado):
+
+| Toma | SHA-256, producción y candidata |
+|---|---|
+| hero | `b73f83753b64…` |
+| cenital, `78°` | `619f55803af6…` |
+
+Se generaron en una carpeta temporal y **no se versionan**:
+
+```bash
+cargo run --release --bin render_scene -- --preset delivery-refractive-water --output <tmp>/delivery_hero.png
+cargo run --release --bin render_scene -- --preset delivery-refractive-water --elevation 78 --output <tmp>/delivery_top.png
+```
+
+**Medido sobre la escena de producción.**
+
+| | Valor |
+|---|---|
+| Macroformación apoyada en su losa | `34 / 34` |
+| Segunda formación apoyada en la isla | `16 / 16` |
+| Claro de la segunda formación al Rompeolas original | `0.4000`, sin solapes con ninguna pieza |
+| Claro mínimo a Monolito / Praderas / Aguas | `3.375` / `1.100` / `6.153` |
+| Clusters del Rompeolas | `2` —`38` y `16`—, cajas a `0.400` |
+| Primitivas en la jerarquía | `168` de `168` |
+| `scene_radius`, `orbit_radius` | `14.5760`, `33.94` |
+
+**Gates.** `cargo test` (`615`), `cargo test --no-default-features` (`563`),
+`cargo test --no-default-features --features artistic-brush` (`595`),
+`cargo build --release` en las dos rutas, `cargo clippy --all-targets -D
+warnings` en las dos rutas, `cargo fmt -- --check` y `git diff --check`: todos
+en `RC 0`.
+
+**Benchmark informativo**, toma hero, cinco repeticiones, release, Ruta A.
+No es la matriz del Hito 7:
+
+| Preset | `320 × 240`, mediana | `800 × 600`, mediana |
+|---|---:|---:|
+| `safe-refractive-water` (`154`) | `0.0807 s` | `0.4193 s` |
+| `delivery-refractive-water` (`168`) | `0.0666 s` | `0.3971 s` |
+
+## Pendientes
+
+| Qué | Estado |
+|---|---|
+| Revisión visual de los renders de producción | **Pendiente** — de Charlie |
+| Gates de rendimiento del Hito 7 sobre las `168` | **Abierto** — la rejilla de 48 cámaras no se ha recalculado |
+| Evidencia PNG versionada de la entrega | **Abierta** — hoy sólo existe en una carpeta temporal |
+| `evidence/hito8/` | **Histórica** — muestra la escena de `154` |
