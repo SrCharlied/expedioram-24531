@@ -42,7 +42,10 @@
 //! región, la losa, la isla—, así que si el nivel seguro cambiara, la
 //! entrega se recolocaría con él en vez de quedarse descuadrada.
 
-use super::{meadows_delivery, nivel_con, Density, Presupuesto, WaterPreset, Xorshift32, SAFE};
+use super::{
+    flying_waters_delivery, meadows_delivery, nivel_con, Density, Presupuesto, WaterPreset,
+    Xorshift32, SAFE,
+};
 use crate::accel::{ClusterPlan, SceneAccel};
 use crate::bounds::Aabb;
 use crate::cuboid::Cuboid;
@@ -192,12 +195,35 @@ pub fn delivery_level(water: WaterPreset) -> Blockout {
 ///
 /// Praderas lleva la composición aprobada en `meadows_delivery`: las mismas
 /// 37 piezas, en su territorio, reescritas sobre el reparto de esta
-/// composición. Lo ajeno a Praderas es idéntico a `delivery_level_previo_con`.
+/// composición. Aguas Voladoras lleva el pecio partido aprobado en
+/// `flying_waters_delivery`, con `A-01` y `A-11` intactos. Lo ajeno a cada
+/// región es idéntico a su línea base: `delivery_level_previo_con` para
+/// Praderas y `delivery_level_previo_aguas_con` para Aguas.
 pub fn delivery_level_con(
     water: WaterPreset,
     raiz_assets: Option<&Path>,
 ) -> Result<Blockout, TextureError> {
-    entrega_con(water, raiz_assets, true)
+    entrega_con(water, raiz_assets, true, true)
+}
+
+/// La entrega **anterior** a la promoción de Aguas, sin texturas.
+pub fn delivery_level_previo_aguas(water: WaterPreset) -> Blockout {
+    delivery_level_previo_aguas_con(water, None).expect("sin assets no hay error posible")
+}
+
+/// La entrega **anterior** a la promoción de Aguas: con la Praderas
+/// aprobada y Aguas Voladoras tal como la construye el nivel seguro,
+/// trasladada en bloque por el reparto.
+///
+/// No es lo que se presenta. Se conserva como línea base: es la escena sobre
+/// la que se aprobó el preview de Aguas
+/// (`examples/flying_waters_fidelity_preview.rs`) y contra la que se
+/// comprueba que la promoción no toca nada fuera de Aguas.
+pub fn delivery_level_previo_aguas_con(
+    water: WaterPreset,
+    raiz_assets: Option<&Path>,
+) -> Result<Blockout, TextureError> {
+    entrega_con(water, raiz_assets, true, false)
 }
 
 /// La entrega **anterior** a la promoción de Praderas, sin texturas.
@@ -205,8 +231,9 @@ pub fn delivery_level_previo(water: WaterPreset) -> Blockout {
     delivery_level_previo_con(water, None).expect("sin assets no hay error posible")
 }
 
-/// La entrega **anterior** a la promoción de Praderas: la isla de borde con
-/// las 37 piezas del nivel seguro trasladadas en bloque.
+/// La entrega **anterior** a la promoción de Praderas —y por tanto también a
+/// la de Aguas—: la isla de borde con las 37 piezas de Praderas y las 58 de
+/// Aguas del nivel seguro, trasladadas en bloque.
 ///
 /// No es lo que se presenta. Se conserva como línea base: es la escena sobre
 /// la que se aprobó el preview de Praderas
@@ -216,13 +243,14 @@ pub fn delivery_level_previo_con(
     water: WaterPreset,
     raiz_assets: Option<&Path>,
 ) -> Result<Blockout, TextureError> {
-    entrega_con(water, raiz_assets, false)
+    entrega_con(water, raiz_assets, false, false)
 }
 
 fn entrega_con(
     water: WaterPreset,
     raiz_assets: Option<&Path>,
     praderas_aprobadas: bool,
+    aguas_aprobadas: bool,
 ) -> Result<Blockout, TextureError> {
     let medida = match water {
         WaterPreset::InteriorVisible => WaterPreset::RefractiveWater,
@@ -238,6 +266,14 @@ fn entrega_con(
     if praderas_aprobadas {
         let ancla = entrega.anchors.meadows_anchor;
         meadows_delivery::aplicar(&mut entrega.scene, ancla);
+    }
+
+    // Aguas, con el volumen todavía dentro: el pecio se compone sobre las 58
+    // piezas del inventario y `A-01` se retira después, si el preset lo pide,
+    // como siempre. Así los tres presets comparten el interior.
+    if aguas_aprobadas {
+        let ancla = entrega.anchors.flying_waters_anchor;
+        flying_waters_delivery::aplicar(&mut entrega.scene, ancla);
     }
 
     if water == WaterPreset::InteriorVisible {
@@ -1020,7 +1056,9 @@ mod tests {
     use crate::scene_builder::{
         derive_orbit_radius, eye_at_yaw, measure_scene_radius, Blockout, HERO_YAW_DEGREES,
     };
-    use crate::scenes::{delivery_level_previo, safe_level, WaterPreset, SAFE};
+    use crate::scenes::{
+        delivery_level_previo, delivery_level_previo_aguas, safe_level, WaterPreset, SAFE,
+    };
 
     /// Tolerancia de las comparaciones geométricas.
     const EPS: f32 = 1.0e-4;
@@ -1260,12 +1298,15 @@ mod tests {
         // Praderas se mide sobre la composicion **previa** a su promocion:
         // el reparto la traslada en bloque y despues `meadows_delivery`
         // reescribe sus 37 piezas dentro de ese mismo territorio, que es lo
-        // que comprueban sus propios tests.
+        // que comprueban sus propios tests. Aguas, igual, sobre la
+        // composicion previa a la suya: `flying_waters_delivery` reescribe
+        // el pecio dentro de A-01 y conserva el volumen y el borde.
         let previo = delivery_level_previo(WaterPreset::RefractiveWater);
+        let previo_aguas = delivery_level_previo_aguas(WaterPreset::RefractiveWater);
 
         for (grupo, nivel) in [
             (SpatialGroupId::Meadows, &previo),
-            (SpatialGroupId::FlyingWaters, &nivel),
+            (SpatialGroupId::FlyingWaters, &previo_aguas),
         ] {
             let antes = indices(&clasico.scene, grupo);
             let ahora = indices(&nivel.scene, grupo);

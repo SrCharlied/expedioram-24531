@@ -60,7 +60,7 @@ use nalgebra_glm::Vec3;
 // ---------------------------------------------------------------------
 
 /// Hash entero a `0.0..1.0`, el mismo esquema que `generate_assets`.
-fn hash01(x: i32, y: i32, semilla: u32) -> f32 {
+pub(super) fn hash01(x: i32, y: i32, semilla: u32) -> f32 {
     let mut h =
         semilla ^ (x as u32).wrapping_mul(0x27D4_EB2D) ^ (y as u32).wrapping_mul(0x1656_67B1);
 
@@ -79,7 +79,7 @@ fn suavizar(t: f32) -> f32 {
 
 /// Ruido de valor **periódico** en `celdas_x × celdas_y`: la textura repite
 /// sin costura, que es lo que pide `WrapMode::Repeat`.
-fn ruido(u: f32, v: f32, celdas_x: i32, celdas_y: i32, semilla: u32) -> f32 {
+pub(super) fn ruido(u: f32, v: f32, celdas_x: i32, celdas_y: i32, semilla: u32) -> f32 {
     let x = u * celdas_x as f32;
     let y = v * celdas_y as f32;
     let (x0, y0) = (x.floor() as i32, y.floor() as i32);
@@ -99,7 +99,7 @@ fn ruido(u: f32, v: f32, celdas_x: i32, celdas_y: i32, semilla: u32) -> f32 {
     arriba + (abajo - arriba) * sy
 }
 
-fn fbm(u: f32, v: f32, celdas: i32, octavas: u32, semilla: u32) -> f32 {
+pub(super) fn fbm(u: f32, v: f32, celdas: i32, octavas: u32, semilla: u32) -> f32 {
     let (mut suma, mut amplitud, mut total) = (0.0, 1.0, 0.0);
 
     for octava in 0..octavas {
@@ -112,7 +112,7 @@ fn fbm(u: f32, v: f32, celdas: i32, octavas: u32, semilla: u32) -> f32 {
     suma / total
 }
 
-fn mezclar(a: Color, b: Color, t: f32) -> Color {
+pub(super) fn mezclar(a: Color, b: Color, t: f32) -> Color {
     let t = t.clamp(0.0, 1.0);
 
     a * (1.0 - t) + b * t
@@ -120,7 +120,7 @@ fn mezclar(a: Color, b: Color, t: f32) -> Color {
 
 /// Evalúa `patron(u, v)` en el centro de cada texel, con `v = 0` abajo como
 /// `Texture::sample`.
-fn textura<F: Fn(f32, f32) -> Color>(ancho: usize, alto: usize, patron: F) -> Texture {
+pub(super) fn textura<F: Fn(f32, f32) -> Color>(ancho: usize, alto: usize, patron: F) -> Texture {
     let mut pixeles = Vec::with_capacity(ancho * alto);
 
     for fila in 0..alto {
@@ -658,7 +658,10 @@ mod tests {
     use crate::material::ShadowMode;
     use crate::scene::{Scene, SpatialGroupId};
     use crate::scene_builder::measure_scene_radius;
-    use crate::scenes::{delivery_level, delivery_level_previo, safe_level, WaterPreset, DELIVERY};
+    use crate::scenes::{
+        delivery_level, delivery_level_previo, delivery_level_previo_aguas, safe_level,
+        WaterPreset, DELIVERY,
+    };
 
     const PRESETS: [WaterPreset; 3] = [
         WaterPreset::RefractiveWater,
@@ -734,9 +737,11 @@ mod tests {
 
     #[test]
     fn fuera_de_praderas_la_entrega_es_la_previa_byte_a_byte() {
+        // La etapa de Praderas se mide antes de la promoción de Aguas, que
+        // tiene su propia comprobación en `flying_waters_delivery`.
         for water in PRESETS {
             let a = delivery_level_previo(water);
-            let b = delivery_level(water);
+            let b = delivery_level_previo_aguas(water);
 
             assert_eq!(a.scene.objects.len(), b.scene.objects.len());
             for (i, (x, y)) in a.scene.objects.iter().zip(&b.scene.objects).enumerate() {
@@ -940,8 +945,10 @@ mod tests {
 
     #[test]
     fn la_huella_de_praderas_queda_fijada() {
+        // Sobre la etapa de Praderas: la promoción de Aguas añade materiales
+        // al final de la paleta y no debe mover esta huella.
         let previo = delivery_level_previo(WaterPreset::RefractiveWater);
-        let entrega = delivery_level(WaterPreset::RefractiveWater);
+        let entrega = delivery_level_previo_aguas(WaterPreset::RefractiveWater);
 
         assert_eq!(
             huella(&entrega, &previo.scene),

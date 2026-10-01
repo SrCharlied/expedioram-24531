@@ -3657,3 +3657,187 @@ No es la matriz del Hito 7:
 | Gates de rendimiento del Hito 7 sobre las `168` | **Abierto** — la rejilla de 48 cámaras no se ha recalculado |
 | Evidencia PNG versionada de la entrega | **Abierta** — hoy sólo existe en una carpeta temporal |
 | `evidence/hito8/` | **Histórica** — muestra la escena de `154` |
+
+# Promoción de Aguas Voladoras a la entrega — 1 de octubre de 2026
+
+**Estado: implementada y verificada técnicamente.** Charlie aprobó
+`split_wreck_thin_chain` tal como está; esta sección no reabre la decisión
+artística, solo registra la promoción y lo medido.
+
+Todo lo anterior a esta línea describe escenas anteriores y no se ha tocado.
+
+## La decisión
+
+La variante `split_wreck_thin_chain` de
+`examples/flying_waters_fidelity_preview.rs` pasa a ser la Aguas de la
+entrega:
+
+- abajo, el cuerpo destruido apoyado en el lecho; arriba, la proa de costillas
+  **suspendida a propósito** dentro del volumen; entre los dos, una cadena fina
+  negra de **seis** segmentos, exactamente los del preview;
+- lecho con degradado de profundidad, cuatro mesetas someras, kelp vertical,
+  tres rocas en rastro y tres corales con el magenta de Praderas;
+- `A-01` (volumen) y `A-11` (borde roto) intactos; el agua conserva
+  `0.9 / 0.9`, `ior 1.333` y su modo de sombra.
+
+Sin animación, sin Beer-Lambert: es una promoción estática.
+
+## El presupuesto
+
+No cambia ningún conteo: las 58 piezas de Aguas se reescriben en su sitio,
+con el mismo índice, grupo espacial y grupo de revelación. La reasignación por
+entrada está en el inventario, «Aguas Voladoras en la entrega».
+
+| Preset de la entrega | Primitivas | Aguas |
+|---|---:|---:|
+| `delivery-refractive-water` | **`168`** | `58` |
+| `delivery-opaque-water` | `168` | `58` |
+| `delivery-interior-visible` | `167` | `57` |
+
+`InteriorVisible` se compone con el volumen dentro y lo retira después, como
+siempre: los tres presets comparten el mismo interior.
+
+## La implementación
+
+`src/scenes/flying_waters_delivery.rs`, sin dependencia del preview:
+`aplicar(scene, ancla)` reescribe las 58 piezas sobre el ancla ya repartida
+de la bahía y registra cuatro materiales locales —lecho, somera, coral y el
+metal negro de la cadena—, cada uno con su textura procedural, en el mismo
+orden que el preview. Reusa sin tocarlos la madera, el metal del ancla, el
+kelp y el basalto de Aguas.
+
+`edge_island::entrega_con` la llama después de Praderas y **antes** de retirar
+el volumen y de medir escala y jerarquía. La entrega previa queda como línea
+base nueva, `delivery_level_previo_aguas_con`: Praderas aprobada, Aguas del
+nivel seguro trasladada en bloque.
+
+| Línea base | Qué reproduce |
+|---|---|
+| `safe_level` | nivel seguro de `154`, hitos 3 a 7 |
+| `delivery_level_previo_con` | isla de borde antes de Praderas y de Aguas |
+| `delivery_level_previo_aguas_con` | la escena sobre la que se aprobó el preview de Aguas |
+
+## Verificación
+
+**RED de producción.** Con el módulo integrado, `cargo test --lib` dio
+`583` aprobados y `3` fallos, todos en tests que medían Praderas o el
+traslado en bloque de Aguas sobre `delivery_level`, que ahora incluye la
+promoción. Se reapuntaron a `delivery_level_previo_aguas` sin tocar sus
+aserciones ni la huella de Praderas (`11 950 215 931 138 958 719`).
+
+**RED de equivalencia.** El test nuevo del preview
+`la_entrega_de_produccion_es_split_wreck_thin_chain_aprobado` falló en el
+objeto `130`, el primer segmento de la cadena: `max.x` `7.1632814` contra
+`7.163282`. Producción sumaba el grosor antes que la base; el preview, después.
+Se corrigió producción para seguir el orden aprobado. La huella de Aguas
+fijada en la librería (`11 444 163 205 226 346 912`) detecta ese ULP: con el
+orden anterior da otra.
+
+**Equivalencia con la variante aprobada**, con los assets reales, en
+`RefractiveWater` y `OpaqueWater`: objetos, paleta, texturas texel a texel,
+cielo, anclas, escala, cámaras hero y cenital, luces y la jerarquía completa,
+idénticos. `InteriorVisible` es la refractiva sin `A-01`, objeto a objeto.
+
+**Renders.** `800 × 600`, Ruta A, texturas reales, todo pintado. Producción
+sale **idéntica byte a byte** a la variante aprobada:
+
+| Toma | SHA-256, producción y `split_wreck_thin_chain` |
+|---|---|
+| hero | `f58c13ea9aae19c64db329a41dfb48f5c06a256e970773334bdf8fa53100816c` |
+| cenital, `78°` | `92985ac70aa84fe98eb55c9e5fd5c003fc0d26cf1256e9e167343c5c03cafdb6` |
+| encuadre cercano del preview | `2d4f194f3d7240c72e7041fd36a380dd62f11fec3375bdb5eeb356fff986c43d` |
+
+Hero y cenital salen de `render_scene --preset delivery-refractive-water`; el
+encuadre cercano, de la columna `delivery` del preview, que usa
+`delivery_level_con`. Las doce imágenes previas del preview —`current`,
+`candidate`, `split_wreck` y `split_wreck_thin_chain`— salen idénticas a las
+de la aprobación, y las líneas base se siguen reproduciendo:
+
+| Línea base | SHA-256 |
+|---|---|
+| `safe-refractive-water`, hero (`154`) | `75e00441e4d86831bcca203b973dcb65a3466055ce45913d75e029c1eb96a0d8` |
+| entrega previa a Aguas, hero | `c93438b64fb4ba33c202e61c3640c513025b7d90d08c95794013dbcc1ade955b` |
+| entrega previa a Aguas, cenital | `663b566d97f9c2f59e8219684d5e573f82c1bac0dd3859a42b82ce69ee446ac8` |
+
+Los ocho PNG de `meadows_fidelity_preview` también salen idénticos. Nada de
+esto se versiona; se generó en carpetas temporales:
+
+```bash
+cargo run --release --bin render_scene -- --preset delivery-refractive-water --output <tmp>/delivery_hero.png
+cargo run --release --bin render_scene -- --preset delivery-refractive-water --elevation 78 --output <tmp>/delivery_top78.png
+cargo run --release --example flying_waters_fidelity_preview -- <tmp>
+```
+
+## Rendimiento de la entrega actual
+
+La matriz del Hito 7 mide el nivel seguro y el candidato `target`: no dice
+nada de la entrega. `performance_matrix` gana un modo **opcional**,
+`--entrega`, que mide sólo eso. La salida sin la bandera no cambia. Compara la
+entrega previa a Aguas con la actual, las dos refractivas y con assets, con el
+método de la matriz: release, quince rondas intercaladas y rotadas, cocientes
+pareados. Mide los tres renderers, con una fixture pintada para cada nivel
+sobre sus superficies reales, en `worst_case()` y `painted()`, en cuadro final
+y perfil interactivo. Cubre la hero, el zoom artístico mínimo (`1.7 ×
+scene_radius`, radio `24.779`), el máximo de la cámara (`4.0 ×`, radio
+`58.304`) y la rejilla de cuarenta y ocho cámaras.
+
+```bash
+cargo run --release --example performance_matrix -- --entrega
+```
+
+Una corrida, Ruta A, código `0`, `7 min 08 s`. Árbol: `c4e3bdd` más los
+cambios sin commit de esta promoción; AMD Ryzen 7 6800H, 16 hilos, 15.2 GB;
+`rustc 1.97.0`; Windows 11; sin otras cargas.
+
+Perfil interactivo, `320 × 240`, medianas en segundos y cociente pareado de la
+actual contra la previa:
+
+| Encuadre | Estado | `base` | `art-pintado` | actual / previa, pintado |
+|---|---|---:|---:|---:|
+| hero | worst | `0.0720` | `0.0796` | `1.014x` |
+| zoom artístico mínimo | worst | **`0.1424`** | `0.1414` | `0.989x` |
+| zoom artístico mínimo | painted | `0.1361` | **`0.1456`** | `1.049x` |
+| zoom máximo | worst | `0.0423` | `0.0389` | `0.961x` |
+| peor de la rejilla, `y+0 e+35 cerca` | worst | `0.1259` | `0.1336` | `0.971x` |
+
+En la rejilla, `render` base en el peor estado, la peor cámara de la actual es
+`y+0 e+35 cerca`, con `0.1137 s`; la previa da `0.1240 s` en esa cámara
+(`0.911x` pareado). A `800 × 600` la actual va de `0.2204 s` (zoom máximo) a
+`0.8395 s` (zoom artístico mínimo, worst, base). En las tablas de encuadres
+con nombre, los cocientes pareados de la actual contra la previa quedan entre
+`0.92x` y `1.07x`. Los rayos secundarios suben entre un `0.8 %` y un `1.4 %`:
+de `8 792` a `8 915` en la hero interactiva, por ejemplo.
+
+| Presupuesto de la actual | Peor cuadro | Reserva | Umbral |
+|---|---:|---:|---|
+| Gate: `render` base, worst, interactivo | `0.1424 s` | `1.87x` | `1.30x`, cabe |
+| Pincel: `render_artistic` pintado, interactivo | `0.1456 s` | `1.83x` | `1.30x`, cabe |
+
+El crítico es `REVEAL_DURATION_CEILING / MINIMUM_REVEAL_FRAMES` = `0.2667 s`
+(`15` cuadros en `4.0 s`); `reveal_duration` del peor cuadro, `2.14 s`. El
+peor cuadro del gate incluye el zoom artístico mínimo, que la rejilla de 48
+cámaras no alcanza: su «cerca» es el `1.8` del modo base. Es una sola corrida
+en una máquina; la Ruta B no se midió.
+
+**Gates**, todos en `RC 0`:
+
+| Gate | Resultado |
+|---|---|
+| `cargo test` | `632` |
+| `cargo test --no-default-features --features artistic-brush` | `612` |
+| `cargo test --no-default-features` | `580` |
+| `cargo test --release --example flying_waters_fidelity_preview`, Ruta A y B | `44` y `44` |
+| `cargo test --release --example performance_matrix`, Ruta A y B | `8` y `8` |
+| `cargo test --release --example meadows_fidelity_preview`, A, B artística y B clásica | `61`, `61` y `61` |
+| `cargo build --release`, tres rutas | sin errores |
+| `cargo clippy --all-targets -- -D warnings`, tres rutas | sin avisos |
+| `cargo fmt -- --check`, `git diff --check` | limpios |
+
+## Pendientes
+
+| Qué | Estado |
+|---|---|
+| `meadows_fidelity_preview`: test `la_entrega_de_produccion_es_el_pulido_de_agua_aprobado` | **Resuelto.** Tras la promoción fallaba: comparaba `delivery_level_con`, que ya incluye Aguas, con la Praderas sola. Ahora compara con `delivery_level_previo_aguas_con`, la etapa de Praderas; con autorización de Charlie, solo cambió ese test. Pasa `61 / 61` en la Ruta A, la B artística y la B clásica. Renders y variantes, sin cambios. |
+| `--entrega` en Ruta B y repeticiones | **Abierto.** Una corrida, Ruta A. |
+| Aspecto lateral de la cadena (cinta escalonada) | Conocido, **no se corrige ahora** por decisión de Charlie. |
+| Evidencia PNG versionada | **Abierta.** Sólo en carpetas temporales. |

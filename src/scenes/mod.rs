@@ -26,11 +26,13 @@ pub mod breakwater;
 pub mod continent;
 pub mod edge_island;
 pub mod flying_waters;
+pub mod flying_waters_delivery;
 pub mod meadows;
 pub mod meadows_delivery;
 
 pub use edge_island::{
-    delivery_level, delivery_level_con, delivery_level_previo, delivery_level_previo_con, DELIVERY,
+    delivery_level, delivery_level_con, delivery_level_previo, delivery_level_previo_aguas,
+    delivery_level_previo_aguas_con, delivery_level_previo_con, DELIVERY,
 };
 
 use crate::accel::{ClusterPlan, SceneAccel};

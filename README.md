@@ -55,6 +55,16 @@ aprobada mirando los renders del preview de fidelidad del Rompeolas:
   caídas de agua** refractiva (`0.9 / 0.9`, `ior 1.333`) con brillo propio.
   Vive en `src/scenes/meadows_delivery.rs`; materiales y texturas son
   nuevos y solo de Praderas.
+- **Aguas Voladoras** lleva el pecio partido aprobado en su preview de
+  fidelidad (`split_wreck_thin_chain`): las mismas 58 piezas, con el volumen
+  `A-01` y el borde roto `A-11` intactos. Abajo, el cuerpo destruido apoyado
+  en el lecho; arriba, la proa de costillas **suspendida a propósito**; entre
+  los dos, una cadena fina negra de seis segmentos. Lecho con degradado de
+  profundidad, mesetas someras, kelp vertical y tres corales con el magenta
+  de Praderas. El agua no cambia —`0.9 / 0.9`, `ior 1.333`— y los tres
+  presets comparten el interior. Vive en `src/scenes/flying_waters_delivery.rs`;
+  los cuatro materiales nuevos —lecho, somera, coral y el metal negro de la
+  cadena— son solo de Aguas.
 
 | | Primitivas |
 |---|---:|
@@ -69,19 +79,30 @@ midieron los gates de los hitos 3 a 7 y con él se siguen reproduciendo. La
 composición vive en `src/scenes/edge_island.rs` y se construye encima del
 nivel seguro, midiendo cada paso contra algo ya medido.
 
-La promoción de Praderas no cambia el conteo ni nada ajeno a ella: la
-entrega anterior sigue disponible como `delivery_level_previo_con`, y un test
-exige que todo lo que no es Praderas —geometría, materiales compartidos,
-anclas, escala, cámaras, luces y jerarquía— sea idéntico byte a byte. Para
-volver a ver la comparación con la que se aprobó:
+Las promociones de Praderas y de Aguas no cambian el conteo ni nada ajeno a
+cada región. Las entregas anteriores siguen disponibles como líneas base:
+
+| Línea base | Qué es |
+|---|---|
+| `safe_level` | el nivel seguro histórico de `154` |
+| `delivery_level_previo_con` | la isla de borde antes de Praderas y de Aguas |
+| `delivery_level_previo_aguas_con` | con la Praderas aprobada, antes de Aguas |
+
+Un test por región exige que todo lo que no es esa región —geometría,
+materiales compartidos, anclas, escala, cámaras, luces y jerarquía— sea
+idéntico byte a byte a su línea base. Para volver a ver las comparaciones con
+las que se aprobaron:
 
 ```bash
 cargo run --release --example meadows_fidelity_preview -- <carpeta>
+cargo run --release --example flying_waters_fidelity_preview -- <carpeta>
 ```
 
-Escribe en `<carpeta>` la entrega previa y las tres variantes del preview, en
-hero y en cenital a `78°`. La variante `refined_water_polish` es,
-comprobado por test con los assets reales, la escena que abre la entrega.
+El primero escribe la entrega previa y las tres variantes de Praderas, en
+hero y en cenital a `78°`; el segundo, la entrega previa a Aguas, sus tres
+variantes y la entrega de producción, en hero, cenital y un encuadre cercano
+del pecio. `refined_water_polish` y `split_wreck_thin_chain` son, comprobado
+por test con los assets reales, la escena que abre la entrega.
 
 ## Controles
 
@@ -318,9 +339,9 @@ silencioso a colores planos.
 cargo fmt -- --check
 cargo clippy --all-targets -- -D warnings
 cargo clippy --all-targets --no-default-features --features artistic-brush -- -D warnings
-cargo test                      # 623 tests: Ruta A + pincel
-cargo test --no-default-features --features artistic-brush # 603 tests: Ruta B + pincel
-cargo test --no-default-features # 571 tests: Ruta B clásica
+cargo test                      # 632 tests: Ruta A + pincel
+cargo test --no-default-features --features artistic-brush # 612 tests: Ruta B + pincel
+cargo test --no-default-features # 580 tests: Ruta B clásica
 cargo build --release
 ```
 
@@ -432,7 +453,8 @@ src/
 ├── camera.rs          órbita, zoom y generación de rayos
 ├── skybox.rs          panoramas equirectangulares
 ├── scenes/            el diorama por regiones; edge_island.rs, la entrega;
-│                      meadows_delivery.rs, la Praderas de la entrega
+│                      meadows_delivery.rs, la Praderas de la entrega;
+│                      flying_waters_delivery.rs, las Aguas de la entrega
 └── bin/
     ├── render_scene.rs     render headless a PNG
     └── generate_assets.rs  generador determinista de texturas

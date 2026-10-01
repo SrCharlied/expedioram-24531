@@ -82,6 +82,29 @@
 //! Los valores absolutos de bloques distintos **no** son comparables entre
 //! sí: cada bloque deja la máquina más caliente para el siguiente. Lo
 //! comparable es lo de dentro de un bloque, que es donde está el intercalado.
+//!
+//! # `--entrega`: la escena que se presenta
+//!
+//! ```text
+//! cargo run --release --example performance_matrix -- --entrega
+//! ```
+//!
+//! La matriz de arriba mide el nivel seguro de `154` y el candidato
+//! `target`: es la línea base de los hitos 3 a 7 y **no cambia**. No dice
+//! nada de la entrega por defecto. Con `--entrega` el ejemplo mide **solo**
+//! eso, con el mismo método —release, quince rondas intercaladas y
+//! rotadas, cocientes pareados— y la misma fixture artística:
+//!
+//! - `previa`: `delivery_level_previo_aguas_con`, la entrega anterior a la
+//!   promoción de Aguas; `actual`: `delivery_level_con`, la que abre la
+//!   ventana. Las dos refractivas, con assets, `168` primitivas.
+//! - Los tres renderers de `Modo`, con una fixture pintada **para cada
+//!   nivel** sobre sus propias superficies.
+//! - `worst_case()` y `painted()`; cuadro final y perfil interactivo; la
+//!   hero, el zoom artístico mínimo (`1.7`), el máximo de la cámara (`4.0`) y
+//!   la rejilla de cuarenta y ocho cámaras.
+//! - El veredicto usa el mismo crítico (`REVEAL_DURATION_CEILING /
+//!   MINIMUM_REVEAL_FRAMES`) y el mismo `MARGEN_MINIMO`, sobre la **actual**.
 
 use std::path::PathBuf;
 use std::time::Instant;
@@ -102,7 +125,8 @@ use expedition33_continente_inacabado::reveal::{
 };
 use expedition33_continente_inacabado::scene_builder::Blockout;
 use expedition33_continente_inacabado::scenes::{
-    safe_level_con, target_level_con, Density, WaterPreset, SAFE, TARGET,
+    delivery_level_con, delivery_level_previo_aguas_con, safe_level_con, target_level_con, Density,
+    WaterPreset, SAFE, TARGET,
 };
 use expedition33_continente_inacabado::stats::{median_ratio, summarize};
 
@@ -553,6 +577,11 @@ fn escalones(celdas: &[Celda], etiqueta: &str) {
 }
 
 fn main() {
+    if std::env::args().skip(1).any(|a| a == "--entrega") {
+        entrega();
+        return;
+    }
+
     let niveles = [
         nivel(WaterPreset::InteriorVisible, Density::Safe),
         nivel(WaterPreset::RefractiveWater, Density::Safe),
@@ -897,10 +926,400 @@ fn main() {
     }
 }
 
+// =====================================================================
+// `--entrega`: extensión para medir la entrega actual
+// =====================================================================
+//
+// Todo lo de aquí abajo es nuevo y sólo corre con `--entrega`. No toca la
+// matriz de arriba, sus niveles ni su fixture: reutiliza `Celda`, `Modo`,
+// `fixture_artistica` y `camara_de_zoom_artistico` tal como están.
+
+/// Las dos entregas que se comparan: `[previa, actual]`.
+fn niveles_de_entrega() -> [Blockout; 2] {
+    let raiz = PathBuf::from(".");
+    let construir = |r: Result<Blockout, _>| match r {
+        Ok(nivel) => nivel,
+        Err(e) => {
+            eprintln!("error: {e}");
+            eprintln!("  generalos con: cargo run --release --bin generate_assets");
+            std::process::exit(1);
+        }
+    };
+
+    [
+        construir(delivery_level_previo_aguas_con(
+            WaterPreset::RefractiveWater,
+            Some(&raiz),
+        )),
+        construir(delivery_level_con(
+            WaterPreset::RefractiveWater,
+            Some(&raiz),
+        )),
+    ]
+}
+
+/// El encuadre más lejano que alcanza la ventana: la hero con el zoom
+/// recortado contra `max_radius`.
+fn camara_de_zoom_maximo(diorama: &Blockout) -> Camera {
+    let mut lejana = diorama.hero_camera();
+    lejana.zoom(1.0e6);
+    lejana
+}
+
+/// Los tres encuadres con nombre del bloque de la entrega.
+fn camaras_de_entrega(diorama: &Blockout) -> [(&'static str, Camera); 3] {
+    [
+        ("hero", diorama.hero_camera()),
+        ("zoom artistico minimo", camara_de_zoom_artistico(diorama)),
+        ("zoom maximo", camara_de_zoom_maximo(diorama)),
+    ]
+}
+
+/// Una fixture por nivel, cada una pintada sobre las superficies que ese
+/// nivel enseña desde esa cámara.
+fn fixtures_de_entrega(
+    niveles: &[Blockout],
+    camara: &Camera,
+    ancho: usize,
+    alto: usize,
+) -> Vec<Artistico> {
+    niveles
+        .iter()
+        .map(|n| fixture_artistica(n, camara, ancho, alto))
+        .collect()
+}
+
+/// Como `medir_con`, con la fixture **del nivel** de cada celda.
+fn medir_por_nivel(
+    celdas: &mut [Celda],
+    niveles: &[Blockout],
+    luces: &[Vec<PointLight>],
+    ancho: usize,
+    alto: usize,
+    fixtures: &[Artistico],
+) {
+    let mut framebuffer = Framebuffer::new(ancho, alto);
+    let n = celdas.len();
+
+    for celda in celdas.iter_mut() {
+        celda.tiempos.clear();
+    }
+
+    for ronda in 0..RONDAS {
+        for k in 0..n {
+            let i = (k + ronda) % n;
+            let diorama = &niveles[celdas[i].nivel];
+
+            let vacio = Artistico::vacio();
+            let capas = match celdas[i].modo {
+                Modo::ArtisticoPintado => &fixtures[celdas[i].nivel],
+                _ => &vacio,
+            };
+
+            let inicio = Instant::now();
+            let stats = match celdas[i].modo {
+                Modo::Base => render(
+                    &mut framebuffer,
+                    &diorama.scene,
+                    &diorama.accel,
+                    &luces[celdas[i].nivel],
+                    &celdas[i].reveal,
+                    &celdas[i].camara,
+                    Shading::Material,
+                ),
+                Modo::ArtisticoVacio | Modo::ArtisticoPintado => render_artistic(
+                    &mut framebuffer,
+                    &diorama.scene,
+                    &diorama.accel,
+                    &luces[celdas[i].nivel],
+                    &celdas[i].reveal,
+                    &celdas[i].camara,
+                    Shading::Material,
+                    &capas.masks,
+                    &capas.pigment,
+                ),
+            };
+            celdas[i].tiempos.push(inicio.elapsed().as_secs_f64());
+            celdas[i].stats = stats;
+        }
+    }
+}
+
+const NOMBRES_DE_ENTREGA: [&str; 2] = ["previa", "actual"];
+
+/// Doce celdas por encuadre: dos estados, tres renderers y los dos niveles,
+/// con la previa y la actual siempre juntas para el cociente pareado.
+fn celdas_de_entrega(camara: Camera) -> Vec<Celda> {
+    let mut celdas = Vec::with_capacity(12);
+
+    for (estado, reveal) in [
+        ("worst", RevealState::worst_case()),
+        ("painted", RevealState::painted()),
+    ] {
+        for modo in [Modo::Base, Modo::ArtisticoVacio, Modo::ArtisticoPintado] {
+            for (nivel, nombre) in NOMBRES_DE_ENTREGA.iter().enumerate() {
+                celdas.push(Celda::con_modo(
+                    format!("{nombre} {estado}"),
+                    nivel,
+                    reveal,
+                    camara,
+                    modo,
+                ));
+            }
+        }
+    }
+
+    celdas
+}
+
+fn reportar_entrega(
+    celdas: &[Celda],
+    niveles: &[Blockout],
+    fixtures: &[Artistico],
+    ancho: usize,
+    alto: usize,
+    titulo: &str,
+) {
+    println!("\n  {titulo}   {ancho} x {alto}");
+    for (nombre, f) in NOMBRES_DE_ENTREGA.iter().zip(fixtures) {
+        println!(
+            "  fixture {nombre:<7} {} superficies con revelado, {} con pigmento, {} claves",
+            f.masks.len(),
+            f.pigment.len(),
+            f.claves.len()
+        );
+    }
+    println!(
+        "  {:<15} {:<12} {:>6} {:>9} {:>9} {:>9} {:>6} {:>10} {:>9}",
+        "celda", "modo", "prim.", "minimo", "mediana", "maximo", "fps", "2os rayos", "act/prev"
+    );
+
+    for par in celdas.chunks(2) {
+        for celda in par {
+            let d = summarize(&celda.tiempos);
+            let cociente = if celda.nivel == 1 {
+                format!("{:.3}x", median_ratio(&par[1].tiempos, &par[0].tiempos))
+            } else {
+                String::new()
+            };
+
+            println!(
+                "  {:<15} {:<12} {:>6} {:>9.4} {:>9.4} {:>9.4} {:>6.1} {:>10} {:>9}",
+                celda.nombre,
+                celda.modo.etiqueta(),
+                niveles[celda.nivel].scene.objects.len(),
+                d.min,
+                d.median,
+                d.max,
+                1.0 / d.median,
+                celda.secundarios(),
+                cociente
+            );
+        }
+    }
+}
+
+/// La mediana más alta de las celdas de la **actual** que cumplen `filtro`.
+fn peor_de_la_actual(celdas: &[Celda], filtro: impl Fn(&Celda) -> bool) -> f64 {
+    celdas
+        .iter()
+        .filter(|c| c.nivel == 1 && filtro(c))
+        .map(|c| summarize(&c.tiempos).median)
+        .fold(0.0, f64::max)
+}
+
+fn entrega() {
+    let niveles = niveles_de_entrega();
+    let luces: Vec<Vec<PointLight>> = niveles
+        .iter()
+        .map(|n| luces_del_diorama(&n.anchors, &n.scale))
+        .collect();
+    let perfil = InteractiveProfile::default();
+    let camaras = camaras_de_entrega(&niveles[1]);
+
+    println!("performance_matrix --entrega · la entrega por defecto\n");
+    println!("  release     si, obligatorio");
+    println!("  previa      delivery_level_previo_aguas_con, refractiva, con assets");
+    println!("  actual      delivery_level_con, refractiva, con assets (la de la ventana)");
+    println!(
+        "  escena      {} / {} texturas, {} luces, scene_radius {:.4}",
+        niveles[0].scene.textures.len(),
+        niveles[1].scene.textures.len(),
+        luces[1].len(),
+        niveles[1].scale.scene_radius
+    );
+    println!("  rondas      {RONDAS}, intercaladas y con el orden rotado");
+    println!("  peor estado Continente pintado y grupo Finale en {WORST_CASE_PROGRESS:.2}");
+    for (nombre, c) in &camaras {
+        println!("  camara      {nombre:<22} radio {:.3}", c.radius());
+    }
+    println!("  comando     cargo run --release --example performance_matrix -- --entrega");
+
+    // -------------------------------- encuadres con nombre, dos resoluciones
+    let mut interactivas: Vec<Celda> = Vec::new();
+
+    for (ancho, alto, regimen) in [
+        (ANCHO, ALTO, "cuadro final"),
+        (perfil.width, perfil.height, "perfil interactivo"),
+    ] {
+        for (nombre, camara) in &camaras {
+            let fixtures = fixtures_de_entrega(&niveles, camara, ancho, alto);
+            let mut celdas = celdas_de_entrega(*camara);
+
+            medir_por_nivel(&mut celdas, &niveles, &luces, ancho, alto, &fixtures);
+            reportar_entrega(
+                &celdas,
+                &niveles,
+                &fixtures,
+                ancho,
+                alto,
+                &format!("{regimen}, {nombre}"),
+            );
+            if regimen == "perfil interactivo" {
+                interactivas.extend(celdas);
+            }
+        }
+    }
+
+    // -------------------------------------- la rejilla de 48 cámaras
+    //
+    // Como en la matriz: `render` base en el peor estado, al perfil
+    // interactivo, que es lo que calibra la ventana.
+    let mut rejilla: Vec<Celda> = Vec::new();
+    for (etiqueta, camara) in niveles[1].measurement_cameras() {
+        for (nivel, nombre) in NOMBRES_DE_ENTREGA.iter().enumerate() {
+            rejilla.push(Celda::nueva(
+                format!("{nombre} {etiqueta}"),
+                nivel,
+                RevealState::worst_case(),
+                camara,
+            ));
+        }
+    }
+    medir_por_nivel(
+        &mut rejilla,
+        &niveles,
+        &luces,
+        perfil.width,
+        perfil.height,
+        &[Artistico::vacio(), Artistico::vacio()],
+    );
+
+    let i = (0..rejilla.len())
+        .filter(|&i| rejilla[i].nivel == 1)
+        .max_by(|&a, &b| {
+            summarize(&rejilla[a].tiempos)
+                .median
+                .partial_cmp(&summarize(&rejilla[b].tiempos).median)
+                .expect("no hay NaN")
+        })
+        .expect("hay camaras");
+    let (peor_rejilla, previa_alli) = (&rejilla[i], &rejilla[i - 1]);
+    let peor_previa = rejilla
+        .iter()
+        .filter(|c| c.nivel == 0)
+        .map(|c| summarize(&c.tiempos).median)
+        .fold(0.0, f64::max);
+
+    println!(
+        "\n  rejilla de 48 camaras, base, worst   {} x {}",
+        perfil.width, perfil.height
+    );
+    println!(
+        "  peor camara actual   {}   {:.4} s   ({} 2os rayos)",
+        peor_rejilla.nombre,
+        summarize(&peor_rejilla.tiempos).median,
+        peor_rejilla.secundarios()
+    );
+    println!(
+        "  previa en esa camara {:.4} s   actual/previa {:.3}x pareado",
+        summarize(&previa_alli.tiempos).median,
+        median_ratio(&peor_rejilla.tiempos, &previa_alli.tiempos)
+    );
+    println!("  peor camara previa   {peor_previa:.4} s");
+
+    // ------------------- el pincel en la peor cámara de la rejilla
+    let camara_peor = peor_rejilla.camara;
+    let etiqueta_peor = peor_rejilla
+        .nombre
+        .trim_start_matches("actual ")
+        .to_string();
+    let mediana_rejilla = summarize(&peor_rejilla.tiempos).median;
+    let fixtures = fixtures_de_entrega(&niveles, &camara_peor, perfil.width, perfil.height);
+    let mut pincel_peor = celdas_de_entrega(camara_peor);
+    medir_por_nivel(
+        &mut pincel_peor,
+        &niveles,
+        &luces,
+        perfil.width,
+        perfil.height,
+        &fixtures,
+    );
+    reportar_entrega(
+        &pincel_peor,
+        &niveles,
+        &fixtures,
+        perfil.width,
+        perfil.height,
+        &format!("perfil interactivo, peor camara de la rejilla ({etiqueta_peor})"),
+    );
+    interactivas.extend(pincel_peor);
+
+    // ------------------------------------------------ veredicto
+    //
+    // El gate: lo que calibra la ventana —`render` base en el peor estado,
+    // perfil interactivo—, el peor de la hero y la rejilla. Y, aparte, el
+    // cuadro que se traza al arrastrar el pincel: `render_artistic` con la
+    // fixture pintada, el peor de los encuadres medidos.
+    let critico = f64::from(REVEAL_DURATION_CEILING / MINIMUM_REVEAL_FRAMES);
+    let gate = peor_de_la_actual(&interactivas, |c| {
+        c.modo == Modo::Base && c.reveal == RevealState::worst_case()
+    })
+    .max(mediana_rejilla);
+    let pincel = peor_de_la_actual(&interactivas, |c| c.modo == Modo::ArtisticoPintado);
+
+    println!("\n  presupuesto de la entrega actual");
+    println!(
+        "  critico del gate               {critico:.4} s   (15 cuadros en {REVEAL_DURATION_CEILING:.1} s)"
+    );
+    let mut cabe = true;
+    for (que, peor) in [
+        ("gate, render base worst", gate),
+        ("pincel, art-pintado", pincel),
+    ] {
+        let reserva = critico / peor;
+        let veredicto = if reserva >= MARGEN_MINIMO {
+            "cabe"
+        } else {
+            cabe = false;
+            "NO cabe"
+        };
+        println!(
+            "  {que:<30} {peor:.4} s   reserva {reserva:.2}x   umbral {MARGEN_MINIMO:.2}x -> {veredicto}"
+        );
+    }
+    match reveal_duration(gate as f32) {
+        Ok(duracion) => println!(
+            "  reveal_duration                {duracion:.2} s   ({:.0} cuadros)",
+            duracion / gate as f32
+        ),
+        Err(_) => {
+            println!("  FALLA el gate de fluidez con el peor cuadro.");
+            std::process::exit(1);
+        }
+    }
+    println!("\n  Registrar junto a las cifras: commit, fecha, arbol, hardware y toolchain.");
+
+    if !cabe {
+        std::process::exit(1);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use expedition33_continente_inacabado::input::{pick_artistic, PresentedFrame};
+    use expedition33_continente_inacabado::scene_builder::MAX_RADIUS_FACTOR;
 
     /// La fixture artistica tiene que ser **de verdad**: pintada sobre
     /// superficies que existen, identificadas por el mismo picking que usa
@@ -1066,6 +1485,83 @@ mod tests {
                 objeto.primitive.uv_world_scale(clave.uv_chart).is_some(),
                 "la carta de {clave:?} no es de su primitiva"
             );
+        }
+    }
+
+    // ------------------------------------------------ bloque `--entrega`
+
+    /// El modo `--entrega` mide la escena de producción, no una parecida: la
+    /// actual es `delivery_level_con` con assets, y la previa es la línea
+    /// base anterior a la promoción de Aguas.
+    #[test]
+    fn la_entrega_medida_es_la_de_produccion() {
+        use expedition33_continente_inacabado::scenes::{
+            delivery_level_con, delivery_level_previo_aguas_con,
+        };
+
+        let raiz = PathBuf::from(".");
+        let [previa, actual] = niveles_de_entrega();
+        let produccion = delivery_level_con(WaterPreset::RefractiveWater, Some(&raiz)).unwrap();
+        let base =
+            delivery_level_previo_aguas_con(WaterPreset::RefractiveWater, Some(&raiz)).unwrap();
+
+        assert_eq!(actual.scene.objects.len(), 168);
+        assert_eq!(previa.scene.objects.len(), 168);
+        assert_eq!(
+            format!("{:?}", actual.scene.objects),
+            format!("{:?}", produccion.scene.objects)
+        );
+        assert_eq!(
+            format!("{:?}", previa.scene.objects),
+            format!("{:?}", base.scene.objects)
+        );
+        assert_ne!(
+            format!("{:?}", actual.scene.objects),
+            format!("{:?}", previa.scene.objects),
+            "la previa y la actual tienen que diferir en Aguas"
+        );
+        assert_eq!(format!("{:?}", actual.scale), format!("{:?}", previa.scale));
+    }
+
+    /// Los dos extremos de zoom que alcanza la ventana con el pincel: el
+    /// mínimo artístico y el máximo de la cámara.
+    #[test]
+    fn los_extremos_de_zoom_de_la_entrega_son_los_alcanzables() {
+        let [_, actual] = niveles_de_entrega();
+        let radio = actual.scale.scene_radius;
+        let lejos = camara_de_zoom_maximo(&actual);
+        let cerca = camara_de_zoom_artistico(&actual);
+
+        assert!((lejos.radius() - radio * MAX_RADIUS_FACTOR).abs() < 1e-3);
+        assert!((cerca.radius() - radio * ARTISTIC_MIN_RADIUS_FACTOR).abs() < 1e-3);
+        assert!(cerca.radius() < actual.hero_camera().radius());
+        assert!(lejos.radius() > actual.hero_camera().radius());
+    }
+
+    /// Cada nivel lleva su propia fixture, pintada sobre sus superficies
+    /// reales, en cada encuadre y resolución que mide el bloque.
+    #[test]
+    fn las_fixtures_de_la_entrega_son_reales_y_no_vacias() {
+        let niveles = niveles_de_entrega();
+        let perfil = InteractiveProfile::default();
+
+        for camara in camaras_de_entrega(&niveles[1]).map(|(_, c)| c) {
+            for (ancho, alto) in [(ANCHO, ALTO), (perfil.width, perfil.height)] {
+                let fixtures = fixtures_de_entrega(&niveles, &camara, ancho, alto);
+
+                for (diorama, fixture) in niveles.iter().zip(&fixtures) {
+                    assert!(fixture.masks.len() >= 3, "revelado {}", fixture.masks.len());
+                    assert!(
+                        fixture.pigment.len() >= 3,
+                        "pigmento {}",
+                        fixture.pigment.len()
+                    );
+                    for clave in &fixture.claves {
+                        let objeto = &diorama.scene.objects[clave.object_index];
+                        assert!(objeto.primitive.uv_world_scale(clave.uv_chart).is_some());
+                    }
+                }
+            }
         }
     }
 }

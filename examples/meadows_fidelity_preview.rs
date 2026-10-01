@@ -3104,11 +3104,15 @@ mod tests {
     /// anclas, escala, jerarquía y cielo. Con los assets reales.
     #[test]
     fn la_entrega_de_produccion_es_el_pulido_de_agua_aprobado() {
-        use expedition33_continente_inacabado::scenes::{delivery_level_con, WaterPreset};
+        use expedition33_continente_inacabado::scenes::{
+            delivery_level_previo_aguas_con, WaterPreset,
+        };
 
         let aprobada = refinado_agua(entrega());
         let a = &aprobada.diorama;
-        let b = delivery_level_con(WaterPreset::RefractiveWater, Some(&raiz()))
+        // La etapa de Praderas: desde la promoción de Aguas, `delivery_level_con`
+        // reescribe además la bahía, y eso lo comprueba su propio preview.
+        let b = delivery_level_previo_aguas_con(WaterPreset::RefractiveWater, Some(&raiz()))
             .expect("los assets reales estan en el repositorio");
 
         assert_eq!(

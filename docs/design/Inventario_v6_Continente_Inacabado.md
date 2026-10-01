@@ -1111,6 +1111,33 @@ Rompeolas:
 El nivel seguro de `154` y el candidato de `156` se conservan sin cambios como
 línea base de las mediciones.
 
+### Aguas Voladoras en la entrega (1 de octubre de 2026)
+
+La entrega reescribe en su sitio las 58 piezas de Aguas con el pecio partido
+aprobado por Charlie (`split_wreck_thin_chain`, en
+`src/scenes/flying_waters_delivery.rs`). No cambia ningún conteo: mismos
+índices, grupo espacial y grupo de revelación; `A-01` y `A-11` intactos.
+
+| Entrada | Nivel seguro | Entrega |
+|---|---:|---|
+| `A-01` volumen | 1 | 1, intacto |
+| `A-02` lecho | 5 | 5: el suelo con su caja y material de profundidad, cuatro mesetas someras |
+| `A-03` casco | 12 | 12: fragmento alto (quilla, seis costillas, dos largueros) 9 + casco bajo 3 |
+| `A-04` mástil | 3 | 3: roda del fragmento alto 1 + casco bajo 2 |
+| `A-05` cadena | 8 | 8: cadena fina 6 + casco bajo 2 |
+| `A-06` ancla | 3 | 3, junto al fragmento bajo |
+| `A-07` kelp | 12 | 12 |
+| `A-08` rocas | 6 | 3 rocas en rastro + 3 corales |
+| `A-11` borde | 8 | 8, intacto |
+| **Total** | **58** | **58** |
+
+El fragmento alto está **suspendido a propósito** dentro del volumen; todo lo
+demás apoya en el lecho. La cadena de la entrega deja de reusar `wet_basalt`:
+lleva un metal negro propio de Aguas, igual que el lecho, las mesetas y el
+coral llevan los suyos. Son cuatro materiales locales, sin tocar los
+compartidos. El nivel seguro conserva la cadena de ocho cubos descrita en
+`A-05`.
+
 A `800 × 600`, sin aceleración:
 
 ```text
