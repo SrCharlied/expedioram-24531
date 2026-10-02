@@ -43,8 +43,8 @@
 //! entrega se recolocaría con él en vez de quedarse descuadrada.
 
 use super::{
-    flying_waters_delivery, meadows_delivery, monolith_basin_delivery, nivel_con, Density,
-    Presupuesto, WaterPreset, Xorshift32, SAFE,
+    flying_waters_delivery, meadows_delivery, monolith_basin_delivery, monolith_carbon_delivery,
+    nivel_con, Density, Presupuesto, WaterPreset, Xorshift32, SAFE,
 };
 use crate::accel::{ClusterPlan, SceneAccel};
 use crate::bounds::Aabb;
@@ -211,7 +211,28 @@ pub fn delivery_level_con(
     water: WaterPreset,
     raiz_assets: Option<&Path>,
 ) -> Result<Blockout, TextureError> {
-    entrega_con(water, raiz_assets, true, true, true, true, true)
+    entrega_con(water, raiz_assets, true, true, true, true, true, true)
+}
+
+/// La entrega **anterior** al Monolito de carbón, sin texturas.
+pub fn delivery_level_previo_monolito(water: WaterPreset) -> Blockout {
+    delivery_level_previo_monolito_con(water, None).expect("sin assets no hay error posible")
+}
+
+/// La entrega **anterior** al Monolito de carbón con el 33: los diez tramos
+/// de cristal pictórico y sin placa, `218` primitivas (`217` en
+/// `InteriorVisible`), con los dos rellenos de la cuenca.
+///
+/// No es lo que se presenta. Se conserva como línea base: es la escena sobre
+/// la que se aprobó el preview del Monolito
+/// (`examples/monolith_carbon_preview.rs`) y contra la que se comprueba que
+/// la promoción solo cambia el material final de los tramos y añade la
+/// placa.
+pub fn delivery_level_previo_monolito_con(
+    water: WaterPreset,
+    raiz_assets: Option<&Path>,
+) -> Result<Blockout, TextureError> {
+    entrega_con(water, raiz_assets, true, true, true, true, true, false)
 }
 
 /// La entrega **anterior** al relleno tras las masas, sin texturas.
@@ -229,7 +250,7 @@ pub fn delivery_level_previo_trasero_con(
     water: WaterPreset,
     raiz_assets: Option<&Path>,
 ) -> Result<Blockout, TextureError> {
-    entrega_con(water, raiz_assets, true, true, true, true, false)
+    entrega_con(water, raiz_assets, true, true, true, true, false, false)
 }
 
 /// La entrega **anterior** al relleno bajo Praderas, sin texturas.
@@ -247,7 +268,7 @@ pub fn delivery_level_previo_relleno_con(
     water: WaterPreset,
     raiz_assets: Option<&Path>,
 ) -> Result<Blockout, TextureError> {
-    entrega_con(water, raiz_assets, true, true, true, false, false)
+    entrega_con(water, raiz_assets, true, true, true, false, false, false)
 }
 
 /// La entrega **anterior** a la promoción de la cuenca, sin texturas.
@@ -267,7 +288,7 @@ pub fn delivery_level_previo_cuenca_con(
     water: WaterPreset,
     raiz_assets: Option<&Path>,
 ) -> Result<Blockout, TextureError> {
-    entrega_con(water, raiz_assets, true, true, false, false, false)
+    entrega_con(water, raiz_assets, true, true, false, false, false, false)
 }
 
 /// La entrega **anterior** a la promoción de Aguas, sin texturas.
@@ -287,7 +308,7 @@ pub fn delivery_level_previo_aguas_con(
     water: WaterPreset,
     raiz_assets: Option<&Path>,
 ) -> Result<Blockout, TextureError> {
-    entrega_con(water, raiz_assets, true, false, false, false, false)
+    entrega_con(water, raiz_assets, true, false, false, false, false, false)
 }
 
 /// La entrega **anterior** a la promoción de Praderas, sin texturas.
@@ -307,9 +328,12 @@ pub fn delivery_level_previo_con(
     water: WaterPreset,
     raiz_assets: Option<&Path>,
 ) -> Result<Blockout, TextureError> {
-    entrega_con(water, raiz_assets, false, false, false, false, false)
+    entrega_con(water, raiz_assets, false, false, false, false, false, false)
 }
 
+// Un indicador por etapa aprobada, en orden: así cada línea base es una
+// llamada legible. Mismo criterio que `renderer::render_interno`.
+#[allow(clippy::too_many_arguments)]
 fn entrega_con(
     water: WaterPreset,
     raiz_assets: Option<&Path>,
@@ -318,6 +342,7 @@ fn entrega_con(
     cuenca_aprobada: bool,
     relleno_aprobado: bool,
     trasero_aprobado: bool,
+    monolito_aprobado: bool,
 ) -> Result<Blockout, TextureError> {
     let medida = match water {
         WaterPreset::InteriorVisible => WaterPreset::RefractiveWater,
@@ -367,6 +392,13 @@ fn entrega_con(
         let volumen = volumen_de_agua(&entrega.scene.objects);
 
         entrega.scene.objects.remove(volumen);
+    }
+
+    // El Monolito de carbón con el 33 hacia Praderas, sobre la escena ya
+    // compuesta y antes de medir: la placa entra en el plan de clusters con
+    // los otros diez tramos, y queda dentro del radio medido.
+    if monolito_aprobado {
+        monolith_carbon_delivery::aplicar(&mut entrega.scene);
     }
 
     Ok(medir_y_acelerar(entrega))
@@ -1376,7 +1408,12 @@ mod tests {
         let monolito_antes = indices(&clasico.scene, SpatialGroupId::Monolith);
         let monolito_ahora = indices(&nivel.scene, SpatialGroupId::Monolith);
 
-        assert_eq!(monolito_antes.len(), monolito_ahora.len());
+        // Desde el Monolito de carbón, la entrega le añade su placa del 33
+        // al final del grupo; los diez tramos son los mismos.
+        assert_eq!(
+            monolito_ahora.len(),
+            monolito_antes.len() + monolith_carbon_delivery::PIEZAS
+        );
 
         for (&a, &b) in monolito_antes.iter().zip(&monolito_ahora) {
             assert_eq!(

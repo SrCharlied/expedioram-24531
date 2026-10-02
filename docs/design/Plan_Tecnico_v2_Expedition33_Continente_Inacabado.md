@@ -1713,7 +1713,16 @@ de la isla de borde siguen siendo la línea base `delivery_level_previo_cuenca`;
 ver el inventario, «Cuenca del Monolito en la entrega», y el coste medido en
 `docs/evidence.md`. Después, el relleno bajo Praderas suma `+3 +6`: la
 entrega queda en `214`, con la cuenca de `205` como línea base
-`delivery_level_previo_relleno`.
+`delivery_level_previo_relleno`. El relleno tras las masas suma `+2 +2`
+(`218`, línea base `delivery_level_previo_trasero`).
+
+### Monolito de carbón (1 de octubre de 2026)
+
+La entrega por defecto lleva el Monolito aprobado como `carbon_33`: los diez
+tramos en carbón opaco y una placa con el 33 hacia Praderas, `+1` primitiva
+—**`219`**, `218` con `InteriorVisible`—, `+3` materiales y `+3` texturas.
+Las `218` anteriores son la línea base `delivery_level_previo_monolito`; ver
+el inventario, «Monolito de carbón con el 33 en la entrega».
 
 ## Nivel objetivo — condicionado por medición
 

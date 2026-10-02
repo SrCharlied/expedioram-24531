@@ -107,8 +107,9 @@
 //!   aprobada, que desde el relleno bajo Praderas es
 //!   `delivery_level_previo_relleno_con` (`205`).
 //! - Con `--entrega-relleno`, el relleno bajo Praderas: `previa`, la cuenca
-//!   aprobada (`205`); `actual`, `delivery_level_con`, la que abre la
-//!   ventana (`214`). Mismo método, misma fixture, mismas cámaras y mismo
+//!   aprobada (`205`); `actual`, la entrega con el relleno delantero,
+//!   `delivery_level_previo_trasero_con` (`214`), la que abría la ventana
+//!   cuando se midió. Mismo método, misma fixture, mismas cámaras y mismo
 //!   veredicto en los tres modos.
 //! - Los tres renderers de `Modo`, con una fixture pintada **para cada
 //!   nivel** sobre sus propias superficies.
@@ -137,9 +138,9 @@ use expedition33_continente_inacabado::reveal::{
 };
 use expedition33_continente_inacabado::scene_builder::Blockout;
 use expedition33_continente_inacabado::scenes::{
-    delivery_level_con, delivery_level_previo_aguas_con, delivery_level_previo_cuenca_con,
-    delivery_level_previo_relleno_con, safe_level_con, target_level_con, Density, WaterPreset,
-    SAFE, TARGET,
+    delivery_level_previo_aguas_con, delivery_level_previo_cuenca_con,
+    delivery_level_previo_relleno_con, delivery_level_previo_trasero_con, safe_level_con,
+    target_level_con, Density, WaterPreset, SAFE, TARGET,
 };
 use expedition33_continente_inacabado::stats::{median_ratio, summarize};
 
@@ -988,7 +989,7 @@ impl Etapa {
             ),
             Etapa::Relleno => (
                 "delivery_level_previo_relleno_con, la cuenca aprobada, refractiva, con assets (205)",
-                "delivery_level_con, refractiva, con assets (214, la de la ventana)",
+                "delivery_level_previo_trasero_con, el relleno delantero, refractiva, con assets (214)",
             ),
         }
     }
@@ -1018,7 +1019,7 @@ fn niveles_de_entrega(etapa: Etapa) -> [Blockout; 2] {
         ],
         Etapa::Relleno => [
             construir(delivery_level_previo_relleno_con(agua, Some(&raiz))),
-            construir(delivery_level_con(agua, Some(&raiz))),
+            construir(delivery_level_previo_trasero_con(agua, Some(&raiz))),
         ],
     }
 }
@@ -1635,17 +1636,19 @@ mod tests {
         assert_eq!(format!("{:?}", actual.scale), format!("{:?}", previa.scale));
     }
 
-    /// `--entrega-relleno` mide la entrega de producción —con el relleno bajo
-    /// Praderas— contra la cuenca aprobada de 205.
+    /// `--entrega-relleno` mide la etapa del relleno bajo Praderas —la
+    /// entrega de 214, que desde el relleno trasero y el Monolito de carbón
+    /// ya no es la de la ventana— contra la cuenca aprobada de 205.
     #[test]
     fn la_entrega_del_relleno_medida_es_la_de_produccion() {
         use expedition33_continente_inacabado::scenes::{
-            delivery_level_con, delivery_level_previo_relleno_con,
+            delivery_level_previo_relleno_con, delivery_level_previo_trasero_con,
         };
 
         let raiz = PathBuf::from(".");
         let [previa, actual] = niveles_de_entrega(Etapa::Relleno);
-        let produccion = delivery_level_con(WaterPreset::RefractiveWater, Some(&raiz)).unwrap();
+        let produccion =
+            delivery_level_previo_trasero_con(WaterPreset::RefractiveWater, Some(&raiz)).unwrap();
         let base =
             delivery_level_previo_relleno_con(WaterPreset::RefractiveWater, Some(&raiz)).unwrap();
 

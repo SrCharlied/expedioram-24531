@@ -837,8 +837,8 @@ mod tests {
     use crate::scene::{RevealGroup, Scene, SpatialGroupId};
     use crate::scene_builder::{measure_scene_radius, Blockout, HERO_YAW_DEGREES};
     use crate::scenes::{
-        delivery_level, delivery_level_previo_cuenca, delivery_level_previo_relleno,
-        delivery_level_previo_trasero, WaterPreset, DELIVERY,
+        delivery_level_previo_cuenca, delivery_level_previo_monolito,
+        delivery_level_previo_relleno, delivery_level_previo_trasero, WaterPreset, DELIVERY,
     };
 
     const EPS: f32 = 1.0e-4;
@@ -1811,9 +1811,11 @@ mod tests {
 
     // ============================================ relleno tras las masas
 
-    /// La entrega completa, con los dos rellenos.
+    /// La entrega con los dos rellenos, la etapa que se mide aquí. Desde
+    /// el Monolito de carbón, `delivery_level` añade además su placa al
+    /// final; esta etapa es `delivery_level_previo_monolito`.
     fn con_trasero() -> Blockout {
-        delivery_level(WaterPreset::RefractiveWater)
+        delivery_level_previo_monolito(WaterPreset::RefractiveWater)
     }
 
     /// Las piezas del relleno trasero: lo que la entrega añade detrás de las
@@ -1921,7 +1923,7 @@ mod tests {
     fn el_relleno_trasero_solo_se_anade_y_no_corta_nada() {
         for water in PRESETS {
             let p = delivery_level_previo_trasero(water);
-            let d = delivery_level(water);
+            let d = delivery_level_previo_monolito(water);
             let sin_volumen = usize::from(water == WaterPreset::InteriorVisible);
             assert_eq!(
                 d.scene.objects.len(),

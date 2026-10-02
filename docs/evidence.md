@@ -4117,3 +4117,82 @@ Crítico `0.2667 s`; `reveal_duration` `1.71 s`. Los cocientes pareados de
 `214` contra `205` quedan entre `0.98x` y `1.05x` en los encuadres con nombre
 y en `1.067x` en la peor cámara de la rejilla, `y+270 e+35 cerca`. La Ruta B
 no se midió.
+
+# Monolito de carbón con el 33 — 1 de octubre de 2026
+
+**Estado: promovido.** Charlie aprobó `carbon_33` del preview
+`examples/monolith_carbon_preview.rs`, y la entrega por defecto la lleva desde
+`src/scenes/monolith_carbon_delivery.rs`. Todo lo anterior a esta línea
+describe escenas anteriores y no se ha tocado.
+
+## Qué cambia
+
+- Los diez tramos del Monolito pasan de cristal pictórico a **carbón**:
+  material y textura propios, opaco, sin reflejo ni refracción, especular
+  `0.14 / 28` y grano procedural. La geometría, el lienzo inicial y el
+  revelado `Finale` no cambian.
+- Hay **una** placa de `0.004` sobre la cara `-Z` del tramo central, la que
+  mira a Praderas según las anclas, con el **33** en marfil cálido. Va
+  escrita en espejo en `u` para leerse derecha desde allí, y lleva el color
+  compensado por `L-03`. La cara de la base no sirve porque desde Praderas la
+  tapa la meseta; la del tramo central se ve entera desde `y = 4.6`.
+- Se añaden `+1` primitiva, `+3` materiales y `+3` texturas. Los presets
+  quedan en `219` / `219` / `218`; la línea base de `218` es
+  `delivery_level_previo_monolito`.
+
+## Verificación
+
+**Equivalencia con `carbon_33`** del preview, con los assets reales y en los
+tres presets: objetos, materiales efectivos, texturas texel a texel, anclas,
+escala, cámaras, luces y jerarquía. El cuadro de `320 × 240` desde Praderas es
+idéntico bit a bit. La huella del Monolito en la librería es la misma en las
+dos rutas: `2 732 666 650 031 609 387`.
+
+**RED:** con `aplicar` sin llamar, fallan los `5` tests del módulo nuevo.
+
+**Renders**, `800 × 600`, Ruta A, assets reales, todo revelado:
+
+| Toma | Producción = `carbon_33` |
+|---|---|
+| hero (`render_scene`) | `252175cfb13336205b3a067bae50aa729c4365d7f1354424a57f515a190bcae4` |
+| cenital `78°` (`render_scene`) | `0f0edfb29290d69b9490344c47d522c66c22e95c92093db34b5aa5ebf7fbd40e` |
+
+Los `30` PNG aprobados del preview del Monolito salen idénticos, y las `10`
+tomas de la columna `delivery` coinciden byte a byte con las de `carbon_33`.
+
+**Gates**, todos en `RC 0`:
+
+- `cargo test`: `692` / `672` / `639` en las tres rutas, más `1` ignorado en
+  cada una, el smoke de audio.
+- Tests de los ejemplos: Monolito (`15`), cuenca (`56`), Praderas (`61`), Aguas
+  (`44`) y `performance_matrix` (`10`), en las tres rutas.
+- `cargo clippy --all-targets -- -D warnings` y `cargo build --release` en las
+  tres rutas.
+- `cargo fmt -- --check` y `git diff --check`.
+
+`performance_matrix`: `--entrega-relleno` mide de nuevo su etapa, la entrega
+de `214` (`delivery_level_previo_trasero_con`) contra la de `205`. Su test,
+que fallaba desde el relleno trasero, vuelve a pasar sin cambiar el `214`.
+
+## Rendimiento
+
+Medición ligera, no la matriz:
+
+- **Método:** `218` contra `219`, `render_artistic` con una fixture de pincel
+  real, todo revelado, 3 rondas intercaladas en serie.
+- **Condiciones:** Ruta A, portátil en corriente, CPU al `12 %` sin otras
+  cargas.
+
+| Encuadre | `218` | `219` | Cociente pareado |
+|---|---:|---:|---:|
+| hero `320 × 240` | `0.0365 s` | `0.0337 s` | `0.927x` |
+| hero `800 × 600` | `0.2151 s` | `0.2039 s` | `0.937x` |
+| desde Praderas, zoom mínimo, `320 × 240` | `0.0510 s` | `0.0484 s` | `0.942x` |
+| desde Praderas, zoom mínimo, `800 × 600` | `0.3043 s` | `0.2899 s` | `0.953x` |
+
+- **Por qué es más barato:** el carbón opaco quita los rebotes del cristal.
+  Desde Praderas, a `800 × 600`, los reflejados pasan de `92 244` a `66 769`,
+  los refractados de `84 158` a `61 261` y las pruebas de primitiva de
+  `20.87 M` a `20.05 M`.
+- **Coste de la placa:** `+0.07 %` de pruebas de primitiva.
+- **Lo que no se midió:** la Ruta B y la matriz completa.

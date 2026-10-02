@@ -1170,6 +1170,41 @@ añaden `+3` volúmenes de agua, con el agua de la cuenca, y `+6` piezas de
 lecho, con su fondo de piedra: **`214`** —`213` con `InteriorVisible`—. La
 cuenca anterior al relleno es `delivery_level_previo_relleno`.
 
+#### Relleno tras las masas (1 de octubre de 2026)
+
+Detrás de las masas de fondo que flotan bajo la meseta quedaba otra franja
+seca, visible desde una órbita trasera. `rellenar_tras_las_masas` añade
+`+2` volúmenes de agua y `+2` piezas de lecho con los mismos materiales:
+**`218`** —`217` con `InteriorVisible`—. La línea base anterior, de `214`, es
+`delivery_level_previo_trasero`.
+
+### Monolito de carbón con el 33 en la entrega (1 de octubre de 2026)
+
+Charlie aprobó la variante `carbon_33` del preview
+`examples/monolith_carbon_preview.rs` y se promovió en
+`src/scenes/monolith_carbon_delivery.rs`. `G-03` cambia de material final y
+gana una pieza; su geometría no se mueve:
+
+| Entrada | Antes | Cambio | Entrega |
+|---|---:|---|---:|
+| `G-03` Monolito, diez tramos | 10 | `canvas_unpainted` → **carbón** (material y textura propios; el `pictorial_crystal` queda sin uso en la entrega, sin modificar) | 10 |
+| Placa del **33**, grupo `Monolith`, revelación `Finale` | 0 | `+1`, apoyada en la cara `-Z` del tramo central, `0.004` de grosor | 1 |
+| **Total** | **218** | `+1` | **219** |
+
+- **Carbón:** gris oscuro mate con grano procedural, opaco, sin reflejo ni
+  refracción (`0 / 0`, `ior 1`), con especular `0.14 / 28`.
+- **El 33:** marfil cálido, en una textura `Clamp` de la placa cuyo fondo es
+  el carbón de la cara horneado en sus coordenadas, escrita en espejo en `u`
+  para leerse derecha desde Praderas (`-Z`, de las anclas). Sin revelar, la
+  placa lleva el lienzo de la cara horneado igual.
+- **Color compensado** por `L-03`, que ilumina de lleno esa cara; las luces
+  no cambian.
+- Se añaden `+3` materiales y `+3` texturas.
+
+`delivery-refractive-water` y `delivery-opaque-water` cuentan `219`;
+`delivery-interior-visible`, `218`. La línea base anterior, de `218`, es
+`delivery_level_previo_monolito`.
+
 A `800 × 600`, sin aceleración:
 
 ```text

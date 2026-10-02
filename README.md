@@ -79,7 +79,20 @@ aprobada mirando los renders del preview de fidelidad del Rompeolas:
   Praderas, delante de las masas de fondo que flotan bajo ella, un
   **relleno** de `3` volúmenes de agua y `6` piezas de lecho continúa la
   cuenca con su mismo agua y su mismo fondo de piedra
-  (`rellenar_bajo_praderas`): era la franja que quedaba seca.
+  (`rellenar_bajo_praderas`): era la franja que quedaba seca. Detrás de esas
+  masas, la franja que se ve desde una órbita trasera lleva otros `2`
+  volúmenes y `2` piezas de lecho (`rellenar_tras_las_masas`).
+- **El Monolito** lleva la composición aprobada en su preview (`carbon_33`):
+  sus diez tramos pasan de cristal pictórico a **carbón** —gris oscuro mate
+  con grano, opaco, sin reflejo ni refracción, con un brillo local
+  contenido— y la cara del tramo central que mira a Praderas lleva un **33**
+  en marfil cálido. El número va en **una** placa delgada (`0.004`) apoyada
+  en esa cara: un material vale para el objeto entero, y así el 33 solo se
+  ve desde Praderas. El marfil y el carbón están compensados por `L-03`, el
+  acento cian del Monolito; las luces no cambian. Vive en
+  `src/scenes/monolith_carbon_delivery.rs`; sus tres materiales y sus tres
+  texturas son nuevos y solo del Monolito. La placa es una superficie
+  pintable aparte para el pincel.
 
 | | Primitivas |
 |---|---:|
@@ -89,7 +102,12 @@ aprobada mirando los renders del preview de fidelidad del Rompeolas:
 | Isla de borde (`DELIVERY`) | `168` |
 | Cuenca del Monolito: agua y lecho | `+19 +18` |
 | Relleno bajo Praderas: agua y lecho | `+3 +6` |
-| **Entrega (`delivery_level`)** | **`214`** |
+| Relleno tras las masas: agua y lecho | `+2 +2` |
+| Monolito de carbón: la placa del 33 | `+1` |
+| **Entrega (`delivery_level`)** | **`219`** |
+
+`delivery-opaque-water` también tiene `219`, y `delivery-interior-visible`,
+sin el volumen de Aguas, `218`.
 
 El aumento de presupuesto está autorizado para la segunda formación y,
 después, para la cuenca del Monolito. El coste de la cuenca está medido en
@@ -109,6 +127,8 @@ caídas. Las entregas anteriores siguen disponibles como líneas base:
 | `delivery_level_previo_aguas_con` | con la Praderas aprobada, antes de Aguas |
 | `delivery_level_previo_cuenca_con` | con Praderas y Aguas aprobadas, antes de la cuenca (`168`) |
 | `delivery_level_previo_relleno_con` | la cuenca aprobada, antes del relleno bajo Praderas (`205`) |
+| `delivery_level_previo_trasero_con` | con el relleno delantero, antes del relleno tras las masas (`214`) |
+| `delivery_level_previo_monolito_con` | con los dos rellenos, antes del Monolito de carbón (`218`) |
 
 Un test por región exige que todo lo que no es esa región —geometría,
 materiales compartidos, anclas, escala, cámaras, luces y jerarquía— sea
@@ -119,6 +139,7 @@ las que se aprobaron:
 cargo run --release --example meadows_fidelity_preview -- <carpeta>
 cargo run --release --example flying_waters_fidelity_preview -- <carpeta>
 cargo run --release --example monolith_basin_preview -- <carpeta>
+cargo run --release --example monolith_carbon_preview -- <carpeta>
 ```
 
 El primero escribe la entrega previa y las tres variantes de Praderas, en
@@ -126,9 +147,12 @@ hero y en cenital a `78°`; el segundo, la entrega previa a Aguas, sus tres
 variantes y la entrega de producción, en hero, cenital y un encuadre cercano
 del pecio; el tercero, la entrega previa a la cuenca, sus variantes y la
 entrega de producción, en hero, cenital y un encuadre cercano del Monolito.
-`refined_water_polish`, `split_wreck_thin_chain` y `flooded_blue_raised`
-son, comprobado por test con los assets reales, la escena que abre la
-entrega.
+El cuarto, la entrega previa al Monolito, `carbon`, `carbon_33` y la entrega
+de producción, en hero, cenital, desde Praderas —también a `320 × 240`—, un
+cercano del 33 y los dos laterales.
+`refined_water_polish`, `split_wreck_thin_chain`, `flooded_blue_raised` y
+`carbon_33` son, comprobado por test con los assets reales, la escena que
+abre la entrega.
 
 ## Controles
 
@@ -500,7 +524,8 @@ src/
 ├── scenes/            el diorama por regiones; edge_island.rs, la entrega;
 │                      meadows_delivery.rs, la Praderas de la entrega;
 │                      flying_waters_delivery.rs, las Aguas de la entrega;
-│                      monolith_basin_delivery.rs, la cuenca del Monolito
+│                      monolith_basin_delivery.rs, la cuenca del Monolito;
+│                      monolith_carbon_delivery.rs, el Monolito de carbón
 └── bin/
     ├── render_scene.rs     render headless a PNG
     └── generate_assets.rs  generador determinista de texturas

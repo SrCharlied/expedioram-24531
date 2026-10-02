@@ -154,8 +154,8 @@ mod imp {
     };
     use expedition33_continente_inacabado::scene_builder::{Blockout, HERO_YAW_DEGREES};
     use expedition33_continente_inacabado::scenes::{
-        delivery_level_con, delivery_level_previo_cuenca_con, delivery_level_previo_relleno_con,
-        delivery_level_previo_trasero_con, WaterPreset,
+        delivery_level_previo_cuenca_con, delivery_level_previo_monolito_con,
+        delivery_level_previo_relleno_con, delivery_level_previo_trasero_con, WaterPreset,
     };
     use expedition33_continente_inacabado::texture::Texture;
     use nalgebra_glm::Vec3;
@@ -1446,8 +1446,11 @@ mod imp {
             delivery_level_previo_trasero_con(WaterPreset::RefractiveWater, Some(&raiz))
                 .expect("los assets reales tienen que estar en la raiz del proyecto");
         let detras = behind_masses_fill(actual(&raiz));
-        let entregada_detras = delivery_level_con(WaterPreset::RefractiveWater, Some(&raiz))
-            .expect("los assets reales tienen que estar en la raiz del proyecto");
+        // Desde el Monolito de carbón, `delivery_level_con` añade su placa:
+        // la entrega con los dos rellenos es la línea base de 218.
+        let entregada_detras =
+            delivery_level_previo_monolito_con(WaterPreset::RefractiveWater, Some(&raiz))
+                .expect("los assets reales tienen que estar en la raiz del proyecto");
         let camaras = [
             ("hero", vigente.hero_camera()),
             ("top78", camara_cenital(&vigente)),
@@ -3742,10 +3745,15 @@ mod tests {
             .expect("assets reales")
     }
 
-    /// La entrega de producción de ahora, con los dos rellenos.
+    /// La entrega con los dos rellenos, de 218: desde el Monolito de carbón,
+    /// `delivery_level_con` añade además su placa, y esta etapa es
+    /// `delivery_level_previo_monolito_con`.
     fn produccion_con_trasero() -> Blockout {
-        use expedition33_continente_inacabado::scenes::{delivery_level_con, WaterPreset};
-        delivery_level_con(WaterPreset::RefractiveWater, Some(&raiz())).expect("assets reales")
+        use expedition33_continente_inacabado::scenes::{
+            delivery_level_previo_monolito_con, WaterPreset,
+        };
+        delivery_level_previo_monolito_con(WaterPreset::RefractiveWater, Some(&raiz()))
+            .expect("assets reales")
     }
 
     /// La promoción: la entrega de producción es `flooded_blue_raised`
