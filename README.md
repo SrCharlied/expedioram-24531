@@ -9,6 +9,10 @@ La obra está **inspirada en *Clair Obscur: Expedition 33***, que es su
 referencia visual y conceptual. El nombre del videojuego no forma parte del
 título ni del proyecto.
 
+## Link al video
+
+https://youtu.be/8uieUusKifk
+
 ![El Continente Inacabado, estado final](evidence/hito8/hero_final.png)
 
 ## Concepto y secuencia
