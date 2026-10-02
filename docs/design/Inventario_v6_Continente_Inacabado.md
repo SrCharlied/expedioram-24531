@@ -1138,6 +1138,38 @@ coral llevan los suyos. Son cuatro materiales locales, sin tocar los
 compartidos. El nivel seguro conserva la cadena de ocho cubos descrita en
 `A-05`.
 
+### Cuenca del Monolito en la entrega (1 de octubre de 2026)
+
+Charlie aprobó la variante `flooded_blue_raised` del preview
+`examples/monolith_basin_preview.rs` y se promovió en
+`src/scenes/monolith_basin_delivery.rs`. Es la única promoción que suma
+piezas después de la isla de borde:
+
+| Entrada | Isla de borde | Cambio | Entrega |
+|---|---:|---|---:|
+| Cuatro caídas exteriores de `P-05`/`P-07` | 4 | solo baja su pie hasta lo que tienen debajo | 4 |
+| Agua de la cuenca, grupo `Global`, revelación `Meadows` | 0 | `+19` volúmenes de techo común `0.30` | 19 |
+| Lecho de la cuenca, con un fondo de piedra cada uno | 0 | `+18` | 18 |
+| **Total** | **168** | `+37` | **205** |
+
+La huella del agua es la base libre medida —todo lo que no tiene un bloque
+encima, con `0.03` de holgura—, así que bloques, islas y pedestal emergen y
+la cuenca no se une a Aguas Voladoras. `delivery-refractive-water` y
+`delivery-opaque-water` cuentan `205`; `delivery-interior-visible`, `204`. La
+línea base anterior, de `168`, es `delivery_level_previo_cuenca`.
+
+#### Relleno bajo Praderas (1 de octubre de 2026)
+
+La huella de la cuenca excluía en planta la meseta flotante de Praderas, y
+bajo ella quedaba una franja de lienzo seco. Con autorización de Charlie, la
+entrega la rellena (`rellenar_bajo_praderas`): solo bajo las piezas de
+Praderas que vuelan con hueco para el agua y el lecho, delante de las masas
+de fondo que flotan bajo la meseta, que siguen excluidas, igual que las
+caídas que llegan al suelo. Las `205` piezas de la cuenca no cambian; se
+añaden `+3` volúmenes de agua, con el agua de la cuenca, y `+6` piezas de
+lecho, con su fondo de piedra: **`214`** —`213` con `InteriorVisible`—. La
+cuenca anterior al relleno es `delivery_level_previo_relleno`.
+
 A `800 × 600`, sin aceleración:
 
 ```text

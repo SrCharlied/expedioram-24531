@@ -465,7 +465,8 @@ mod tests {
     use crate::scene::{RevealGroup, Scene, SpatialGroupId};
     use crate::scene_builder::{measure_scene_radius, Blockout};
     use crate::scenes::{
-        delivery_level, delivery_level_previo_aguas, safe_level, WaterPreset, DELIVERY,
+        delivery_level, delivery_level_previo_aguas, delivery_level_previo_cuenca, safe_level,
+        WaterPreset, DELIVERY,
     };
 
     const PRESETS: [WaterPreset; 3] = [
@@ -512,7 +513,10 @@ mod tests {
     #[test]
     fn aguas_cuenta_58_y_la_entrega_168_en_los_tres_presets() {
         for water in PRESETS {
-            let d = delivery_level(water);
+            // La etapa de Aguas: desde la promoción de la cuenca, `delivery_level`
+            // añade sus piezas y sus materiales; eso lo comprueba
+            // `monolith_basin_delivery`.
+            let d = delivery_level_previo_cuenca(water);
             let sin_volumen = usize::from(water == WaterPreset::InteriorVisible);
 
             assert_eq!(aguas(&d.scene).len(), 58 - sin_volumen, "{water:?}");
@@ -584,7 +588,10 @@ mod tests {
     fn fuera_de_aguas_la_entrega_es_la_previa_byte_a_byte() {
         for water in PRESETS {
             let x = delivery_level_previo_aguas(water);
-            let y = delivery_level(water);
+            // La etapa de Aguas: desde la promoción de la cuenca, `delivery_level`
+            // añade sus piezas y sus materiales; eso lo comprueba
+            // `monolith_basin_delivery`.
+            let y = delivery_level_previo_cuenca(water);
             let ax = aguas(&x.scene);
 
             assert_eq!(x.scene.objects.len(), y.scene.objects.len());
@@ -749,7 +756,10 @@ mod tests {
     #[test]
     fn los_materiales_nuevos_son_locales_de_aguas_y_los_grupos_no_cambian() {
         let previo = delivery_level_previo_aguas(WaterPreset::RefractiveWater);
-        let d = entrega();
+        // La etapa de Aguas: desde la promoción de la cuenca, `delivery_level`
+        // añade sus piezas y sus materiales; eso lo comprueba
+        // `monolith_basin_delivery`.
+        let d = delivery_level_previo_cuenca(WaterPreset::RefractiveWater);
         let antes = previo.scene.palette.len();
         let a = aguas(&d.scene);
 
@@ -851,9 +861,13 @@ mod tests {
     #[test]
     fn la_huella_de_aguas_queda_fijada() {
         let previo = delivery_level_previo_aguas(WaterPreset::RefractiveWater);
+        // La etapa de Aguas: desde la promoción de la cuenca, `delivery_level`
+        // añade sus piezas y sus materiales; eso lo comprueba
+        // `monolith_basin_delivery`.
+        let etapa = delivery_level_previo_cuenca(WaterPreset::RefractiveWater);
 
         assert_eq!(
-            huella(&entrega(), &previo.scene),
+            huella(&etapa, &previo.scene),
             HUELLA_DE_AGUAS,
             "Aguas de produccion cambio respecto de la aprobada"
         );

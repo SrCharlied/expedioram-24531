@@ -45,6 +45,12 @@ nalgebra-glm = "0.18.0"
 minifb = "0.26.0"
 image = { version = "0.25", default-features = false, features = ["png"] }
 
+# Musica de fondo de la ventana (`src/music_rodio.rs`, solo el binario).
+# Sin las features por defecto, que traen grabacion, flac, mp4, vorbis, wav
+# y dither: solo `playback` (salida por cpal, WASAPI en Windows) y `mp3`
+# (decodificador de symphonia). Nada de reproductores externos.
+rodio = { version = "0.22.2", default-features = false, features = ["playback", "mp3"] }
+
 # El mismo crate como dev-dependency: los tests de integracion solo ven la
 # API publica del paquete mas sus dev-dependencies, y necesitan decodificar
 # el PNG que produce save_png para comprobar que es valido.

@@ -87,6 +87,8 @@
 //!
 //! ```text
 //! cargo run --release --example performance_matrix -- --entrega
+//! cargo run --release --example performance_matrix -- --entrega-cuenca
+//! cargo run --release --example performance_matrix -- --entrega-relleno
 //! ```
 //!
 //! La matriz de arriba mide el nivel seguro de `154` y el candidato
@@ -96,8 +98,18 @@
 //! rotadas, cocientes pareados— y la misma fixture artística:
 //!
 //! - `previa`: `delivery_level_previo_aguas_con`, la entrega anterior a la
-//!   promoción de Aguas; `actual`: `delivery_level_con`, la que abre la
-//!   ventana. Las dos refractivas, con assets, `168` primitivas.
+//!   promoción de Aguas; `actual`: la etapa de Aguas, que desde la promoción
+//!   de la cuenca es `delivery_level_previo_cuenca_con`. Las dos
+//!   refractivas, con assets, `168` primitivas. Es la comparación que se
+//!   registró en la promoción de Aguas y se conserva tal cual.
+//! - Con `--entrega-cuenca`, la promoción de la cuenca: `previa`,
+//!   `delivery_level_previo_cuenca_con` (`168`); `actual`, la cuenca
+//!   aprobada, que desde el relleno bajo Praderas es
+//!   `delivery_level_previo_relleno_con` (`205`).
+//! - Con `--entrega-relleno`, el relleno bajo Praderas: `previa`, la cuenca
+//!   aprobada (`205`); `actual`, `delivery_level_con`, la que abre la
+//!   ventana (`214`). Mismo método, misma fixture, mismas cámaras y mismo
+//!   veredicto en los tres modos.
 //! - Los tres renderers de `Modo`, con una fixture pintada **para cada
 //!   nivel** sobre sus propias superficies.
 //! - `worst_case()` y `painted()`; cuadro final y perfil interactivo; la
@@ -125,8 +137,9 @@ use expedition33_continente_inacabado::reveal::{
 };
 use expedition33_continente_inacabado::scene_builder::Blockout;
 use expedition33_continente_inacabado::scenes::{
-    delivery_level_con, delivery_level_previo_aguas_con, safe_level_con, target_level_con, Density,
-    WaterPreset, SAFE, TARGET,
+    delivery_level_con, delivery_level_previo_aguas_con, delivery_level_previo_cuenca_con,
+    delivery_level_previo_relleno_con, safe_level_con, target_level_con, Density, WaterPreset,
+    SAFE, TARGET,
 };
 use expedition33_continente_inacabado::stats::{median_ratio, summarize};
 
@@ -577,8 +590,16 @@ fn escalones(celdas: &[Celda], etiqueta: &str) {
 }
 
 fn main() {
+    if std::env::args().skip(1).any(|a| a == "--entrega-relleno") {
+        entrega(Etapa::Relleno);
+        return;
+    }
+    if std::env::args().skip(1).any(|a| a == "--entrega-cuenca") {
+        entrega(Etapa::Cuenca);
+        return;
+    }
     if std::env::args().skip(1).any(|a| a == "--entrega") {
-        entrega();
+        entrega(Etapa::Aguas);
         return;
     }
 
@@ -934,8 +955,47 @@ fn main() {
 // matriz de arriba, sus niveles ni su fixture: reutiliza `Celda`, `Modo`,
 // `fixture_artistica` y `camara_de_zoom_artistico` tal como están.
 
+/// Qué promoción mide el bloque de la entrega.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Etapa {
+    /// `--entrega`: la de Aguas, la comparación histórica.
+    Aguas,
+    /// `--entrega-cuenca`: la de la cuenca del Monolito.
+    Cuenca,
+    /// `--entrega-relleno`: el relleno de la cuenca bajo Praderas.
+    Relleno,
+}
+
+impl Etapa {
+    fn bandera(self) -> &'static str {
+        match self {
+            Etapa::Aguas => "--entrega",
+            Etapa::Cuenca => "--entrega-cuenca",
+            Etapa::Relleno => "--entrega-relleno",
+        }
+    }
+
+    /// `(previa, actual)`, para la cabecera.
+    fn constructores(self) -> (&'static str, &'static str) {
+        match self {
+            Etapa::Aguas => (
+                "delivery_level_previo_aguas_con, refractiva, con assets",
+                "delivery_level_previo_cuenca_con, la etapa de Aguas, refractiva, con assets",
+            ),
+            Etapa::Cuenca => (
+                "delivery_level_previo_cuenca_con, refractiva, con assets (168)",
+                "delivery_level_previo_relleno_con, la cuenca aprobada, refractiva, con assets (205)",
+            ),
+            Etapa::Relleno => (
+                "delivery_level_previo_relleno_con, la cuenca aprobada, refractiva, con assets (205)",
+                "delivery_level_con, refractiva, con assets (214, la de la ventana)",
+            ),
+        }
+    }
+}
+
 /// Las dos entregas que se comparan: `[previa, actual]`.
-fn niveles_de_entrega() -> [Blockout; 2] {
+fn niveles_de_entrega(etapa: Etapa) -> [Blockout; 2] {
     let raiz = PathBuf::from(".");
     let construir = |r: Result<Blockout, _>| match r {
         Ok(nivel) => nivel,
@@ -945,17 +1005,22 @@ fn niveles_de_entrega() -> [Blockout; 2] {
             std::process::exit(1);
         }
     };
+    let agua = WaterPreset::RefractiveWater;
 
-    [
-        construir(delivery_level_previo_aguas_con(
-            WaterPreset::RefractiveWater,
-            Some(&raiz),
-        )),
-        construir(delivery_level_con(
-            WaterPreset::RefractiveWater,
-            Some(&raiz),
-        )),
-    ]
+    match etapa {
+        Etapa::Aguas => [
+            construir(delivery_level_previo_aguas_con(agua, Some(&raiz))),
+            construir(delivery_level_previo_cuenca_con(agua, Some(&raiz))),
+        ],
+        Etapa::Cuenca => [
+            construir(delivery_level_previo_cuenca_con(agua, Some(&raiz))),
+            construir(delivery_level_previo_relleno_con(agua, Some(&raiz))),
+        ],
+        Etapa::Relleno => [
+            construir(delivery_level_previo_relleno_con(agua, Some(&raiz))),
+            construir(delivery_level_con(agua, Some(&raiz))),
+        ],
+    }
 }
 
 /// El encuadre más lejano que alcanza la ventana: la hero con el zoom
@@ -1128,8 +1193,9 @@ fn peor_de_la_actual(celdas: &[Celda], filtro: impl Fn(&Celda) -> bool) -> f64 {
         .fold(0.0, f64::max)
 }
 
-fn entrega() {
-    let niveles = niveles_de_entrega();
+fn entrega(etapa: Etapa) {
+    let niveles = niveles_de_entrega(etapa);
+    let (previa, actual) = etapa.constructores();
     let luces: Vec<Vec<PointLight>> = niveles
         .iter()
         .map(|n| luces_del_diorama(&n.anchors, &n.scale))
@@ -1137,10 +1203,18 @@ fn entrega() {
     let perfil = InteractiveProfile::default();
     let camaras = camaras_de_entrega(&niveles[1]);
 
-    println!("performance_matrix --entrega · la entrega por defecto\n");
+    println!(
+        "performance_matrix {} · etapa {etapa:?} de la entrega\n",
+        etapa.bandera()
+    );
     println!("  release     si, obligatorio");
-    println!("  previa      delivery_level_previo_aguas_con, refractiva, con assets");
-    println!("  actual      delivery_level_con, refractiva, con assets (la de la ventana)");
+    println!("  previa      {previa}");
+    println!("  actual      {actual}");
+    println!(
+        "  primitivas  previa {} · actual {}",
+        niveles[0].scene.objects.len(),
+        niveles[1].scene.objects.len()
+    );
     println!(
         "  escena      {} / {} texturas, {} luces, scene_radius {:.4}",
         niveles[0].scene.textures.len(),
@@ -1153,7 +1227,10 @@ fn entrega() {
     for (nombre, c) in &camaras {
         println!("  camara      {nombre:<22} radio {:.3}", c.radius());
     }
-    println!("  comando     cargo run --release --example performance_matrix -- --entrega");
+    println!(
+        "  comando     cargo run --release --example performance_matrix -- {}",
+        etapa.bandera()
+    );
 
     // -------------------------------- encuadres con nombre, dos resoluciones
     let mut interactivas: Vec<Celda> = Vec::new();
@@ -1496,12 +1573,16 @@ mod tests {
     #[test]
     fn la_entrega_medida_es_la_de_produccion() {
         use expedition33_continente_inacabado::scenes::{
-            delivery_level_con, delivery_level_previo_aguas_con,
+            delivery_level_previo_aguas_con, delivery_level_previo_cuenca_con,
         };
 
         let raiz = PathBuf::from(".");
-        let [previa, actual] = niveles_de_entrega();
-        let produccion = delivery_level_con(WaterPreset::RefractiveWater, Some(&raiz)).unwrap();
+        // `--entrega` es la comparación histórica de la etapa de Aguas: desde
+        // la promoción de la cuenca, esa etapa es
+        // `delivery_level_previo_cuenca_con`.
+        let [previa, actual] = niveles_de_entrega(Etapa::Aguas);
+        let produccion =
+            delivery_level_previo_cuenca_con(WaterPreset::RefractiveWater, Some(&raiz)).unwrap();
         let base =
             delivery_level_previo_aguas_con(WaterPreset::RefractiveWater, Some(&raiz)).unwrap();
 
@@ -1523,11 +1604,69 @@ mod tests {
         assert_eq!(format!("{:?}", actual.scale), format!("{:?}", previa.scale));
     }
 
+    /// `--entrega-cuenca` mide la entrega de producción —la que abre la
+    /// ventana, con la cuenca— contra la etapa anterior a la cuenca.
+    #[test]
+    fn la_entrega_de_la_cuenca_medida_es_la_de_produccion() {
+        use expedition33_continente_inacabado::scenes::{
+            delivery_level_previo_cuenca_con, delivery_level_previo_relleno_con,
+        };
+
+        let raiz = PathBuf::from(".");
+        // `--entrega-cuenca` es la comparación de la promoción de la cuenca:
+        // desde el relleno bajo Praderas, la cuenca aprobada de 205 es
+        // `delivery_level_previo_relleno_con`.
+        let [previa, actual] = niveles_de_entrega(Etapa::Cuenca);
+        let produccion =
+            delivery_level_previo_relleno_con(WaterPreset::RefractiveWater, Some(&raiz)).unwrap();
+        let base =
+            delivery_level_previo_cuenca_con(WaterPreset::RefractiveWater, Some(&raiz)).unwrap();
+
+        assert_eq!(actual.scene.objects.len(), 205);
+        assert_eq!(previa.scene.objects.len(), 168);
+        assert_eq!(
+            format!("{:?}", actual.scene.objects),
+            format!("{:?}", produccion.scene.objects)
+        );
+        assert_eq!(
+            format!("{:?}", previa.scene.objects),
+            format!("{:?}", base.scene.objects)
+        );
+        assert_eq!(format!("{:?}", actual.scale), format!("{:?}", previa.scale));
+    }
+
+    /// `--entrega-relleno` mide la entrega de producción —con el relleno bajo
+    /// Praderas— contra la cuenca aprobada de 205.
+    #[test]
+    fn la_entrega_del_relleno_medida_es_la_de_produccion() {
+        use expedition33_continente_inacabado::scenes::{
+            delivery_level_con, delivery_level_previo_relleno_con,
+        };
+
+        let raiz = PathBuf::from(".");
+        let [previa, actual] = niveles_de_entrega(Etapa::Relleno);
+        let produccion = delivery_level_con(WaterPreset::RefractiveWater, Some(&raiz)).unwrap();
+        let base =
+            delivery_level_previo_relleno_con(WaterPreset::RefractiveWater, Some(&raiz)).unwrap();
+
+        assert_eq!(actual.scene.objects.len(), 214);
+        assert_eq!(previa.scene.objects.len(), 205);
+        assert_eq!(
+            format!("{:?}", actual.scene.objects),
+            format!("{:?}", produccion.scene.objects)
+        );
+        assert_eq!(
+            format!("{:?}", previa.scene.objects),
+            format!("{:?}", base.scene.objects)
+        );
+        assert_eq!(format!("{:?}", actual.scale), format!("{:?}", previa.scale));
+    }
+
     /// Los dos extremos de zoom que alcanza la ventana con el pincel: el
     /// mínimo artístico y el máximo de la cámara.
     #[test]
     fn los_extremos_de_zoom_de_la_entrega_son_los_alcanzables() {
-        let [_, actual] = niveles_de_entrega();
+        let [_, actual] = niveles_de_entrega(Etapa::Relleno);
         let radio = actual.scale.scene_radius;
         let lejos = camara_de_zoom_maximo(&actual);
         let cerca = camara_de_zoom_artistico(&actual);
@@ -1542,7 +1681,7 @@ mod tests {
     /// reales, en cada encuadre y resolución que mide el bloque.
     #[test]
     fn las_fixtures_de_la_entrega_son_reales_y_no_vacias() {
-        let niveles = niveles_de_entrega();
+        let niveles = niveles_de_entrega(Etapa::Relleno);
         let perfil = InteractiveProfile::default();
 
         for camara in camaras_de_entrega(&niveles[1]).map(|(_, c)| c) {

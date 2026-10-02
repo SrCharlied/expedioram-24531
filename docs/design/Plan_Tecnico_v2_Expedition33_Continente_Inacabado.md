@@ -1705,6 +1705,16 @@ Aguas        58
 Total       168
 ```
 
+### Cuenca del Monolito (1 de octubre de 2026)
+
+La entrega por defecto lleva además la cuenca aprobada del Monolito:
+`+19` volúmenes de agua y `+18` piezas de lecho, `205` en total. Las `168`
+de la isla de borde siguen siendo la línea base `delivery_level_previo_cuenca`;
+ver el inventario, «Cuenca del Monolito en la entrega», y el coste medido en
+`docs/evidence.md`. Después, el relleno bajo Praderas suma `+3 +6`: la
+entrega queda en `214`, con la cuenca de `205` como línea base
+`delivery_level_previo_relleno`.
+
 ## Nivel objetivo — condicionado por medición
 
 ```text

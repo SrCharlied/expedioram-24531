@@ -659,8 +659,8 @@ mod tests {
     use crate::scene::{Scene, SpatialGroupId};
     use crate::scene_builder::measure_scene_radius;
     use crate::scenes::{
-        delivery_level, delivery_level_previo, delivery_level_previo_aguas, safe_level,
-        WaterPreset, DELIVERY,
+        delivery_level, delivery_level_previo, delivery_level_previo_aguas,
+        delivery_level_previo_cuenca, safe_level, WaterPreset, DELIVERY,
     };
 
     const PRESETS: [WaterPreset; 3] = [
@@ -786,7 +786,11 @@ mod tests {
     #[test]
     fn praderas_cuenta_37_y_la_entrega_168() {
         for water in PRESETS {
-            let entrega = delivery_level(water);
+            // La etapa de Praderas: desde la promoción de la cuenca,
+            // `delivery_level` añade sus piezas y alarga cuatro caídas, fuera
+            // del territorio de Praderas; eso lo comprueba
+            // `monolith_basin_delivery`.
+            let entrega = delivery_level_previo_cuenca(water);
             let sin_volumen = usize::from(water == WaterPreset::InteriorVisible);
 
             assert_eq!(praderas(&entrega.scene).len(), 37);
@@ -798,7 +802,11 @@ mod tests {
     #[test]
     fn praderas_no_sale_de_su_territorio_ni_mueve_la_escala() {
         let previo = delivery_level_previo(WaterPreset::RefractiveWater);
-        let entrega = delivery_level(WaterPreset::RefractiveWater);
+        // La etapa de Praderas: desde la promoción de la cuenca,
+        // `delivery_level` añade sus piezas y alarga cuatro caídas, fuera
+        // del territorio de Praderas; eso lo comprueba
+        // `monolith_basin_delivery`.
+        let entrega = delivery_level_previo_cuenca(WaterPreset::RefractiveWater);
         let territorio = praderas(&previo.scene)
             .into_iter()
             .map(|i| caja(&previo.scene, i))

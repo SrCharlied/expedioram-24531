@@ -35,6 +35,8 @@ pub mod hit;
 pub mod input;
 pub mod light;
 pub mod material;
+pub mod music;
+pub mod music_button;
 pub mod optics;
 pub mod primitive;
 pub mod ray;
@@ -47,6 +49,7 @@ pub mod scenes;
 pub mod skybox;
 pub mod stats;
 pub mod texture;
+pub mod viewport;
 
 /// Margen para despegar un rayo secundario de la superficie que lo originó.
 ///

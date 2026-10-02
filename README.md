@@ -65,28 +65,50 @@ aprobada mirando los renders del preview de fidelidad del Rompeolas:
   presets comparten el interior. Vive en `src/scenes/flying_waters_delivery.rs`;
   los cuatro materiales nuevos —lecho, somera, coral y el metal negro de la
   cadena— son solo de Aguas.
+- **La cuenca del Monolito** lleva la composición aprobada en su preview
+  (`flooded_blue_raised`). Las cuatro caídas exteriores de Praderas bajan a
+  lo que tienen debajo —tres al plinto, la cuarta a una masa de fondo— y una
+  lámina de agua azul, a `0.30` sobre el plinto, ocupa toda la base libre:
+  lo que no tiene un bloque encima, alrededor del Monolito, en el gran claro
+  detrás de Aguas y en el canal entre el Rompeolas y Aguas. Debajo, un lecho
+  de piedra azul pizarra. Bloques, islas y pedestal emergen; la cuenca no se
+  une a Aguas Voladoras. Son `19` volúmenes de agua y `18` piezas de lecho,
+  medidos en tiempo de ejecución sobre la geometría. Vive en
+  `src/scenes/monolith_basin_delivery.rs`; el agua y los dieciocho fondos
+  son materiales nuevos y solo de la cuenca. Bajo la meseta flotante de
+  Praderas, delante de las masas de fondo que flotan bajo ella, un
+  **relleno** de `3` volúmenes de agua y `6` piezas de lecho continúa la
+  cuenca con su mismo agua y su mismo fondo de piedra
+  (`rellenar_bajo_praderas`): era la franja que quedaba seca.
 
 | | Primitivas |
 |---|---:|
 | Nivel seguro histórico (`safe_level`) | `154` |
 | Masas de `G-02` retiradas —las dos que ninguna cámara veía— | `−2` |
 | Prismas de la segunda formación | `+16` |
-| **Entrega (`delivery_level`)** | **`168`** |
+| Isla de borde (`DELIVERY`) | `168` |
+| Cuenca del Monolito: agua y lecho | `+19 +18` |
+| Relleno bajo Praderas: agua y lecho | `+3 +6` |
+| **Entrega (`delivery_level`)** | **`214`** |
 
-El aumento de presupuesto está autorizado **solo** para la segunda
-formación. El nivel seguro de `154` se conserva sin cambios: sobre él se
+El aumento de presupuesto está autorizado para la segunda formación y,
+después, para la cuenca del Monolito. El coste de la cuenca está medido en
+`docs/evidence.md`. El nivel seguro de `154` se conserva sin cambios: sobre él se
 midieron los gates de los hitos 3 a 7 y con él se siguen reproduciendo. La
 composición vive en `src/scenes/edge_island.rs` y se construye encima del
 nivel seguro, midiendo cada paso contra algo ya medido.
 
 Las promociones de Praderas y de Aguas no cambian el conteo ni nada ajeno a
-cada región. Las entregas anteriores siguen disponibles como líneas base:
+cada región; la de la cuenca suma sus piezas y solo alarga, además, cuatro
+caídas. Las entregas anteriores siguen disponibles como líneas base:
 
 | Línea base | Qué es |
 |---|---|
 | `safe_level` | el nivel seguro histórico de `154` |
 | `delivery_level_previo_con` | la isla de borde antes de Praderas y de Aguas |
 | `delivery_level_previo_aguas_con` | con la Praderas aprobada, antes de Aguas |
+| `delivery_level_previo_cuenca_con` | con Praderas y Aguas aprobadas, antes de la cuenca (`168`) |
+| `delivery_level_previo_relleno_con` | la cuenca aprobada, antes del relleno bajo Praderas (`205`) |
 
 Un test por región exige que todo lo que no es esa región —geometría,
 materiales compartidos, anclas, escala, cámaras, luces y jerarquía— sea
@@ -96,13 +118,17 @@ las que se aprobaron:
 ```bash
 cargo run --release --example meadows_fidelity_preview -- <carpeta>
 cargo run --release --example flying_waters_fidelity_preview -- <carpeta>
+cargo run --release --example monolith_basin_preview -- <carpeta>
 ```
 
 El primero escribe la entrega previa y las tres variantes de Praderas, en
 hero y en cenital a `78°`; el segundo, la entrega previa a Aguas, sus tres
 variantes y la entrega de producción, en hero, cenital y un encuadre cercano
-del pecio. `refined_water_polish` y `split_wreck_thin_chain` son, comprobado
-por test con los assets reales, la escena que abre la entrega.
+del pecio; el tercero, la entrega previa a la cuenca, sus variantes y la
+entrega de producción, en hero, cenital y un encuadre cercano del Monolito.
+`refined_water_polish`, `split_wreck_thin_chain` y `flooded_blue_raised`
+son, comprobado por test con los assets reales, la escena que abre la
+entrega.
 
 ## Controles
 
@@ -115,6 +141,7 @@ por test con los assets reales, la escena que abre la entrega.
 | `1` `2` `3` | pintar Praderas / Rompeolas / Aguas Voladoras |
 | `L` | volver al lienzo y repetir la demostración |
 | `R` | restaurar el encuadre hero |
+| clic en la bocina | silenciar o reanudar la música (`ON` / `OFF`) |
 | `Escape` | salir |
 
 El teclado existe porque una presentación no puede depender de acertar un clic
@@ -126,7 +153,21 @@ sobre una bahía que ocupa el `2.4 %` del cuadro.
 cargo run --release
 ```
 
-Se abre una ventana de `800 × 600`. Al arrancar mide el tiempo por cuadro **en
+Se abre una ventana de `1200 × 900` que se puede redimensionar. El cuadro se
+sigue trazando a `800 × 600` en reposo y a `320 × 240` mientras algo se mueve;
+la ventana solo lo escala conservando `4 : 3`, con bandas si la proporción no
+coincide, así que agrandarla no cuesta rayos. El ratón se lleva de la ventana
+al cuadro deshaciendo ese escalado (`viewport`).
+
+Suena `exp33/musica_mundo_e33.mp3` en bucle a volumen `0.25`, decodificada en
+el hilo de audio de `rodio`. La bocina la silencia y la reanuda: a la izquierda
+de la cápsula de la paleta, o abajo a la derecha en la ruta clásica sin
+pincel. Si faltan el archivo o el dispositivo de
+audio, se avisa una vez y la obra sigue en silencio con la bocina en `N/A`. El
+MP3 lo aporta el usuario y no está versionado; su licencia no está documentada
+aquí.
+
+Al arrancar mide el tiempo por cuadro **en
 esa máquina** y deriva de ahí la duración de la revelación; si el perfil no
 diera para quince cuadros de transición, aborta con el motivo en vez de alargar
 la animación.
@@ -339,9 +380,9 @@ silencioso a colores planos.
 cargo fmt -- --check
 cargo clippy --all-targets -- -D warnings
 cargo clippy --all-targets --no-default-features --features artistic-brush -- -D warnings
-cargo test                      # 632 tests: Ruta A + pincel
-cargo test --no-default-features --features artistic-brush # 612 tests: Ruta B + pincel
-cargo test --no-default-features # 580 tests: Ruta B clásica
+cargo test                      # 651 tests: Ruta A + pincel
+cargo test --no-default-features --features artistic-brush # 631 tests: Ruta B + pincel
+cargo test --no-default-features # 599 tests: Ruta B clásica
 cargo build --release
 ```
 
@@ -451,10 +492,15 @@ src/
 ├── reveal.rs          RevealState, fases y duración de la transición
 ├── input.rs           picking contra el cuadro presentado
 ├── camera.rs          órbita, zoom y generación de rayos
+├── viewport.rs        encuadre 4:3 de la ventana estirada y vuelta del ratón
+├── music.rs           estado de la música, sin audio
+├── music_button.rs    la bocina: zona, dibujo y enrutado del clic
+├── music_rodio.rs     salida real con rodio, solo del binario de ventana
 ├── skybox.rs          panoramas equirectangulares
 ├── scenes/            el diorama por regiones; edge_island.rs, la entrega;
 │                      meadows_delivery.rs, la Praderas de la entrega;
-│                      flying_waters_delivery.rs, las Aguas de la entrega
+│                      flying_waters_delivery.rs, las Aguas de la entrega;
+│                      monolith_basin_delivery.rs, la cuenca del Monolito
 └── bin/
     ├── render_scene.rs     render headless a PNG
     └── generate_assets.rs  generador determinista de texturas

@@ -120,7 +120,7 @@ mod imp {
     };
     use expedition33_continente_inacabado::scenes::meadows_delivery::magenta;
     use expedition33_continente_inacabado::scenes::{
-        delivery_level_con, delivery_level_previo_aguas_con, WaterPreset,
+        delivery_level_previo_aguas_con, delivery_level_previo_cuenca_con, WaterPreset,
     };
     use expedition33_continente_inacabado::texture::Texture;
     use nalgebra_glm::Vec3;
@@ -265,9 +265,12 @@ mod imp {
             .expect("los assets reales tienen que estar en la raiz del proyecto")
     }
 
-    /// La entrega de producción, con la variante promovida.
+    /// La entrega de producción en la etapa de Aguas, con la variante
+    /// promovida. Desde la promoción de la cuenca del Monolito,
+    /// `delivery_level_con` añade además la cuenca; la etapa de Aguas es
+    /// `delivery_level_previo_cuenca_con`.
     pub fn produccion_con(water: WaterPreset, raiz: &Path) -> Blockout {
-        delivery_level_con(water, Some(raiz))
+        delivery_level_previo_cuenca_con(water, Some(raiz))
             .expect("los assets reales tienen que estar en la raiz del proyecto")
     }
 

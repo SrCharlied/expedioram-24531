@@ -43,8 +43,8 @@
 //! entrega se recolocaría con él en vez de quedarse descuadrada.
 
 use super::{
-    flying_waters_delivery, meadows_delivery, nivel_con, Density, Presupuesto, WaterPreset,
-    Xorshift32, SAFE,
+    flying_waters_delivery, meadows_delivery, monolith_basin_delivery, nivel_con, Density,
+    Presupuesto, WaterPreset, Xorshift32, SAFE,
 };
 use crate::accel::{ClusterPlan, SceneAccel};
 use crate::bounds::Aabb;
@@ -196,14 +196,78 @@ pub fn delivery_level(water: WaterPreset) -> Blockout {
 /// Praderas lleva la composición aprobada en `meadows_delivery`: las mismas
 /// 37 piezas, en su territorio, reescritas sobre el reparto de esta
 /// composición. Aguas Voladoras lleva el pecio partido aprobado en
-/// `flying_waters_delivery`, con `A-01` y `A-11` intactos. Lo ajeno a cada
+/// `flying_waters_delivery`, con `A-01` y `A-11` intactos. La base libre
+/// alrededor del Monolito lleva la cuenca aprobada en
+/// `monolith_basin_delivery`: las cuatro caídas exteriores de Praderas
+/// bajan a lo que tienen debajo y una lámina de agua azul, sobre un lecho de
+/// piedra, ocupa todo lo que no tiene un bloque encima. Lo ajeno a cada
 /// región es idéntico a su línea base: `delivery_level_previo_con` para
-/// Praderas y `delivery_level_previo_aguas_con` para Aguas.
+/// Praderas, `delivery_level_previo_aguas_con` para Aguas y
+/// `delivery_level_previo_cuenca_con` para la cuenca. Bajo la meseta de
+/// Praderas, la cuenca se rellena —`monolith_basin_delivery::
+/// rellenar_bajo_praderas`—; la cuenca aprobada antes de ese relleno es
+/// `delivery_level_previo_relleno_con`.
 pub fn delivery_level_con(
     water: WaterPreset,
     raiz_assets: Option<&Path>,
 ) -> Result<Blockout, TextureError> {
-    entrega_con(water, raiz_assets, true, true)
+    entrega_con(water, raiz_assets, true, true, true, true, true)
+}
+
+/// La entrega **anterior** al relleno tras las masas, sin texturas.
+pub fn delivery_level_previo_trasero(water: WaterPreset) -> Blockout {
+    delivery_level_previo_trasero_con(water, None).expect("sin assets no hay error posible")
+}
+
+/// La entrega **anterior** al relleno tras las masas de fondo: la cuenca
+/// con el relleno delantero bajo Praderas, `214` primitivas, con la franja
+/// de detrás de las masas seca —la que se ve desde una órbita trasera—.
+///
+/// No es lo que se presenta. Se conserva como línea base y contra ella se
+/// comprueba que el relleno trasero solo añade piezas.
+pub fn delivery_level_previo_trasero_con(
+    water: WaterPreset,
+    raiz_assets: Option<&Path>,
+) -> Result<Blockout, TextureError> {
+    entrega_con(water, raiz_assets, true, true, true, true, false)
+}
+
+/// La entrega **anterior** al relleno bajo Praderas, sin texturas.
+pub fn delivery_level_previo_relleno(water: WaterPreset) -> Blockout {
+    delivery_level_previo_relleno_con(water, None).expect("sin assets no hay error posible")
+}
+
+/// La entrega **anterior** al relleno bajo Praderas: la cuenca aprobada de
+/// `205` primitivas, con la franja bajo la meseta de Praderas seca.
+///
+/// No es lo que se presenta. Se conserva como línea base: reproduce la
+/// cuenca que se aprobó (`flooded_blue_raised`) y contra ella se comprueba
+/// que el relleno solo añade piezas.
+pub fn delivery_level_previo_relleno_con(
+    water: WaterPreset,
+    raiz_assets: Option<&Path>,
+) -> Result<Blockout, TextureError> {
+    entrega_con(water, raiz_assets, true, true, true, false, false)
+}
+
+/// La entrega **anterior** a la promoción de la cuenca, sin texturas.
+pub fn delivery_level_previo_cuenca(water: WaterPreset) -> Blockout {
+    delivery_level_previo_cuenca_con(water, None).expect("sin assets no hay error posible")
+}
+
+/// La entrega **anterior** a la promoción de la cuenca: con la Praderas y
+/// las Aguas aprobadas, las caídas de Praderas como las dejó su promoción y
+/// la base libre sin agua. Son las `168` primitivas de `DELIVERY`.
+///
+/// No es lo que se presenta. Se conserva como línea base: es la escena sobre
+/// la que se aprobó el preview de la cuenca
+/// (`examples/monolith_basin_preview.rs`) y contra la que se comprueba que
+/// la promoción no toca nada fuera de la cuenca y de las caídas.
+pub fn delivery_level_previo_cuenca_con(
+    water: WaterPreset,
+    raiz_assets: Option<&Path>,
+) -> Result<Blockout, TextureError> {
+    entrega_con(water, raiz_assets, true, true, false, false, false)
 }
 
 /// La entrega **anterior** a la promoción de Aguas, sin texturas.
@@ -223,7 +287,7 @@ pub fn delivery_level_previo_aguas_con(
     water: WaterPreset,
     raiz_assets: Option<&Path>,
 ) -> Result<Blockout, TextureError> {
-    entrega_con(water, raiz_assets, true, false)
+    entrega_con(water, raiz_assets, true, false, false, false, false)
 }
 
 /// La entrega **anterior** a la promoción de Praderas, sin texturas.
@@ -243,7 +307,7 @@ pub fn delivery_level_previo_con(
     water: WaterPreset,
     raiz_assets: Option<&Path>,
 ) -> Result<Blockout, TextureError> {
-    entrega_con(water, raiz_assets, false, false)
+    entrega_con(water, raiz_assets, false, false, false, false, false)
 }
 
 fn entrega_con(
@@ -251,6 +315,9 @@ fn entrega_con(
     raiz_assets: Option<&Path>,
     praderas_aprobadas: bool,
     aguas_aprobadas: bool,
+    cuenca_aprobada: bool,
+    relleno_aprobado: bool,
+    trasero_aprobado: bool,
 ) -> Result<Blockout, TextureError> {
     let medida = match water {
         WaterPreset::InteriorVisible => WaterPreset::RefractiveWater,
@@ -274,6 +341,26 @@ fn entrega_con(
     if aguas_aprobadas {
         let ancla = entrega.anchors.flying_waters_anchor;
         flying_waters_delivery::aplicar(&mut entrega.scene, ancla);
+    }
+
+    // La cuenca, también con el volumen dentro: su huella se mide contra
+    // toda la escena —`A-01` incluido— y sus piezas van al final. Si el
+    // preset retira el volumen, se retira después, como siempre, y el agua
+    // de la cuenca ya se ha derivado del `A-01` del preset.
+    if cuenca_aprobada {
+        monolith_basin_delivery::aplicar(&mut entrega.scene);
+    }
+
+    // El relleno bajo Praderas, también con el volumen dentro y con el agua
+    // de la cuenca: solo añade piezas detrás de las suyas.
+    if relleno_aprobado {
+        monolith_basin_delivery::rellenar_bajo_praderas(&mut entrega.scene);
+    }
+
+    // Y detrás de las masas que flotan bajo la meseta, la franja que se ve
+    // desde una órbita trasera.
+    if trasero_aprobado {
+        monolith_basin_delivery::rellenar_tras_las_masas(&mut entrega.scene);
     }
 
     if water == WaterPreset::InteriorVisible {
@@ -1057,7 +1144,8 @@ mod tests {
         derive_orbit_radius, eye_at_yaw, measure_scene_radius, Blockout, HERO_YAW_DEGREES,
     };
     use crate::scenes::{
-        delivery_level_previo, delivery_level_previo_aguas, safe_level, WaterPreset, SAFE,
+        delivery_level_previo, delivery_level_previo_aguas, delivery_level_previo_cuenca,
+        safe_level, WaterPreset, SAFE,
     };
 
     /// Tolerancia de las comparaciones geométricas.
@@ -1220,7 +1308,10 @@ mod tests {
 
     #[test]
     fn cada_region_de_la_entrega_respeta_su_presupuesto() {
-        let nivel = entrega();
+        // La etapa de la isla de borde: desde la promoción de la cuenca,
+        // `delivery_level` añade sus piezas y alarga cuatro caídas; eso lo
+        // comprueba `monolith_basin_delivery`.
+        let nivel = delivery_level_previo_cuenca(WaterPreset::RefractiveWater);
         let cuenta = |g| indices(&nivel.scene, g).len();
 
         assert_eq!(nivel.scene.objects.len(), DELIVERY.total());
@@ -1239,9 +1330,12 @@ mod tests {
 
     #[test]
     fn los_presets_de_la_entrega_solo_difieren_en_el_volumen_de_agua() {
-        let opaco = delivery_level(WaterPreset::OpaqueWater);
-        let visible = delivery_level(WaterPreset::InteriorVisible);
-        let refractivo = entrega();
+        // La etapa de la isla de borde: desde la promoción de la cuenca,
+        // `delivery_level` añade sus piezas y alarga cuatro caídas; eso lo
+        // comprueba `monolith_basin_delivery`.
+        let opaco = delivery_level_previo_cuenca(WaterPreset::OpaqueWater);
+        let visible = delivery_level_previo_cuenca(WaterPreset::InteriorVisible);
+        let refractivo = delivery_level_previo_cuenca(WaterPreset::RefractiveWater);
 
         assert_eq!(opaco.scene.objects.len(), DELIVERY.total());
         assert_eq!(visible.scene.objects.len(), DELIVERY.total() - 1);

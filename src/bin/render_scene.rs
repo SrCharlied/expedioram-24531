@@ -54,11 +54,12 @@ Render sin ventana del Continente Inacabado.
 Sin --reveal ni --paint se pinta todo (equivale a --reveal 1).
 
 Presets disponibles:
-  delivery-refractive-water  la entrega: isla de borde sobre el nivel
-                          seguro, 168 primitivas (154 - 2 + 16), con el
-                          volumen de agua real. Es lo que se presenta.
-  delivery-interior-visible  la entrega sin el volumen de agua (167).
-  delivery-opaque-water   la entrega con los techos opticos en cero (168).
+  delivery-refractive-water  la entrega con cuenca azul del Monolito,
+                          214 primitivas (168 + 22 agua + 24 lecho, con el
+                          relleno bajo Praderas), con agua refractiva
+                          real. Es lo que se presenta.
+  delivery-interior-visible  la entrega sin el volumen de Aguas (213).
+  delivery-opaque-water   la entrega con los techos opticos en cero (214).
   safe-refractive-water   nivel seguro con el volumen de agua real (160
                           primitivas): 0.9/0.9, ior 1.333. Es el preset
                           canonico desde la Tarea 5.4 y el que se presenta.

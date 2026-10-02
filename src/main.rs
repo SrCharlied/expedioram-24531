@@ -27,7 +27,7 @@
 //! existe con un ratón delante —qué herramienta está activa, cuándo empieza
 //! un trazo y cuándo se corta—.
 
-use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
+use minifb::{Key, KeyRepeat, MouseButton, MouseMode, ScaleMode, Window, WindowOptions};
 use std::f32::consts::PI;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -49,6 +49,15 @@ use expedition33_continente_inacabado::input::{demo_action, FrameIntent, Present
 #[cfg(not(feature = "artistic-brush"))]
 use expedition33_continente_inacabado::input::{pick_region, DemoAction};
 use expedition33_continente_inacabado::light::diorama as luces_del_diorama;
+use expedition33_continente_inacabado::music::{
+    EstadoMusica, Musica, RUTA_DE_LA_MUSICA, VOLUMEN_POR_DEFECTO,
+};
+#[cfg(feature = "artistic-brush")]
+use expedition33_continente_inacabado::music_button::Zona;
+use expedition33_continente_inacabado::music_button::{
+    colocar as colocar_bocina, dibujar_boton as dibujar_bocina, etiqueta as etiqueta_de_bocina,
+    Pulsacion,
+};
 #[cfg(feature = "artistic-brush")]
 use expedition33_continente_inacabado::renderer::render_artistic;
 use expedition33_continente_inacabado::renderer::{
@@ -58,9 +67,16 @@ use expedition33_continente_inacabado::reveal::{reveal_duration, reveal_speed, R
 #[cfg(feature = "artistic-brush")]
 use expedition33_continente_inacabado::scene::Scene;
 use expedition33_continente_inacabado::scenes::{delivery_level_con, WaterPreset};
+use expedition33_continente_inacabado::viewport::{al_buffer, VENTANA_INICIAL};
 #[cfg(feature = "artistic-brush")]
 use nalgebra_glm::{Vec2, Vec3};
 
+mod music_rodio;
+use music_rodio::SalidaRodio;
+
+/// El **cuadro**: lo que se traza en reposo y el espacio de la interfaz.
+/// La ventana abre más grande (`viewport::VENTANA_INICIAL`) y se puede
+/// estirar, pero esto no cambia: `minifb` escala el cuadro al presentarlo.
 const WIDTH: usize = 800;
 const HEIGHT: usize = 600;
 
@@ -213,6 +229,18 @@ fn cerdas_de(herramienta: Herramienta, scene: &Scene, uv: &Vec2) -> u32 {
     }
 }
 
+/// El puntero en píxeles del **cuadro**, o `None` si no señala la imagen.
+///
+/// `minifb` lo entrega en píxeles de cliente de la ventana, que con la
+/// ventana estirada ya no son los del cuadro; `viewport::al_buffer` deshace
+/// el escalado y las bandas. Todo lo que lee el ratón —paleta, bocina,
+/// pincel y picking— pasa por aquí.
+fn cursor_en_el_cuadro(window: &Window) -> Option<(f32, f32)> {
+    window
+        .get_mouse_pos(MouseMode::Discard)
+        .and_then(|cursor| al_buffer(cursor, window.get_size(), (WIDTH, HEIGHT)))
+}
+
 /// Cuadros de calibración que se trazan al arrancar.
 ///
 /// Tres y no uno: el primero paga el calentamiento de cachés y sale
@@ -226,11 +254,20 @@ fn main() -> ExitCode {
 
     // El título usa el nombre de presentación de la obra, no el del
     // paquete ni el del repositorio.
+    //
+    // La ventana abre a `1200 x 900` y se puede estirar. El cuadro sigue
+    // siendo de `800 x 600`: `AspectRatioStretch` lo escala conservando
+    // `4 : 3`, con bandas si hace falta, así que agrandar la ventana no
+    // traza un píxel más.
     let mut window = Window::new(
         "El Continente Inacabado",
-        WIDTH,
-        HEIGHT,
-        WindowOptions::default(),
+        VENTANA_INICIAL.0,
+        VENTANA_INICIAL.1,
+        WindowOptions {
+            resize: true,
+            scale_mode: ScaleMode::AspectRatioStretch,
+            ..WindowOptions::default()
+        },
     )
     .unwrap();
 
@@ -385,6 +422,19 @@ fn main() -> ExitCode {
     // Un cuadro de calibración no es un cuadro presentado: el framebuffer
     // sigue vacío, así que el primero de verdad se dibuja igual.
 
+    // ------------------------------------------------ música
+    //
+    // Después de calibrar, para que el hilo de audio no entre en la
+    // medición. Si falta el archivo o el dispositivo, se avisa una vez y la
+    // obra sigue en silencio con la bocina apagada.
+    let (mut musica, aviso_musica) = Musica::desde(SalidaRodio::abrir(
+        &raiz.join(RUTA_DE_LA_MUSICA),
+        VOLUMEN_POR_DEFECTO,
+    ));
+    if let Some(aviso) = aviso_musica {
+        eprintln!("{aviso}");
+    }
+
     println!("El Continente Inacabado");
     println!(
         "  escena   nivel seguro, {} primitivas, {} luces, {} texturas",
@@ -396,6 +446,19 @@ fn main() -> ExitCode {
         "  perfil   {} x {} en movimiento, {WIDTH} x {HEIGHT} en reposo",
         perfil.width, perfil.height
     );
+    println!(
+        "  ventana  {} x {} redimensionable, el cuadro se escala a 4:3",
+        VENTANA_INICIAL.0, VENTANA_INICIAL.1
+    );
+    match musica.estado() {
+        EstadoMusica::NoDisponible => {
+            println!("  musica   N/A, la obra sigue en silencio");
+        }
+        estado => println!(
+            "  musica   {} ({RUTA_DE_LA_MUSICA}, volumen {VOLUMEN_POR_DEFECTO:.2})     clic en la bocina para silenciar",
+            etiqueta_de_bocina(estado)
+        ),
+    }
     println!("  flechas  orbitar     W / S / rueda  zoom     Escape  salir");
     #[cfg(not(feature = "artistic-brush"))]
     {
@@ -531,6 +594,27 @@ fn main() -> ExitCode {
     // el final: `cuadro_final_pendiente` empieza en cierto.
     let mut presentado = PresentedFrame::full(camera, (WIDTH, HEIGHT));
 
+    // La bocina: siempre en el mismo sitio del cuadro. Con la paleta, a la
+    // izquierda de su cápsula, que no se mueve al abrir el panel; sin ella,
+    // abajo a la derecha.
+    #[cfg(feature = "artistic-brush")]
+    let zona_bocina = {
+        let c = Disposicion::calcular(false, WIDTH, HEIGHT, &telas_disponibles).capsula;
+        colocar_bocina(
+            WIDTH,
+            HEIGHT,
+            Some(Zona {
+                x: c.x,
+                y: c.y,
+                ancho: c.ancho,
+                alto: c.alto,
+            }),
+        )
+    };
+    #[cfg(not(feature = "artistic-brush"))]
+    let zona_bocina = colocar_bocina(WIDTH, HEIGHT, None);
+    let mut pulsacion_bocina = Pulsacion::default();
+
     // Qué renderer usa el ciclo. Es lo **único** que la feature cambia en
     // el dibujo, y se escribe una vez para que las dos ramas del plan de
     // cuadro no puedan desincronizarse.
@@ -622,14 +706,26 @@ fn main() -> ExitCode {
         let mut acciones = Vec::new();
 
         let boton = window.get_mouse_down(MouseButton::Left);
+        let cursor = cursor_en_el_cuadro(&window);
+
+        // ------------------------------------------------ la bocina primero
+        //
+        // Un clic que empieza en ella la alterna y se queda con el arrastre
+        // hasta soltar: no llega ni a la paleta, ni al pincel, ni al picking
+        // por región. La música no depende del lienzo: `L` no la toca.
+        let bocina = pulsacion_bocina.procesar(boton, cursor, zona_bocina);
+
+        if bocina.alternar && musica.alternar() {
+            println!("  musica: {}", etiqueta_de_bocina(musica.estado()));
+        }
 
         #[cfg(not(feature = "artistic-brush"))]
         {
             let clic = boton && !boton_anterior;
             boton_anterior = boton;
 
-            if clic {
-                if let Some(cursor) = window.get_mouse_pos(MouseMode::Discard) {
+            if clic && !bocina.consumir {
+                if let Some(cursor) = cursor {
                     // Contra `camara_presentada`: el clic apunta a lo que se ve.
                     if let Some(grupo) = pick_region(&scene, &accel, &presentado, cursor) {
                         acciones.push(DemoAction::Paint(grupo));
@@ -767,8 +863,8 @@ fn main() -> ExitCode {
             let clic = boton && !boton_anterior_artistico;
             boton_anterior_artistico = boton;
 
-            if clic {
-                if let Some(cursor) = window.get_mouse_pos(MouseMode::Discard) {
+            if clic && !bocina.consumir {
+                if let Some(cursor) = cursor {
                     match disposicion.impacto(cursor) {
                         Impacto::Capsula => {
                             paleta.alternar();
@@ -816,6 +912,11 @@ fn main() -> ExitCode {
             if paleta_cambio {
                 clic_consumido = true;
             }
+
+            // Lo de la bocina tampoco pinta, en ningún cuadro del arrastre.
+            if bocina.consumir {
+                clic_consumido = true;
+            }
         }
 
         // El pincel visual de **este** cuadro: dónde apoyarlo, hacia dónde y
@@ -827,7 +928,7 @@ fn main() -> ExitCode {
         #[cfg(feature = "artistic-brush")]
         {
             let objetivo = if boton && !clic_consumido {
-                window.get_mouse_pos(MouseMode::Discard).and_then(|cursor| {
+                cursor.and_then(|cursor| {
                     match disposicion.impacto(cursor) {
                         // Arrastrar por encima del panel tampoco pinta: el
                         // panel tapa lo que hay detrás, y pintar a ciegas
@@ -1092,6 +1193,11 @@ fn main() -> ExitCode {
             dibujar_paleta(&mut framebuffer, &disposicion, &paleta, &scene.textures);
         }
 
+        // La bocina, con y sin pincel. Es opaca sobre todo su rectángulo:
+        // repintarla sobre un cuadro reutilizado no acumula nada, y alternar
+        // la música no obliga a trazar la escena otra vez.
+        dibujar_bocina(&mut framebuffer, zona_bocina, musica.estado());
+
         // `update_with_buffer` va siempre, también cuando no se dibujó: es
         // lo que bombea los eventos de la ventana. Cuando nada cambia
         // presenta el mismo framebuffer otra vez, que es la reutilización
@@ -1108,4 +1214,23 @@ fn main() -> ExitCode {
     }
 
     ExitCode::SUCCESS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Estirar la ventana no cambia lo que se traza: el cuadro final sigue
+    /// a `800 x 600`, el interactivo al perfil por defecto, y la ventana es
+    /// solo presentación.
+    #[test]
+    fn la_ventana_crece_pero_lo_que_se_traza_no() {
+        assert_eq!((WIDTH, HEIGHT), (800, 600));
+        let perfil = InteractiveProfile::default();
+        assert_eq!((perfil.width, perfil.height), (320, 240));
+        assert_eq!(VENTANA_INICIAL, (1200, 900));
+        assert_ne!(VENTANA_INICIAL, (WIDTH, HEIGHT));
+        // Misma proporción: la ventana inicial no tiene bandas.
+        assert_eq!(VENTANA_INICIAL.0 * HEIGHT, VENTANA_INICIAL.1 * WIDTH);
+    }
 }

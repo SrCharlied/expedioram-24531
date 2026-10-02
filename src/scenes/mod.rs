@@ -29,10 +29,14 @@ pub mod flying_waters;
 pub mod flying_waters_delivery;
 pub mod meadows;
 pub mod meadows_delivery;
+pub mod monolith_basin_delivery;
 
 pub use edge_island::{
     delivery_level, delivery_level_con, delivery_level_previo, delivery_level_previo_aguas,
-    delivery_level_previo_aguas_con, delivery_level_previo_con, DELIVERY,
+    delivery_level_previo_aguas_con, delivery_level_previo_con, delivery_level_previo_cuenca,
+    delivery_level_previo_cuenca_con, delivery_level_previo_relleno,
+    delivery_level_previo_relleno_con, delivery_level_previo_trasero,
+    delivery_level_previo_trasero_con, DELIVERY,
 };
 
 use crate::accel::{ClusterPlan, SceneAccel};

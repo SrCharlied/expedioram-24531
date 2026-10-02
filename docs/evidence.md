@@ -3841,3 +3841,279 @@ en una máquina; la Ruta B no se midió.
 | `--entrega` en Ruta B y repeticiones | **Abierto.** Una corrida, Ruta A. |
 | Aspecto lateral de la cadena (cinta escalonada) | Conocido, **no se corrige ahora** por decisión de Charlie. |
 | Evidencia PNG versionada | **Abierta.** Sólo en carpetas temporales. |
+
+# Promoción de la cuenca del Monolito a la entrega — 1 de octubre de 2026
+
+**Estado: implementada y verificada técnicamente.** Charlie aprobó
+visualmente `flooded_blue_raised`; esta sección no reabre la decisión
+artística. El rendimiento queda medido abajo; la decisión de cerrar el
+default es de Charlie.
+
+Todo lo anterior a esta línea describe escenas anteriores y no se ha tocado.
+
+## La decisión
+
+La variante `flooded_blue_raised` de `examples/monolith_basin_preview.rs`
+pasa a la entrega:
+
+- las cuatro caídas exteriores de Praderas bajan a lo que tienen debajo —tres
+  al plinto, la cuarta a la masa de fondo que tiene debajo, a `1.70`—;
+- una lámina de agua azul de techo común `0.30` ocupa la base libre: todo lo
+  que no tiene un bloque encima, alrededor del Monolito, en el gran claro
+  detrás de Aguas y en el canal entre el Rompeolas y Aguas;
+- debajo, un lecho de piedra azul pizarra, con una textura procedural por
+  pieza muestreada en coordenadas de mundo;
+- agua: el `A-01` del preset con brillo `0.22 / 40` y tinte cian marino; en
+  la entrega refractiva, techos `0.9 / 0.9`, `ior 1.333`, sombra `Ignore`.
+
+Sin animación, sin absorción, sin cambios en el motor.
+
+## El presupuesto
+
+| Preset de la entrega | Antes | Cuenca | Ahora |
+|---|---:|---:|---:|
+| `delivery-refractive-water` | `168` | `+19 +18` | **`205`** |
+| `delivery-opaque-water` | `168` | `+19 +18` | `205` |
+| `delivery-interior-visible` | `167` | `+19 +18` | `204` |
+
+La cuenca se compone con `A-01` dentro y el volumen se retira después para
+`InteriorVisible`. En el control `OpaqueWater` el agua de la cuenca deriva
+del `A-01` opaco del preset y queda, como él, sin óptica. La línea base de
+`168` es `delivery_level_previo_cuenca[_con]`.
+
+## La implementación
+
+`src/scenes/monolith_basin_delivery.rs`, sin dependencia del preview:
+`aplicar(scene)` alarga las caídas, mide la base libre en tiempo de ejecución
+—la misma descomposición del preview, operación a operación—, añade al final
+las `19` celdas de agua y las `18` piezas de lecho, y registra un agua y
+`18` fondos con sus texturas. No arrastra los materiales intermedios de las
+variantes descartadas: la equivalencia se comprueba sobre los materiales
+efectivos. `edge_island::entrega_con` la llama después de Aguas y antes de
+retirar el volumen y de medir escala y jerarquía.
+
+## Verificación
+
+**RED.** Con `aplicar` vacío, `8` de los `11` tests nuevos de la librería
+fallaron; los otros tres son invariancias que el stub cumple. Con la cuenca
+integrada, `8` tests existentes fallaron porque medían su etapa —isla de
+borde, Aguas, Praderas— sobre `delivery_level`; se reapuntaron uno a uno a
+`delivery_level_previo_cuenca`, sin tocar sus aserciones.
+
+**Equivalencia con la variante aprobada**, con los assets reales, en las tres
+rutas: objetos, materiales efectivos, paleta compartida, texturas texel a
+texel, cielo, anclas, escala, cámaras, luces, jerarquía y los tres renders
+píxel a píxel (`la_entrega_de_produccion_es_flooded_blue_raised`). Una
+mutación temporal del nivel a `0.29` la hace fallar.
+
+**Huella** de la cuenca en la librería, sin assets, una por ruta: con
+`hex-prism`, `9 815 729 660 935 996 773`; sin él, `10 362 225 630 250 966 656`
+—en la Ruta B el Rompeolas y sus masas quedan `0.15` más al fondo y la base
+libre es otra—. Se fijó primero solo la de la Ruta A y los gates de las rutas B
+fallaron en ese test; la de la Ruta B se fijó después de comprobar su
+equivalencia con assets.
+
+**Renders**, `800 × 600`, Ruta A, assets reales, todo pintado. Producción es
+idéntica a la variante aprobada:
+
+| Toma | SHA-256, producción y `flooded_blue_raised` |
+|---|---|
+| hero | `aa79cf6dd966c47537e474ffcdc0dda870041d41c5007961107073c89475f6fe` |
+| cenital, `78°` | `a576c86a4accf4c76a559f1b2bd1515ab72feddc5498af858475df26af5191c3` |
+| encuadre cercano del Monolito | `7da10100d11aace1eb4e5aed0f96c85810ba5c810cbf036970a8322fab37208c` |
+
+Hero y cenital salen de `render_scene --preset delivery-refractive-water`
+(`--elevation 78`); el cercano, de la columna `delivery` del preview. Los `18`
+PNG de las seis variantes del preview de la cuenca, los `15` del de Aguas y
+los `8` del de Praderas salen idénticos a los aprobados, y el nivel seguro
+sigue en `75e00441e4d86831bcca203b973dcb65a3466055ce45913d75e029c1eb96a0d8`.
+
+**Gates**, todos en `RC 0`:
+
+| Gate | Resultado |
+|---|---|
+| `cargo test` | `643` |
+| `cargo test --no-default-features --features artistic-brush` | `623` |
+| `cargo test --no-default-features` | `591` |
+| tests de `monolith_basin_preview`, `meadows_fidelity_preview`, `flying_waters_fidelity_preview` y `performance_matrix`, tres rutas | `50`, `61`, `44` y `9` en cada una |
+| `cargo build --release`, tres rutas | sin errores |
+| `cargo clippy --all-targets -- -D warnings`, tres rutas | sin avisos |
+| `cargo fmt -- --check`, `git diff --check` | limpios |
+
+## Rendimiento de la entrega con la cuenca
+
+`performance_matrix` gana el modo `--entrega-cuenca`. `--entrega` conserva
+la comparación histórica de la etapa de Aguas, que desde esta promoción es
+`delivery_level_previo_cuenca_con`; la salida sin bandera no cambia.
+
+```bash
+cargo run --release --example performance_matrix -- --entrega-cuenca
+```
+
+Una corrida, Ruta A, código `0`, `5 min 12 s`. Árbol: `ee04fef` más los
+cambios sin commit de esta promoción; AMD Ryzen 7 6800H, 16 hilos;
+`rustc 1.97.0`; Windows 11; sin otras cargas. `previa` es la entrega de `168`,
+`actual` la de `205`; las dos refractivas, con assets, con una fixture pintada
+por nivel sobre superficies reales.
+
+Perfil interactivo, `320 × 240`, medianas y cociente pareado:
+
+| Encuadre | Estado | `base` | `art-pintado` | actual / previa, pintado |
+|---|---|---:|---:|---:|
+| hero | worst | `0.0566` | `0.0574` | `1.083x` |
+| zoom artístico mínimo | worst | **`0.1224`** | **`0.1258`** | `1.114x` |
+| zoom máximo | worst | `0.0312` | `0.0318` | `1.089x` |
+| peor de la rejilla, `y+270 e+35 cerca` | worst | `0.1032` | `0.1088` | `1.330x` |
+
+En la rejilla, `render` base en el peor estado, la peor cámara de la actual es
+`y+270 e+35 cerca` con `0.1100 s`, `1.332x` la previa en esa cámara; allí los
+rayos secundarios pasan de `20 615` a `41 366`. En los encuadres con nombre
+los cocientes quedan entre `1.02x` y `1.14x`. A `800 × 600` la actual va de
+`0.1095 s` a `0.7139 s`.
+
+| Presupuesto de la actual | Peor cuadro | Reserva | Umbral |
+|---|---:|---:|---|
+| Gate: `render` base, worst, interactivo | `0.1224 s` | `2.18x` | `1.30x`, cabe |
+| Pincel: `render_artistic` pintado, interactivo | `0.1258 s` | `2.12x` | `1.30x`, cabe |
+
+El crítico es `REVEAL_DURATION_CEILING / MINIMUM_REVEAL_FRAMES` = `0.2667 s`;
+`reveal_duration`, `1.84 s`. Los tiempos absolutos de esta corrida son
+menores que los de la promoción de Aguas en la misma máquina: los bloques no
+son comparables entre corridas; lo comparable son los cocientes pareados de
+dentro de esta. Es una sola corrida; la Ruta B no se midió.
+
+## Pendientes
+
+| Qué | Estado |
+|---|---|
+| Ayuda de `render_scene` | **Resuelta por el supervisor**: los presets `delivery-*` indican `205 / 204 / 205`; comprobado con `--help` |
+| `--entrega-cuenca` en Ruta B y repeticiones | **Abierto** |
+| Coste en la peor cámara de la rejilla | `1.33x` y rayos ×2: dentro del umbral, a vigilar |
+| Caída `47` | cae sobre la masa de fondo, no sobre la cuenca, por geometría |
+| Evidencia PNG versionada | **Abierta**: solo en carpetas temporales |
+
+## Verificación independiente del supervisor
+
+Tras la autorización explícita de Charlie para promover `flooded_blue_raised`,
+Veliona revisó la integración y ejecutó de nuevo los gates sobre el árbol final:
+
+- `cargo test`: **643 / 623 / 591** aprobados, cero fallos, en A default,
+  B artística y B clásica respectivamente.
+- Tests de ejemplos explícitos en las tres rutas: cuenca **50**, Praderas
+  **61**, Aguas **44** y arnés de rendimiento **9**, todos sin fallos.
+- Builds release, Clippy `--all-targets`, formato y diff-check: **RC 0**.
+  El release default quedó reconstruido al final.
+- Producción hero, cenital y detalle: SHA-256 iguales a los tres renders
+  aprobados registrados arriba. Los **18 PNG anteriores** del preview se
+  compararon contra la reproducción independiente conservada y siguen intactos.
+- Logs y renders de esta revisión:
+  `C:/Users/carlo/AppData/Local/Temp/cuenca-default-supervisor-1790877902/`.
+  `verification.json` conserva los hashes de producción.
+
+La cuenca queda como **default local verificado**, sin commit ni push. La
+medición de rendimiento de la tabla anterior es la corrida de Claude en Ruta A,
+cuyo log final fue inspeccionado por el supervisor; no es una segunda corrida
+independiente ni una medición de Ruta B.
+
+# Relleno de la cuenca bajo Praderas — 1 de octubre de 2026
+
+**Estado: implementado y verificado técnicamente.** Charlie pidió llenar la
+franja de base que quedaba seca bajo la plataforma flotante de Praderas,
+bordeada de agua. Es una corrección local de la cuenca: mismo nivel, agua,
+brillo, óptica y fondo de piedra.
+
+Todo lo anterior a esta línea describe escenas anteriores y no se ha tocado.
+
+## La causa
+
+La huella de la cuenca excluye en planta **toda** pieza a cualquier altura.
+La meseta de Praderas vuela a `4.2` y lo más bajo que cuelga de ella —el
+frente— a `2.15`; debajo, la base quedaba seca aunque cabían el agua y el
+lecho. Bajo la meseta flotan además dos masas de fondo, a `0.35` y `0.75`, y
+llegan al suelo cuatro caídas.
+
+## La corrección
+
+`monolith_basin_delivery::rellenar_bajo_praderas`, después de `aplicar` y con
+`A-01` dentro:
+
+- deja de excluir **solo** las piezas de Praderas que vuelan con al menos
+  `0.50` de hueco sobre el agua; las masas de fondo, las caídas que llegan al
+  suelo y la cuenca existente siguen fuera;
+- solo delante de las masas que flotan con su centro bajo la meseta —la
+  franja visible—, y con `0.10` de alcance para tocar las celdas vecinas sin
+  costura seca;
+- no toca ninguna pieza existente: añade `3` celdas de agua con el mismo
+  material de la cuenca y `6` piezas de lecho —tres de ellas rebordes de
+  `0.04` que cierran el lecho contra el previo—, cada una con su fondo del
+  mismo campo de piedra en coordenadas de mundo.
+
+| Preset | Cuenca aprobada | Relleno | Ahora |
+|---|---:|---:|---:|
+| `delivery-refractive-water` | `205` | `+3 +6` | **`214`** |
+| `delivery-opaque-water` | `205` | `+3 +6` | `214` |
+| `delivery-interior-visible` | `204` | `+3 +6` | `213` |
+
+La cuenca aprobada sigue disponible como `delivery_level_previo_relleno[_con]`.
+
+## Verificación
+
+**RED.** Con el relleno vacío, `7` de los `8` tests nuevos fallaron; el de la
+jerarquía y el determinismo es una invariancia. Los tests de la cuenca se
+reapuntaron a la etapa de `205`, sin cambiar aserciones.
+
+**Equivalencia con la variante `under_meadows_fill`** del preview, con los
+assets reales, en las dos rutas: objetos, materiales efectivos, texturas texel
+a texel, cámaras, luces, jerarquía y renders píxel a píxel. Una mutación del
+alcance a `0.09` la hace fallar. Huella del relleno en la librería, la misma en
+las dos rutas: `13 192 632 095 342 143 467`.
+
+**Costuras**, el artefacto conocido del renderer, porcentaje de píxeles de agua
+cuyo rayo refractado alcanza una cara compartida, a `800 × 600`:
+
+| Toma | Cuenca de `205` | Con el relleno |
+|---|---:|---:|
+| hero | `1.06 %` | `1.25 %` |
+| cenital `78°` | `1.12 %` | `1.17 %` |
+| encuadre cercano del Monolito | `1.59 %` | **`2.12 %`** |
+
+En el encuadre cercano supera el `2 %` de la cuenca, sobre todo porque el
+canto trasero de una celda previa pasa a ser cara compartida. Charlie aceptó
+acotarlo en `2.5 %` para esa toma; hero y cenital conservan `2 %`, y el test de
+la cuenca de `205`, su `2 %` en las tres.
+
+**Renders**, `800 × 600`, Ruta A, assets reales, todo pintado:
+
+| Toma | Cuenca de `205` | Relleno, producción = `under_meadows_fill` |
+|---|---|---|
+| hero | `aa79cf6dd966c475…` | `7fc77ffb38722e9ad943ea899657df5cb5fb66022c2fc31104d9b80be5910c39` |
+| cenital `78°` | `a576c86a4accf4c7…` | `df0ae4bf10ed4a06ff879dc4fd9d025f1e3da38188d2f73ed77e5f1546270f71` |
+| cercano del Monolito | `7da10100d11aace1…` | `d25b49c46ac18f25aae399a6fdf5b2c24d62ee51866b93184b8e3dcd248b9938` |
+| cercano del hueco | `58c265f9287b8f0d…` | `990641e5fd3c57324334aa53ff400cecf31a831df2af7afd55064a443d05ab58` |
+
+Los `18` PNG de las variantes del preview de la cuenca, los `3` de la cuenca
+de `205`, los `15` del preview de Aguas, los `8` del de Praderas y el nivel
+seguro (`75e00441…`) salen idénticos a los aprobados.
+
+**Gates**, todos en `RC 0`: `cargo test` `651` / `631` / `599` en las tres
+rutas; tests de los ejemplos de la cuenca (`53`), Praderas (`61`), Aguas
+(`44`) y `performance_matrix` (`10`) en las tres; `cargo build --release` y
+`cargo clippy --all-targets -- -D warnings` en las tres; `cargo fmt -- --check`
+y `git diff --check`.
+
+## Rendimiento
+
+`performance_matrix -- --entrega-relleno`, nuevo: cuenca de `205` contra la
+entrega de `214`. `--entrega-cuenca` sigue midiendo `168` contra `205`.
+
+Una corrida, Ruta A, código `0`, `4 min 29 s`, sin otras cargas.
+
+| Presupuesto de la entrega de `214` | Peor cuadro | Reserva | Umbral |
+|---|---:|---:|---|
+| Gate: `render` base, worst, interactivo | `0.1140 s` | `2.34x` | `1.30x`, cabe |
+| Pincel: `render_artistic` pintado, interactivo | `0.1099 s` | `2.43x` | `1.30x`, cabe |
+
+Crítico `0.2667 s`; `reveal_duration` `1.71 s`. Los cocientes pareados de
+`214` contra `205` quedan entre `0.98x` y `1.05x` en los encuadres con nombre
+y en `1.067x` en la peor cámara de la rejilla, `y+270 e+35 cerca`. La Ruta B
+no se midió.
